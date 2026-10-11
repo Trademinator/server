@@ -45,11 +45,13 @@
             </div>
             <div class="mt-4" data-market-pagination>{{ $subscriptions->links() }}</div>
         @can('manage-server')
+        @php($attentionCards = $cards->where('attention', true))
+        @if ($attentionCards->isNotEmpty())
         <details id="attention" class="dashboard-attention guide-panel mt-5" aria-labelledby="attention-title" data-dashboard-attention>
             <summary><h2 id="attention-title">Needs attention</h2></summary>
             <div class="mt-3">
             <p class="guide-help">Collection issues for the displayed markets. Run suggested commands from the server's project directory.</p>
-            @forelse ($cards->where('attention', true) as $card)
+            @foreach ($attentionCards as $card)
                 <div class="dashboard-attention-row">
                     <a href="{{ route('dashboard', array_filter(['subscription' => $card['subscription']->getKey(),
                         'scope' => $owner ? $scope : null, 'favorites' => $favoritesOnly ? 1 : null,
@@ -60,7 +62,8 @@
                         </div>
                     @endforeach
                 </div>
-            @empty<p>No collection problems detected for the displayed markets.</p>@endforelse
+            @endforeach
             </div>
         </details>
+        @endif
         @endcan

@@ -7,6 +7,7 @@
 .dashboard-stat, .dashboard-market, .dashboard-attention { display:block; border: 1px solid #ccd7e1; border-radius: 14px; background: #fff; padding: 18px; color: inherit; }
 .dark .dashboard-stat, .dark .dashboard-market, .dark .dashboard-attention { background: #111827; border-color: #516174; }
 button.dashboard-stat { text-align: left; cursor: pointer; }
+button.dashboard-stat[hidden] { display: none; }
 .dashboard-stat > span, .dashboard-stat > small { display: block; }
 .dashboard-stat > strong { display:block; font-size: 2rem; margin: 6px 0; }
 .dashboard-stat small { font-size: .8rem; color: #4b6279; }

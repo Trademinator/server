@@ -188,12 +188,20 @@ it('does not flag healthy ready feeds or current in-progress collection as needi
     Ticker::query()->create(['exchange' => 'kraken', 'symbol' => 'BTC/USD', 'period' => '1m',
         'microtimestamp' => now()->subMinute()->getTimestampMs(),
         'payload' => json_encode(['open' => '100', 'high' => '102', 'low' => '99', 'close' => '101', 'volume' => '5'])]);
-    $this->actingAs($user)->getJson('/dashboard')->assertJsonPath('attention_count', 0);
+    $healthyPage = $this->actingAs($user)->get('/dashboard')->assertOk()
+        ->assertDontSee('data-dashboard-attention', false);
+    expect($healthyPage->getContent())->toMatch('/<button[^>]*data-attention-toggle[^>]*\bhidden\b/')
+        ->toContain('xl:grid-cols-3');
+    $healthyJson = $this->getJson('/dashboard')->assertJsonPath('attention_count', 0);
+    expect($healthyJson->json('html'))->not->toContain('data-dashboard-attention', 'No collection problems detected for the displayed markets.');
     $sub->market->feed->update(['status' => 'queued', 'lease_until' => now()->addMinutes(10)]);
     $this->getJson('/dashboard')->assertJsonPath('attention_count', 0);
     $sub->market->feed->update(['lease_until' => now()->subMinute()]);
+    $alertPage = $this->get('/dashboard')->assertOk()->assertSee('data-dashboard-attention', false);
+    expect($alertPage->getContent())->not->toMatch('/<button[^>]*data-attention-toggle[^>]*\bhidden\b/');
+    expect($alertPage->getContent())->toContain('xl:grid-cols-4');
     $response = $this->getJson('/dashboard')->assertJsonPath('attention_count', 1);
-    expect($response->json('html'))->toContain('lease expired', 'trademinator:dispatch-market-feeds');
+    expect($response->json('html'))->toContain('data-dashboard-attention', 'lease expired', 'trademinator:dispatch-market-feeds');
 });
 
 it('collapses an expired queued retry and its dependent symptoms into one recovery item', function () {

@@ -130,7 +130,7 @@ async function searchHarness({ owner = true } = {}) {
     const { runInNewContext } = await import('node:vm');
     const source = readFileSync(new URL('../../resources/js/components/dashboard.js', import.meta.url), 'utf8')
         .replace(/^import .*;\n/gm, '').replaceAll('export ', '');
-    const element = () => ({ value: '', textContent: '', innerHTML: 'initial cards', listeners: {}, attributes: {},
+    const element = () => ({ value: '', textContent: '', innerHTML: 'initial cards', hidden: false, listeners: {}, attributes: {},
         addEventListener(name, callback) { this.listeners[name] = callback; },
         removeEventListener(name) { delete this.listeners[name]; },
         setAttribute(name, value) { this.attributes[name] = value; },
@@ -138,11 +138,16 @@ async function searchHarness({ owner = true } = {}) {
         querySelectorAll() { return []; }, replaceChildren() { this.innerHTML = ''; } });
     const input = element(), form = element(), results = element(), status = element(), attention = element();
     const attentionToggle = owner ? element() : null;
+    const overview = element(), columns = new Set(['xl:grid-cols-4']);
+    overview.classList = {
+        toggle(name, enabled) { if (enabled) columns.add(name); else columns.delete(name); },
+        contains(name) { return columns.has(name); },
+    };
     const makePanel = () => owner ? { open: false, scrolls: 0, scrollIntoView() { this.scrolls++; } } : null;
-    let attentionPanel = makePanel(), cards = 'initial cards';
+    let hasAttention = owner, attentionPanel = makePanel(), cards = 'initial cards';
     Object.defineProperty(results, 'innerHTML', {
         get: () => cards,
-        set(value) { cards = value; attentionPanel = makePanel(); },
+        set(value) { cards = value; attentionPanel = hasAttention ? makePanel() : null; },
     });
     results.querySelector = selector => selector === '[data-dashboard-attention]' ? attentionPanel : null;
     results.replaceChildren = () => { cards = ''; attentionPanel = null; };
@@ -157,7 +162,7 @@ async function searchHarness({ owner = true } = {}) {
     let navigated = null;
     const context = { URL, AbortController, Number, Error,
         window: { location: { href: 'https://trademinator.test/dashboard', assign(value) { navigated = value; } }, addEventListener() {} },
-        document: { querySelector: selector => ({ '[data-attention-count]': attention, '[data-attention-toggle]': attentionToggle })[selector] },
+        document: { querySelector: selector => ({ '[data-attention-count]': attention, '[data-attention-toggle]': attentionToggle, '[data-dashboard-overview]': overview })[selector] },
         setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
         clearTimeout(id) { timers.delete(id); },
         fetch(url, options) { return new Promise(resolve => pending.push({ url, options, resolve })); } };
@@ -170,12 +175,15 @@ async function searchHarness({ owner = true } = {}) {
         assert.equal(prevented, true);
         return promise;
     };
-    const respond = (index, data, options = {}) => pending[index].resolve({ ok: true, status: 200, json: async () => data, ...options });
+    const respond = (index, data, options = {}) => {
+        if (owner && Number.isInteger(data.attention_count)) hasAttention = data.attention_count > 0;
+        pending[index].resolve({ ok: true, status: 200, json: async () => data, ...options });
+    };
     const toggleTitle = () => {
         attentionPanel.open = !attentionPanel.open;
         results.listeners.toggle({ target: attentionPanel });
     };
-    return { input, favorites, scope, form, results, status, attention, attentionToggle,
+    return { input, favorites, scope, form, results, status, attention, attentionToggle, overview,
         get attentionPanel() { return attentionPanel; }, get navigated() { return navigated; },
         toggleTitle, pending, timers, submit, respond, dispose };
 }
@@ -225,6 +233,32 @@ test('preserves the attention panel state across live searches and reconnects th
     await revoked;
     assert.equal(view.attentionToggle.attributes['aria-expanded'], 'false');
     assert.doesNotThrow(() => view.attentionToggle.listeners.click());
+    view.dispose();
+});
+
+test('hides empty attention controls and restores them after live search finds issues', async () => {
+    const view = await searchHarness();
+    view.attentionToggle.listeners.click();
+    assert.equal(view.attentionPanel.open, true);
+
+    const clean = view.submit('healthy');
+    view.respond(0, { html: 'healthy cards', count: 1, attention_count: 0 });
+    await clean;
+    assert.equal(view.attentionPanel, null);
+    assert.equal(view.attentionToggle.hidden, true);
+    assert.equal(view.attentionToggle.attributes['aria-expanded'], 'false');
+    assert.equal(view.overview.classList.contains('xl:grid-cols-3'), true);
+    assert.equal(view.overview.classList.contains('xl:grid-cols-4'), false);
+
+    const issues = view.submit('blocked');
+    view.respond(1, { html: 'blocked cards', count: 1, attention_count: 1 });
+    await issues;
+    assert.equal(view.attentionToggle.hidden, false);
+    assert.equal(view.attention.textContent, 1);
+    assert.equal(view.attentionPanel.open, true);
+    assert.equal(view.attentionToggle.attributes['aria-expanded'], 'true');
+    assert.equal(view.overview.classList.contains('xl:grid-cols-3'), false);
+    assert.equal(view.overview.classList.contains('xl:grid-cols-4'), true);
     view.dispose();
 });
 

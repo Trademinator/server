@@ -10,13 +10,28 @@ export function mountDashboardMarkets(root) {
     const results = root.querySelector('[data-market-results]');
     const status = root.querySelector('[data-search-status]');
     const attentionToggle = document.querySelector('[data-attention-toggle]');
+    const overview = document.querySelector('[data-dashboard-overview]');
     const attentionPanel = () => results.querySelector('[data-dashboard-attention]');
+    let attentionOpen = attentionPanel()?.open ?? false;
+    const updateAttentionCount = count => {
+        if (!attentionToggle || !Number.isInteger(count)) return;
+        attentionToggle.hidden = count === 0;
+        overview?.classList.toggle('xl:grid-cols-3', count === 0);
+        overview?.classList.toggle('xl:grid-cols-4', count > 0);
+        const attention = document.querySelector('[data-attention-count]');
+        if (attention) attention.textContent = count;
+    };
     const reflectAttention = () => attentionToggle?.setAttribute('aria-expanded', attentionPanel()?.open ? 'true' : 'false');
-    const attentionChanged = event => { if (event.target === attentionPanel()) reflectAttention(); };
+    const attentionChanged = event => {
+        if (event.target !== attentionPanel()) return;
+        attentionOpen = event.target.open;
+        reflectAttention();
+    };
     const toggleAttention = () => {
         const panel = attentionPanel();
         if (!panel) return;
         panel.open = !panel.open;
+        attentionOpen = panel.open;
         reflectAttention();
         if (panel.open) panel.scrollIntoView({ block: 'nearest' });
     };
@@ -48,22 +63,22 @@ export function mountDashboardMarkets(root) {
         try {
             const response = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal: request.signal });
             if ([401, 403, 419].includes(response.status) || response.redirected) {
-                if (current === revision) { results.replaceChildren(); reflectAttention(); }
+                if (current === revision) { results.replaceChildren(); updateAttentionCount(0); reflectAttention(); }
                 throw new Error('Your session has changed. Reload the dashboard.');
             }
             if (!response.ok) throw new Error('Search failed. Your previous results are still shown; try again.');
             const data = await response.json();
             if (disposed || current !== revision) return;
             if (typeof data.html !== 'string' || !Number.isInteger(data.count)) throw new Error('Unexpected search response. Try again.');
-            const attentionOpen = attentionPanel()?.open ?? false;
+            const previousPanel = attentionPanel();
+            if (previousPanel) attentionOpen = previousPanel.open;
             results.innerHTML = data.html;
             const panel = attentionPanel();
             if (panel) panel.open = attentionOpen;
+            updateAttentionCount(data.attention_count);
             reflectAttention();
             logos();
             status.textContent = `${data.count} matching market${data.count === 1 ? '' : 's'}`;
-            const attention = document.querySelector('[data-attention-count]');
-            if (attention && Number.isInteger(data.attention_count)) attention.textContent = data.attention_count;
         } catch (error) {
             if (!disposed && current === revision) status.textContent = error.name === 'AbortError'
                 ? 'Search timed out. Try again.' : error.message;

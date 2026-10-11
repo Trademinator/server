@@ -3,6 +3,7 @@
         $number = fn ($value, $digits = 2) => $value === null ? 'Unknown' : \App\Helpers\Decimal::format($value, $digits);
         $owner = auth()->user()->isOwner();
         $ownerViewingAll = $owner && $scope === 'all';
+        $attentionCount = $cards->where('attention', true)->count();
     @endphp
     @include('markets.guide-styles')
     @include('markets.intelligence-styles')
@@ -21,11 +22,11 @@
             <p class="dashboard-contract">A subscription lets you follow a market and is required for the Client to trade it. Following a market does not enable trading; the Client decides whether to act.</p>
         </header>
         @if (session('status'))<p class="guide-notice" role="status">{{ session('status') }}</p>@endif
-        <div class="grid gap-3 sm:grid-cols-2 {{ auth()->user()->can('manage-server') ? 'xl:grid-cols-4' : 'lg:grid-cols-3' }}" aria-label="Dashboard overview">
+        <div class="grid gap-3 sm:grid-cols-2 {{ auth()->user()->can('manage-server') ? ($attentionCount > 0 ? 'xl:grid-cols-4' : 'xl:grid-cols-3') : 'lg:grid-cols-3' }}" aria-label="Dashboard overview" data-dashboard-overview>
             <a class="dashboard-stat" href="#subscriptions"><span>{{ $ownerViewingAll ? 'Markets followed by users' : 'Markets you follow' }}</span><strong>{{ $totals['followed'] }}</strong><small>Active subscriptions in this scope</small></a>
             <a class="dashboard-stat" href="#subscriptions"><span>Intelligence readiness</span><div class="my-2"><x-knn-readiness :counts="$totals" :total="$totals['followed']" /></div><small>{{ $ownerViewingAll ? 'Across all active subscriptions' : 'Across all markets you follow' }}</small></a>
             @can('manage-server')
-            <button type="button" class="dashboard-stat" data-attention-toggle aria-controls="attention" aria-expanded="false"><span>Needs attention</span><strong data-attention-count>{{ $cards->where('attention', true)->count() }}</strong><small>Collection or history on this page</small></button>
+            <button type="button" class="dashboard-stat" data-attention-toggle aria-controls="attention" aria-expanded="false" @if ($attentionCount === 0) hidden @endif><span>Needs attention</span><strong data-attention-count>{{ $attentionCount }}</strong><small>Collection or history on this page</small></button>
             @endcan
             <a class="dashboard-stat" href="#changes"><span>New signal changes</span><strong>{{ $changeCount }}</strong><small>Since <x-display-time :value="$since" unit="milliseconds" /></small></a>
         </div>
