@@ -147,11 +147,13 @@ it('stores favourites per viewer and applies the favourite filter inside the sel
         'user_id' => $owner->getKey(), 'market_subscription_id' => $otherSubscription->getKey(),
     ]);
     $this->get('/dashboard?scope=all&favorites=1')->assertOk()->assertSee('ETH/USD')->assertDontSee('BTC/USD')
-        ->assertSee('★', false);
-    $this->get('/dashboard?scope=mine&favorites=1')->assertOk()->assertDontSee('ETH/USD')->assertDontSee('BTC/USD');
+        ->assertViewHas('changeCount', 1)->assertSee('★', false);
+    $this->get('/dashboard?scope=mine&favorites=1')->assertOk()->assertDontSee('ETH/USD')->assertDontSee('BTC/USD')
+        ->assertViewHas('changeCount', 0);
 
     $this->put(route('dashboard.favorites.store', ['subscription' => $own->getKey()]))->assertRedirect();
-    $this->get('/dashboard?scope=mine&favorites=1')->assertSee('BTC/USD')->assertDontSee('ETH/USD');
+    $this->get('/dashboard?scope=mine&favorites=1')->assertSee('BTC/USD')->assertDontSee('ETH/USD')
+        ->assertViewHas('changeCount', 1);
 
     $this->delete(route('dashboard.favorites.destroy', ['subscription' => $otherSubscription->getKey(), 'scope' => 'all']))
         ->assertRedirect(route('dashboard', ['scope' => 'all']));

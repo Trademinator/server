@@ -154,10 +154,14 @@ final class DashboardData
             }, 'market_subscription_id');
         $changes = MarketSignal::query()->where('is_change', true)->where('recorded_at_ms', '>', $since)
             ->where('recorded_at_ms', '<=', now()->getTimestampMs())
-            ->whereHas('market.subscriptions', function (Builder $query) use ($user, $scope): void {
+            ->whereHas('market.subscriptions', function (Builder $query) use ($user, $scope, $favoritesOnly): void {
                 $query->where('active', true);
                 if (! $user->isOwner() || $scope !== 'all') {
                     $query->where('user_id', $user->user_id);
+                }
+                if ($favoritesOnly) {
+                    $query->whereHas('favoritedBy',
+                        fn (Builder $favorites) => $favorites->where('users.user_id', $user->user_id));
                 }
             });
         $changeCount = (clone $changes)->count();
