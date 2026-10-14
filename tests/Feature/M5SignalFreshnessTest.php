@@ -38,7 +38,7 @@ function f6Market(User $user, string $period, int $decisionAtMs, string $referen
     ]);
     ClientMarketSetting::query()->create([
         'user_id' => $user->getKey(), 'market_subscription_id' => $subscription->getKey(),
-        'trading_enabled' => true, 'paper_enabled' => false, 'max_order_quote' => 100,
+        'max_order_quote' => 100,
         'max_position_quote' => null, 'reserve_quote' => 0, 'max_spread_bps' => 50,
         'max_taker_fee_bps' => 50, 'max_signal_drift_bps' => 100, 'min_signal_confidence' => 0.6,
         'block_conflicting_exposure' => true, 'paper_initial_quote' => 1000,

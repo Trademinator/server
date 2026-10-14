@@ -32,7 +32,7 @@ final class ClientPaperTrading
 
             $subscription->loadMissing('clientSetting', 'market.latestSignal');
             $setting = $subscription->clientSetting;
-            abort_if($setting === null || ! $setting->paper_enabled, 409, 'Paper trading is disabled for this market.');
+            abort_if($setting === null, 409, 'Client market settings are not configured for this market.');
 
             $hash = hash('sha256', json_encode($this->canonical($input), JSON_THROW_ON_ERROR));
             $account = ClientPaperAccount::query()->where('user_id', $subscription->user_id)

@@ -44,8 +44,8 @@ final class ClientDecisionService
         if (! $subscription->active) {
             return [...$base, 'reason' => 'subscription_inactive'];
         }
-        if ($setting === null || ($mode === 'paper' ? ! $setting->paper_enabled : ! $setting->trading_enabled)) {
-            return [...$base, 'reason' => $mode === 'paper' ? 'paper_trading_disabled' : 'client_trading_disabled'];
+        if ($setting === null) {
+            return [...$base, 'reason' => 'client_settings_missing'];
         }
         if ($subscription->market->feed?->selected_period === null) {
             return [...$base, 'reason' => 'period_pending'];

@@ -32,12 +32,10 @@ contract, answer mappings, unknown-answer behavior and Client integration rules.
 
 ## Market settings
 
-Client trading and paper trading are independent explicit settings and both default **off**. Following a market never enables either mode.
+Live/paper mode selection is Client-local. The Server does not enable or disable execution mode for an individual market. An authenticated Client may consume intelligence only for subscriptions owned by that user, and an inactive subscription remains non-actionable.
 
 `PUT /api/v1/client/markets/{subscription}/settings` stores:
 
-- `trading_enabled`
-- `paper_enabled`
 - maximum quote value per order
 - optional maximum quote-value position exposure
 - quote reserve that must remain unused
@@ -47,7 +45,7 @@ Client trading and paper trading are independent explicit settings and both defa
 - paper starting quote balance
 - signal/failure alert preferences and digest cadence
 
-An inactive subscription may be inspected and disabled, but it cannot be used to enable new live or paper decisions.
+These are Server-side eligibility/risk parameters, not execution-mode switches. They may be edited while a subscription is inactive, but the decision service still rejects an inactive subscription.
 
 ## Decision endpoint
 
@@ -56,7 +54,7 @@ An inactive subscription may be inspected and disabled, but it cannot be used to
 The Server checks, in order:
 
 1. active exact subscription;
-2. explicit Client trading enablement;
+2. Server-side Client market risk settings are configured;
 3. selected candle period and a recorded Server signal;
 4. supported, current-model, non-expired Server signal;
 5. configured confidence threshold;

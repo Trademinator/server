@@ -38,7 +38,7 @@ function f8PaperMarket(User $user, float $slippageBps, string $referencePrice = 
     ]);
     ClientMarketSetting::query()->create([
         'user_id' => $user->getKey(), 'market_subscription_id' => $subscription->getKey(),
-        'trading_enabled' => false, 'paper_enabled' => true, 'max_order_quote' => 100,
+        'max_order_quote' => 100,
         'max_position_quote' => null, 'reserve_quote' => 0, 'max_spread_bps' => 50,
         'max_taker_fee_bps' => 200, 'max_signal_drift_bps' => 500,
         'min_signal_confidence' => 0.6, 'block_conflicting_exposure' => true,
@@ -145,7 +145,7 @@ it('preserves the last decimal place in remaining position capacity', function (
     $user = User::factory()->create();
     [$secret, $subscription] = f8PaperMarket($user, 0, '1');
     $subscription->clientSetting->update([
-        'trading_enabled' => true, 'max_order_quote' => '1', 'max_position_quote' => '1',
+        'max_order_quote' => '1', 'max_position_quote' => '1',
     ]);
 
     $this->withToken($secret)->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', [

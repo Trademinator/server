@@ -43,7 +43,7 @@ function m5PaperMarket(User $user): array
     $subscription = m5Market($user);
     ClientMarketSetting::query()->create([
         'user_id' => $user->user_id, 'market_subscription_id' => $subscription->getKey(),
-        'trading_enabled' => false, 'paper_enabled' => true, 'max_order_quote' => 100,
+        'max_order_quote' => 100,
         'max_position_quote' => null, 'reserve_quote' => 0, 'max_spread_bps' => 5,
         'max_taker_fee_bps' => 50, 'min_signal_confidence' => 0.6,
         'block_conflicting_exposure' => true, 'paper_initial_quote' => 1000,
@@ -120,28 +120,39 @@ it('does not charge successful client requests against the authentication failur
     }
 });
 
-it('keeps trading disabled until explicitly enabled per market', function () {
+it('does not expose Client-local execution mode switches from the Server', function () {
     $user = User::factory()->create();
     $secret = m5Bearer($user);
     $subscription = m5Market($user);
 
-    $this->withToken($secret)->getJson('/api/v1/client/markets/'.$subscription->getKey())
-        ->assertOk()->assertJsonPath('market.settings.trading_enabled', false)
-        ->assertJsonPath('market.settings.paper_enabled', false);
+    $list = $this->withToken($secret)->getJson('/api/v1/client/markets')->assertOk();
+    expect($list->json('markets.0'))->not->toHaveKeys(['trading_enabled', 'paper_enabled']);
+
+    $market = $this->withToken($secret)->getJson('/api/v1/client/markets/'.$subscription->getKey())->assertOk();
+    expect($market->json('market.settings'))->not->toHaveKeys(['trading_enabled', 'paper_enabled']);
 });
 
-it('rejects enabling trading on an inactive subscription', function () {
+it('allows risk settings to be stored for an inactive subscription without making it actionable', function () {
     $user = User::factory()->create();
     $secret = m5Bearer($user);
     $subscription = m5Market($user, false);
 
     $this->withToken($secret)->putJson('/api/v1/client/markets/'.$subscription->getKey().'/settings', [
-        'trading_enabled' => true, 'paper_enabled' => false, 'max_order_quote' => 100,
+        'max_order_quote' => 100,
         'max_position_quote' => 500, 'reserve_quote' => 10, 'max_spread_bps' => 50,
         'max_taker_fee_bps' => 50, 'min_signal_confidence' => 0.6, 'block_conflicting_exposure' => true,
         'paper_initial_quote' => 10000, 'alert_on_signal_change' => false,
         'alert_on_execution_failure' => false, 'digest_frequency' => 'off',
-    ])->assertStatus(409)->assertJsonPath('error.code', 'subscription_inactive');
+    ])->assertOk();
+
+    $this->withToken($secret)->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', [
+        'reported_at_ms' => now()->getTimestampMs(),
+        'quote_balance' => 1000,
+        'base_balance' => 0,
+        'best_bid' => 100,
+        'best_ask' => 100,
+        'taker_fee_bps' => 10,
+    ])->assertStatus(409);
 });
 
 it('executes a paper signal at most once even when a retry uses a new idempotency key', function () {

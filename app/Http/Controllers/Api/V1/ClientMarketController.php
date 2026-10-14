@@ -22,8 +22,6 @@ final class ClientMarketController extends Controller
                 'exchange' => ['class' => $subscription->market->exchange->class, 'name' => $subscription->market->exchange->name],
                 'symbol' => $subscription->market->symbol,
                 'period' => $subscription->market->feed?->selected_period,
-                'trading_enabled' => (bool) ($subscription->clientSetting?->trading_enabled ?? false),
-                'paper_enabled' => (bool) ($subscription->clientSetting?->paper_enabled ?? false),
                 'latest_signal_id' => $subscription->market->latestSignal?->getKey(),
             ]);
 
@@ -62,8 +60,6 @@ final class ClientMarketController extends Controller
     {
         $item = $access->owned($request->user(), $subscription);
         $data = $request->validate([
-            'trading_enabled' => ['required', 'boolean'],
-            'paper_enabled' => ['required', 'boolean'],
             'max_order_quote' => ['required', 'numeric', 'gt:0'],
             'max_position_quote' => ['nullable', 'numeric', 'gt:0'],
             'reserve_quote' => ['required', 'numeric', 'min:0'],
@@ -82,10 +78,6 @@ final class ClientMarketController extends Controller
             ?? config('client.default_max_signal_drift_bps');
         $data['paper_slippage_bps'] ??= $item->clientSetting?->paper_slippage_bps
             ?? config('client.default_paper_slippage_bps');
-        if (! $item->active && ($data['trading_enabled'] || $data['paper_enabled'])) {
-            return response()->json(['error' => ['code' => 'subscription_inactive',
-                'message' => 'Reactivate the market subscription before enabling Client or paper trading.']], 409);
-        }
 
         $setting = ClientMarketSetting::query()->updateOrCreate([
             'user_id' => $request->user()->user_id, 'market_subscription_id' => $item->getKey(),
@@ -122,8 +114,6 @@ final class ClientMarketController extends Controller
     private function settingsPayload(?ClientMarketSetting $setting): array
     {
         return [
-            'trading_enabled' => (bool) ($setting?->trading_enabled ?? false),
-            'paper_enabled' => (bool) ($setting?->paper_enabled ?? false),
             'max_order_quote' => $setting?->max_order_quote,
             'max_position_quote' => $setting?->max_position_quote,
             'reserve_quote' => $setting?->reserve_quote ?? '0',
