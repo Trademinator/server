@@ -23,6 +23,8 @@ final class TestEnvironment
             'DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => ':memory:', 'DB_URL' => '',
             'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array', 'QUEUE_CONNECTION' => 'sync', 'MAIL_MAILER' => 'array',
             'OWNER_QUEUE_CONNECTIONS' => 'database,sync',
+            // Baseline tests are deployment-independent; memory tests opt in via config.
+            'SIGNAL_MEMORY_ENABLED' => 'false',
             'TICKER_HISTORY_CACHE_ENABLED' => 'false',
             'TICKER_HISTORY_CACHE_STORE' => 'array',
             // Ignore deployment caches without clearing or overwriting them.

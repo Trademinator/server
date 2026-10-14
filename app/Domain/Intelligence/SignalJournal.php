@@ -85,6 +85,19 @@ final class SignalJournal
                 return null;
             }
             $previous = $market->latestSignal()->first();
+            if (config('signal_memory.enabled')) {
+                // Do not let a late job replace a newer observation or rewind t0.
+                $previousAt = $previous !== null && $previous->period === $period
+                    ? max($previous->decision_at_ms ?? 0,
+                        (int) ($previous->payload['signal_memory_state']['last_processed_at_ms'] ?? 0)) : 0;
+                if (isset($signal['decision_at_ms']) && $signal['decision_at_ms'] < $previousAt) {
+                    return $previous;
+                }
+                // One atomic journal insert persists BOTH the verdict and its memory.
+                // The existing shared-market lock serializes readers/writers here.
+                $signal = app(SignalMemoryFilter::class)->apply($market, $period, $signal, $previous?->payload);
+                $signal['explanation'] = self::explain($signal['reason']);
+            }
             if ($previous !== null && $previous->period === $period && $previous->model_id === ($signal['model_id'] ?? null)
                 && $previous->decision_at_ms === ($signal['decision_at_ms'] ?? null) && $previous->reason === $signal['reason']
                 && $previous->action === $signal['action'] && ($previous->payload['regime'] ?? null) === ($signal['regime'] ?? null)
@@ -120,6 +133,9 @@ final class SignalJournal
 
     public static function label(string $action, string $reason): string
     {
+        if ($reason === 'awaiting_price_displacement') {
+            return 'Waiting for price displacement';
+        }
         if (! self::hasDecision($action, $reason)) {
             return 'Waiting for evidence';
         }
@@ -132,6 +148,11 @@ final class SignalJournal
     public static function explain(string $reason): string
     {
         return match ($reason) {
+            'awaiting_price_displacement' => 'The Server proposal is supported, but directional price displacement has not exceeded the ATR(3, EMA) threshold.',
+            'signal_memory_atr_unavailable' => 'Signal memory is waiting for positive, mature ATR(3, EMA) from contiguous completed candles.',
+            'signal_memory_inputs_unavailable' => 'Signal memory cannot validate its candle inputs. The pending reference was reset; no action is released.',
+            'signal_memory_source_mismatch' => 'Signal memory candles disagree with the proposal reference price. Rebuild the affected features before trading.',
+            'signal_memory_candle_already_processed' => 'This source candle was already processed. Changed evidence cannot emit a second action for the same candle.',
             'supported' => 'Similar historical market states support this signal.',
             'degraded_action_only' => 'Only Action KNN has sufficient evidence for this candle; Outcome KNN cannot confirm it. Supported BUY/HOLD/SELL are retained with Action-only confidence.',
             'degraded_outcome_only' => 'Outcome KNN has evidence, but Action KNN cannot confirm a trade. The Server returns defensive HOLD with zero confidence.',
