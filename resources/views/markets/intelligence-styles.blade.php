@@ -2,6 +2,7 @@
 <style>
     .pair-review .intelligence-progress { margin: 1rem 0; }
     .pair-review .intelligence-progress-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .3rem 1rem; margin-bottom: .4rem; font-size: .9rem; }
+    .pair-review .intelligence-signal-mode { display: block; margin-top: .2rem; font-size: .72rem; font-weight: 500; line-height: 1.25; opacity: .72; }
     /* Scoped Bootstrap 5.3 progress layout, alongside the existing custom page styles. */
     .pair-review .progress { display: flex; height: .65rem; overflow: hidden; background: #e2e8f0; border-radius: .4rem; }
     .pair-review .progress-bar { display: flex; flex-direction: column; justify-content: center; overflow: hidden; color: white; text-align: center; white-space: nowrap; background: #2563eb; }

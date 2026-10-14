@@ -75,7 +75,8 @@ it('shows a fresh Action-only HOLD with its actual neighbours, even when the ove
     $subscription = degradedSignalDisplayFixture($user);
 
     $this->actingAs($user)->get(route('markets.intelligence', $subscription->getKey()))
-        ->assertOk()->assertSee('HOLD (Action-only)')
+        ->assertOk()->assertSee('Action<strong>HOLD</strong>', false)
+        ->assertSee('degraded mode · Action KNN only')
         ->assertSee('Action-only fallback result')
         ->assertSee('Only Action KNN has sufficient evidence')
         ->assertSee('Holdout Failed')->assertSee('60.4')
@@ -98,7 +99,9 @@ it('shows a supported Action-only BUY in the intelligence page and dashboard', f
     $subscription = degradedSignalDisplayFixture($user, action: 'buy');
 
     $this->actingAs($user)->get(route('markets.intelligence', $subscription->getKey()))
-        ->assertOk()->assertSee('BUY (Action-only)')->assertSee('Action-only fallback result');
+        ->assertOk()->assertSee('Action<strong>BUY</strong>', false)
+        ->assertSee('degraded mode · Action KNN only')
+        ->assertSee('Action-only fallback result');
     $card = app(DashboardData::class)->markets($user)['cards']->first();
     expect($card['signal_fresh'])->toBeTrue()
         ->and($card['label'])->toBe('BUY (Action-only)');
@@ -118,6 +121,30 @@ it('does not reuse an expired Action-only recorded observation as a current sign
     $card = app(DashboardData::class)->markets($user)['cards']->first();
     expect($card['signal_fresh'])->toBeFalse()
         ->and($card['label'])->toBe('Waiting for evidence');
+});
+
+it('shows the underlying degraded Action KNN proposal while signal memory waits for displacement', function () {
+    $this->travelTo('2026-10-09 13:00:00 UTC');
+    config(['intelligence.max_signal_age_periods' => 2, 'intelligence.max_signal_age_seconds' => 86400]);
+    $user = User::factory()->create();
+    $subscription = degradedSignalDisplayFixture($user, action: 'buy');
+    $recorded = $subscription->market->latestSignal()->firstOrFail();
+    $payload = $recorded->payload;
+    $payload['action'] = 'hodl';
+    $payload['reason'] = 'awaiting_price_displacement';
+    $payload['confidence'] = 0.0;
+    $payload['scoring']['signal_memory'] = [
+        'status' => 'pending',
+        'raw_action' => 'buy',
+        'raw_reason' => 'degraded_action_only',
+    ];
+    $recorded->update(['action' => 'hodl', 'reason' => 'awaiting_price_displacement', 'payload' => $payload]);
+
+    $this->actingAs($user)->get(route('markets.intelligence', $subscription->getKey()))
+        ->assertOk()
+        ->assertSee('Action<strong>BUY</strong>', false)
+        ->assertSee('degraded mode · Action KNN only · awaiting price displacement')
+        ->assertDontSee('Action<strong>WAITING</strong>', false);
 });
 
 it('keeps abstentions distinct from supported degraded decisions', function () {

@@ -15,8 +15,39 @@
         <section class="guide-panel">
             <h2>Latest recorded signal</h2>
             <p class="guide-notice">{{ $explanation }}</p>
+            @php
+                $displayAction = \App\Domain\Intelligence\SignalJournal::hasDecision($signal['action'], $signal['reason'])
+                    ? ($signal['action'] === 'hodl' ? 'HOLD' : strtoupper($signal['action']))
+                    : 'WAITING';
+                $displayMode = match ($signal['reason']) {
+                    'degraded_action_only' => 'degraded mode · Action KNN only',
+                    'degraded_outcome_only' => 'degraded mode · Outcome KNN only',
+                    default => null,
+                };
+                $displayGate = null;
+                $signalMemory = $signal['scoring']['signal_memory'] ?? null;
+
+                if ($signal['reason'] === 'awaiting_price_displacement' && is_array($signalMemory)) {
+                    $rawAction = $signalMemory['raw_action'] ?? null;
+                    $rawReason = $signalMemory['raw_reason'] ?? null;
+
+                    if (in_array($rawAction, ['buy', 'hodl', 'sell'], true)) {
+                        $displayAction = $rawAction === 'hodl' ? 'HOLD' : strtoupper($rawAction);
+                        $displayMode = match ($rawReason) {
+                            'degraded_action_only' => 'degraded mode · Action KNN only',
+                            'degraded_outcome_only' => 'degraded mode · Outcome KNN only',
+                            default => null,
+                        };
+                        $displayGate = 'awaiting price displacement';
+                    }
+                }
+            @endphp
             <div class="review-metrics">
-                <div class="review-metric">Action<strong>{{ \App\Domain\Intelligence\SignalJournal::hasDecision($signal['action'], $signal['reason']) ? \App\Domain\Intelligence\SignalJournal::label($signal['action'], $signal['reason']) : 'WAITING' }}</strong></div>
+                <div class="review-metric">Action<strong>{{ $displayAction }}</strong>
+                    @if ($displayMode || $displayGate)
+                        <small class="intelligence-signal-mode">{{ collect([$displayMode, $displayGate])->filter()->implode(' · ') }}</small>
+                    @endif
+                </div>
                 <div class="review-metric">Confidence<strong>{{ \App\Helpers\Decimal::format($signal['confidence'] * 100, 1) }}%</strong></div>
                 <div class="review-metric">Market state<strong>{{ ucwords(str_replace('_', ' ', $signal['regime'] ?? 'neutral')) }}</strong></div>
                 <div class="review-metric">Effective neighbors<strong>{{ \App\Helpers\Decimal::format($signal['effective_neighbors'], 1) }}</strong></div>
