@@ -97,6 +97,16 @@ it('links all three actions from the owner backlog without exposing exception me
         ->assertDontSee('Feature replay exceeded its timeout');
 });
 
+it('shows public market details from serialized jobs without showing the payload', function () {
+    $owner = failedJobOwner();
+    recordedFailedJob();
+
+    $this->actingAs($owner)->get(route('owner.queue-backlog'))
+        ->assertOk()->assertSee('Exchange')->assertSee('Market')->assertSee('Period')
+        ->assertSee('kraken')->assertSee('BTC/USD')->assertSee('15m')
+        ->assertDontSee('O:');
+});
+
 it('sorts failed job headers in both directions and shows exception names', function (string $sort, string $direction, array $order) {
     $owner = failedJobOwner();
     $ids = [

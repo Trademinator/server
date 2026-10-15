@@ -65,7 +65,7 @@ class ReportController extends Controller
         $failedDirection = $failedFilters['failed_direction'] = $failedFilters['failed_direction'] ?? ($failedSort === 'failed_at' ? 'desc' : 'asc');
         $queueBacklog = $backlog->snapshot();
         $failedQuery = DB::connection(config('queue.failed.database'))->table(config('queue.failed.table', 'failed_jobs'))
-            ->select('uuid', 'connection', 'queue', 'exception', 'failed_at');
+            ->select('uuid', 'connection', 'queue', 'exception', 'failed_at', 'payload');
         foreach (match ($failedSort) {
             'connection' => ['connection', 'queue'],
             default => [$failedSort],
@@ -73,6 +73,7 @@ class ReportController extends Controller
             $failedQuery->orderBy($column, $failedDirection);
         }
         $failed = $failedQuery->orderByDesc('id')->limit(10)->get();
+        app(\App\Domain\Operations\FailedJobMarketContext::class)->enrich($failed);
         $failed->each(function ($job): void {
             $name = trim(Str::before(Str::before((string) $job->exception, "\n"), ':'));
             $job->exception_name = $name !== '' ? $name : 'Unknown exception';

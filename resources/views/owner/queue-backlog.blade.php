@@ -30,6 +30,7 @@
                     </a>
                 </th>
             @endforeach
+            <th scope="col">Exchange</th><th scope="col">Market</th><th scope="col">Period</th>
             <th scope="col">Actions</th>
         </tr></thead><tbody>
             @forelse($failed as $job)
@@ -38,10 +39,13 @@
                     <td>{{ $job->connection }} / {{ $job->queue }}</td>
                     <td><code>{{ $job->exception_name }}</code></td>
                     <td><x-display-time :value="$job->failed_at" /></td>
+                    <td>{{ $job->market_exchange ?? '—' }}</td>
+                    <td>{{ $job->market_symbol ?? '—' }}</td>
+                    <td>{{ $job->market_period ?? '—' }}</td>
                     <td><x-owner.failed-job-actions :job="$job->uuid" :view="true" /></td>
                 </tr>
             @empty
-                <tr><td colspan="5">No recorded failures.</td></tr>
+                <tr><td colspan="8">No recorded failures.</td></tr>
             @endforelse
         </tbody></table></div>
     </section>
