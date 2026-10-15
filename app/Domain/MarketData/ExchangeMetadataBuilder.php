@@ -28,7 +28,7 @@ class ExchangeMetadataBuilder
             if (php_ini_loaded_file()) {
                 array_push($command, '-c', php_ini_loaded_file());
             }
-            array_push($command, '-d', 'memory_limit=128M', $project.'/scripts/build-exchange-metadata.php', $id);
+            array_push($command, '-d', 'memory_limit=512M', $project.'/scripts/build-exchange-metadata.php', $id);
             $process = new Process($command);
             $process->setTimeout(30);
             try {
