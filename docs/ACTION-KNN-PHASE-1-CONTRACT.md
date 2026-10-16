@@ -13,8 +13,7 @@ Base: Trademinator Server GitHub `main` at `a561f688b4973ee9b5168d05b6059c4264be
   `closed_candle_close`. This patch **does not** introduce intraperiod ticker inputs or
   reconstruct soft-closed candle features in the Server. A Client-computed soft close
   must not be described as the Server KNN input until there is a separate verified
-  feature-input contract and replayable data. Client bid/ask inputs currently affect
-  risk/execution checks; they do not replace KNN feature vectors.
+  feature-input contract and replayable data. Client-local bid/ask data affect only Client execution checks; they do not replace Server KNN feature vectors.
 
 ## HOLD and abstention
 
@@ -35,10 +34,10 @@ rare-action gates from observed holdouts instead of silently lowering thresholds
 
 The **Client API always represents abstention as `action: hold`**, with
 `evidence_status: abstaining` and the original Server reason preserved. A supported
-HOLD also has `action: hold`, but `evidence_status: supported`. The Client's
-`/decision` response returns `reason: server_abstention` and `action: hold` when
-Server evidence is unavailable; `server_signal.reason` gives the underlying detail.
-No BUY or SELL becomes eligible through this mapping.
+HOLD also has `action: hold`, but `evidence_status: supported`. The read-only GET /markets/{subscription} response preserves the original Server reason
+in market.signal.reason; is_fresh, is_current_model, and expires_at_ms allow independent
+Client verification. There is no live Server /decision endpoint or Server-side eligibility
+verdict. The Client owns all execution checks.
 
 ## Verification
 

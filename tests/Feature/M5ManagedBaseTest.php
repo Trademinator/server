@@ -108,77 +108,16 @@ function f9SellMarket(User $user): array
     return [f9Bearer($user), $subscription];
 }
 
-function f9DecisionState(array $extra = []): array
-{
-    return [
-        'reported_at_ms' => now()->getTimestampMs(),
-        'quote_balance' => 0,
-        'base_balance' => 10,
-        'position_quote' => 1000,
-        'best_bid' => 100,
-        'best_ask' => 100,
-        'taker_fee_bps' => 10,
-        ...$extra,
-    ];
-}
-
-it('caps a live sell decision to the client managed base balance', function () {
+it('keeps managed SELL quantities on the Client rather than exposing server order sizing', function () {
     $this->freezeTime();
-    $user = User::factory()->create();
-    [$secret, $subscription] = f9SellMarket($user);
-    $url = '/api/v1/client/markets/'.$subscription->getKey().'/decision';
-
-    $response = $this->withToken($secret)->postJson($url, f9DecisionState([
-        'managed_base_balance' => 0.25,
-    ]))->assertOk()
-        ->assertJsonPath('eligible', true)
-        ->assertJsonPath('action', 'sell')
-        ->assertJsonPath('action_meaning', 'supported_top_with_downward_future_move')
-        ->assertJsonPath('sizing.managed_base_cap_applied', true);
-
-    expect((float) $response->json('sizing.base_amount'))->toBe(0.25);
-    expect((float) $response->json('sizing.wallet_base_balance'))->toBe(10.0);
-    expect((float) $response->json('sizing.managed_base_balance'))->toBe(0.25);
-});
-
-it('preserves legacy sell sizing when managed base balance is omitted', function () {
-    $this->freezeTime();
-    $user = User::factory()->create();
-    [$secret, $subscription] = f9SellMarket($user);
-
-    $response = $this->withToken($secret)
-        ->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', f9DecisionState())
-        ->assertOk()
-        ->assertJsonPath('eligible', true)
-        ->assertJsonPath('sizing.managed_base_cap_applied', false);
-
-    expect((float) $response->json('sizing.base_amount'))->toBe(1.0);
-    expect($response->json('sizing.managed_base_balance'))->toBeNull();
-});
-
-it('treats zero managed base as an explicit do-not-sell instruction', function () {
-    $this->freezeTime();
-    $user = User::factory()->create();
-    [$secret, $subscription] = f9SellMarket($user);
-
-    $this->withToken($secret)
-        ->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', f9DecisionState([
-            'managed_base_balance' => 0,
-        ]))
-        ->assertOk()
-        ->assertJsonPath('eligible', false)
-        ->assertJsonPath('reason', 'managed_base_unavailable');
-});
-
-it('rejects managed base greater than the reported wallet base balance', function () {
-    $this->freezeTime();
-    $user = User::factory()->create();
-    [$secret, $subscription] = f9SellMarket($user);
-
-    $this->withToken($secret)
-        ->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', f9DecisionState([
-            'managed_base_balance' => 10.01,
-        ]))
-        ->assertUnprocessable()
-        ->assertJsonValidationErrors('managed_base_balance');
+    [$secret, $subscription] = f9SellMarket(User::factory()->create());
+    $response = $this->withToken($secret)->getJson('/api/v1/client/markets/'.$subscription->getKey())
+        ->assertOk()->assertJsonPath('market.signal.action', 'sell')
+        ->assertJsonPath('market.signal.action_meaning', 'supported_top_with_downward_future_move');
+    expect($response->json('market.signal'))->not->toHaveKeys([
+        'wallet_base_balance', 'managed_base_balance', 'base_amount', 'sizing',
+    ]);
+    $this->withToken($secret)->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', [
+        'managed_base_balance' => 0.25, 'base_balance' => 10,
+    ])->assertNotFound();
 });

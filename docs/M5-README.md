@@ -6,7 +6,7 @@ M5 introduces the first authenticated Client contract without moving exchange cr
 
 The Client API is versioned under `/api/v1/client`. It uses bearer tokens created at **Settings → Client API keys**. New keys are opaque `tmk_…` secrets, stored only as SHA-256 digests with a short prefix for identification. The full secret is shown once. Keys can be labelled, expired and revoked independently; owner suspension/revocation invalidates all active Client keys. Existing legacy UUID API keys are migrated into the hashed key table and continue to authenticate until revoked.
 
-Every Client request re-resolves the authenticated user. Market-specific endpoints also resolve the exact market subscription. A subscription is exchange + symbol specific. New decision requests fail closed when the subscription is inactive. Responses are `Cache-Control: private, no-store`, carry `X-Trademinator-API-Version: 1`, and decision responses have an explicit expiry timestamp.
+Every Client request re-resolves the authenticated user. Market-specific endpoints also resolve the exact market subscription. A subscription is exchange + symbol specific. The Client must not execute new orders for an inactive subscription; Server intelligence retrieval remains read-only. Responses are `Cache-Control: private, no-store`, carry `X-Trademinator-API-Version: 1`, and intelligence responses include signal provenance and an explicit expiry timestamp.
 
 Environment controls:
 
@@ -24,8 +24,7 @@ CLIENT_PAPER_INITIAL_QUOTE=10000
 multiplier R on demand. It uses the existing saved questionnaire; no subscription
 ID, request body or new database column is needed. No saved questionnaire returns
 exactly `0.25`. The versioned multiplicative model naturally produces values in
-`[0.01, 1]` without clipping. This endpoint does not enable trading or change the
-existing decision/paper-trading services.
+`[0.01, 1]` without clipping. This endpoint does not enable trading or modify the independent paper simulator.
 
 See [CLIENT-RISK-FACTOR.md](CLIENT-RISK-FACTOR.md) for the complete request/response
 contract, answer mappings, unknown-answer behavior and Client integration rules.
@@ -45,26 +44,30 @@ Live/paper mode selection is Client-local. The Server does not enable or disable
 - paper starting quote balance
 - signal/failure alert preferences and digest cadence
 
-These are Server-side eligibility/risk parameters, not execution-mode switches. They may be edited while a subscription is inactive, but the decision service still rejects an inactive subscription.
+These are configuration preferences consumed by the Client, not Server authorization to place orders. They may be edited while a subscription is inactive; the Client must refuse new trade execution on inactive subscriptions. Only Client-local trading state is authoritative.
 
-## Decision endpoint
+## Intelligence retrieval (replaces the live decision endpoint)
 
-`POST /api/v1/client/markets/{subscription}/decision` accepts current Client-side balances and public execution state. Exchange credentials remain local to the Client.
+GET /api/v1/client/markets/{subscription} returns the authenticated subscription,
+selected candle period, Server signal, and Client configuration. The signal includes
+action, action_meaning, reason, evidence_status, confidence,
+decision_at_ms, recorded_at_ms, period, model_id, is_current_model,
+is_fresh, expires_at_ms, reference_price, reference_price_source,
+prediction_input_basis, and available Outcome/Action scoring provenance.
 
-The Server checks, in order:
+POST /api/v1/client/markets/{subscription}/decision has been removed (HTTP 404).
+It must not receive wallet balances, positions, managed quantities, order-book snapshots,
+account fee tiers or exchange constraints. The Server does not calculate live order sizing
+or eligibility. The Client independently enforces subscriptions, evidence freshness, model
+validity, exchange state, Comptability, fee gates, risk factor R, minimums, dust handling,
+open-order uniqueness, and order execution. A signal is advice, not an order authorization.
+A degraded Action-only BUY or SELL is not overwritten merely because Outcome is unavailable.
+Supported HOLD and abstention both map to action: hold but have distinct evidence status
+and preserve the original reason.
 
-1. active exact subscription;
-2. Server-side Client market risk settings are configured;
-3. selected candle period and a recorded Server signal;
-4. supported, current-model, non-expired Server signal;
-5. configured confidence threshold;
-6. freshness of the Client state payload;
-7. optional conflicting-exposure block;
-8. spread and taker-fee ceilings;
-9. available balance, quote reserve, order cap and position cap;
-10. optional exchange minimum amount, minimum cost and amount-step constraints.
-
-The response is an **eligibility context**, not an exchange order and not proof the Client acted. A Server HOLD is returned as `server_hold`, not as a Client skip. An abstention remains an abstention.
+The live Client does not post balances or position information. The independent Server
+paper simulator remains a separate legacy, synthetic-only API, operating exclusively on
+Server-owned synthetic balances. Its endpoint does not authorize real exchange orders.
 
 ## Client reports
 

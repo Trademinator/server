@@ -145,14 +145,14 @@ it('allows risk settings to be stored for an inactive subscription without makin
         'alert_on_execution_failure' => false, 'digest_frequency' => 'off',
     ])->assertOk();
 
-    $this->withToken($secret)->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', [
-        'reported_at_ms' => now()->getTimestampMs(),
-        'quote_balance' => 1000,
-        'base_balance' => 0,
-        'best_bid' => 100,
-        'best_ask' => 100,
-        'taker_fee_bps' => 10,
-    ])->assertStatus(409);
+    $this->withToken($secret)
+        ->getJson('/api/v1/client/markets/'.$subscription->getKey())
+        ->assertOk()->assertJsonPath('market.active', false);
+
+    $this->withToken($secret)
+        ->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', [
+            'quote_balance' => 1000, 'base_balance' => 1,
+        ])->assertNotFound();
 });
 
 it('executes a paper signal at most once even when a retry uses a new idempotency key', function () {

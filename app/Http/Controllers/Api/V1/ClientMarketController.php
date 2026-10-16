@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Domain\Client\ClientDecisionService;
+use App\Domain\Client\ClientSignalPayload;
 use App\Domain\Client\ClientMarketAccess;
-use App\Domain\Intelligence\SignalSemantics;
 use App\Http\Controllers\Controller;
 use App\Models\ClientMarketSetting;
 use Illuminate\Http\JsonResponse;
@@ -28,7 +27,7 @@ final class ClientMarketController extends Controller
         return response()->json(['api_version' => 1, 'markets' => $items]);
     }
 
-    public function show(Request $request, string $subscription, ClientMarketAccess $access): JsonResponse
+    public function show(Request $request, string $subscription, ClientMarketAccess $access, ClientSignalPayload $signals): JsonResponse
     {
         $item = $access->owned($request->user(), $subscription);
 
@@ -38,21 +37,7 @@ final class ClientMarketController extends Controller
             'symbol' => $item->market->symbol, 'tick_size' => $item->market->tick_size,
             'period' => $item->market->feed?->selected_period,
             'settings' => $this->settingsPayload($item->clientSetting),
-            'signal' => $item->market->latestSignal === null ? null : [
-                'id' => $item->market->latestSignal->getKey(),
-                'action' => SignalSemantics::clientAction($item->market->latestSignal->action, $item->market->latestSignal->reason),
-                'action_meaning' => $item->market->latestSignal->payload['action_meaning']
-                    ?? SignalSemantics::actionMeaning($item->market->latestSignal->action, $item->market->latestSignal->reason,
-                        $item->market->latestSignal->payload['scoring'] ?? null),
-                'reason' => $item->market->latestSignal->reason,
-                'evidence_status' => SignalSemantics::evidenceStatus($item->market->latestSignal->reason),
-                'recorded_at_ms' => $item->market->latestSignal->recorded_at_ms,
-                'decision_at_ms' => $item->market->latestSignal->decision_at_ms,
-                'reference_price' => $item->market->latestSignal->payload['reference_price'] ?? null,
-                'reference_price_source' => $item->market->latestSignal->payload['reference_price_source'] ?? null,
-                'prediction_input_basis' => $item->market->latestSignal->payload['prediction_input_basis'] ?? null,
-                'scoring' => $item->market->latestSignal->payload['scoring'] ?? null,
-            ],
+            'signal' => $signals->for($item),
         ]]);
     }
 
@@ -84,31 +69,6 @@ final class ClientMarketController extends Controller
         ], $data);
 
         return response()->json(['api_version' => 1, 'settings' => $this->settingsPayload($setting)]);
-    }
-
-    public function decision(Request $request, string $subscription, ClientMarketAccess $access, ClientDecisionService $decisions): JsonResponse
-    {
-        $item = $access->active($request->user(), $subscription);
-        $data = $request->validate([
-            'reported_at_ms' => ['required', 'integer', 'min:1'],
-            'quote_balance' => ['required', 'numeric', 'min:0'],
-            'base_balance' => ['required', 'numeric', 'min:0'],
-            'managed_base_balance' => ['nullable', 'numeric', 'min:0', 'lte:base_balance'],
-            'position_quote' => ['nullable', 'numeric', 'min:0'],
-            'best_bid' => ['required', 'numeric', 'gt:0'],
-            'best_ask' => ['required', 'numeric', 'gt:0'],
-            'taker_fee_bps' => ['required', 'numeric', 'min:0', 'max:10000'],
-            'requested_quote' => ['nullable', 'numeric', 'gt:0'],
-            'minimum_amount' => ['nullable', 'numeric', 'gt:0'],
-            'minimum_cost' => ['nullable', 'numeric', 'gt:0'],
-            'amount_step' => ['nullable', 'numeric', 'gt:0'],
-            'conflicting_exposure' => ['sometimes', 'boolean'],
-        ]);
-        if ((float) $data['best_ask'] < (float) $data['best_bid']) {
-            return response()->json(['error' => ['code' => 'invalid_order_book', 'message' => 'best_ask must be at least best_bid.']], 422);
-        }
-
-        return response()->json($decisions->evaluate($item, $data));
     }
 
     private function settingsPayload(?ClientMarketSetting $setting): array

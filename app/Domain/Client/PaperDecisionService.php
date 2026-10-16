@@ -11,13 +11,17 @@ use App\Models\MarketSignal;
 use App\Models\MarketSubscription;
 use Illuminate\Support\Facades\DB;
 
-final class ClientDecisionService
+/**
+ * Evaluates only Server-owned synthetic paper balances.
+ * Live execution eligibility and sizing are Client-local responsibilities.
+ */
+final class PaperDecisionService
 {
     private const SCALE = 18;
 
     public function __construct(private SignalFreshness $freshness) {}
 
-    public function evaluate(MarketSubscription $subscription, array $state, string $mode = 'live'): array
+    public function evaluate(MarketSubscription $subscription, array $state): array
     {
         $subscription->loadMissing('market.exchange', 'market.feed', 'market.latestSignal', 'clientSetting');
         $now = now()->getTimestampMs();
@@ -30,7 +34,7 @@ final class ClientDecisionService
             'api_version' => 1,
             'subscription_id' => $subscription->getKey(),
             'active_subscription' => (bool) $subscription->active,
-            'mode' => $mode,
+            'mode' => 'paper',
             'checked_at_ms' => $now,
             'expires_at_ms' => $expires,
             'server_signal' => $this->signalPayload($signal),

@@ -140,24 +140,12 @@ it('preserves JSON decimal prices throughout paper sizing execution and balances
     expect($event->result['quantity'])->toBe('1000.000000000000000000');
 });
 
-it('preserves the last decimal place in remaining position capacity', function () {
-    $this->freezeTime();
+it('does not offer a live server-side decision sizing endpoint', function () {
     $user = User::factory()->create();
-    [$secret, $subscription] = f8PaperMarket($user, 0, '1');
-    $subscription->clientSetting->update([
-        'max_order_quote' => '1', 'max_position_quote' => '1',
-    ]);
+    [$secret, $subscription] = f8PaperMarket($user, 0);
 
-    $this->withToken($secret)->postJson('/api/v1/client/markets/'.$subscription->getKey().'/decision', [
-        'reported_at_ms' => now()->getTimestampMs(),
-        'best_bid' => '1',
-        'best_ask' => '1',
-        'taker_fee_bps' => 0,
-        'quote_balance' => '1',
-        'base_balance' => '0',
-        'position_quote' => '0.900000000000000001',
-    ])->assertOk()
-        ->assertJsonPath('eligible', true)
-        ->assertJsonPath('sizing.quote_amount', '0.099999999999999999')
-        ->assertJsonPath('sizing.base_amount', '0.099999999999999999');
+    $this->withToken($secret)->postJson(
+        '/api/v1/client/markets/'.$subscription->getKey().'/decision',
+        ['quote_balance' => '1', 'base_balance' => '0', 'position_quote' => '0.900000000000000001']
+    )->assertNotFound();
 });

@@ -17,7 +17,7 @@ final class ClientPaperTrading
     private const SCALE = 18;
 
     public function __construct(
-        private ClientDecisionService $decisions,
+        private PaperDecisionService $decisions,
         private PaperExecutionModel $execution,
         private TickerRepository $tickers,
         private CandleTimeframe $timeframe,
@@ -84,7 +84,7 @@ final class ClientPaperTrading
                 'position_quote' => $positionQuote,
                 'conflicting_exposure' => false,
             ];
-            $decision = $this->decisions->evaluate($subscription, $state, 'paper');
+            $decision = $this->decisions->evaluate($subscription, $state);
             $event = 'skipped';
             $reason = $decision['reason'];
             $side = null;
