@@ -14,7 +14,7 @@ use RuntimeException;
 final class IntelligenceTrainer
 {
     // Rubix 3 changes numeric feature typing and serialized estimator state.
-    public const VERSION = 'm6-outcome-action-knn-v7';
+    public const VERSION = 'm6-outcome-action-rubix-weighted-knn-v8';
 
     public function __construct(
         private DatasetStore $datasets,

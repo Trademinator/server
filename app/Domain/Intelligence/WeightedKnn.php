@@ -3,7 +3,9 @@
 namespace App\Domain\Intelligence;
 
 use InvalidArgumentException;
-use SplPriorityQueue;
+use Rubix\ML\Classifiers\KNearestNeighbors;
+use Rubix\ML\Datasets\Labeled;
+use Rubix\ML\Datasets\Unlabeled;
 
 /** Bounded top-K search with normalized RMS distance and inverse-distance voting. */
 final class WeightedKnn
@@ -95,54 +97,26 @@ final class WeightedKnn
         return $this->neighborsPrepared($this->prepareRows($rows), $vector, $k, $asOfMs, $weights);
     }
 
-    /** Hot path for rows and query vectors already validated as finite unit-interval floats. */
+    /** Rubix performs nearest-neighbor selection over a streaming-filtered snapshot. */
     public function neighborsIterable(iterable $rows, array $vector, int $k, int $asOfMs, array $weights = []): array
     {
         if ($k < 1 || $vector === []) {
             throw new InvalidArgumentException('K and feature count must be positive.');
         }
         $vector = $this->prepareVector($vector);
-        $dimensions = count($vector);
-        $weights = $this->prepareWeights($weights, $dimensions, 'Query');
-
-        $heap = new SplPriorityQueue;
-        $heap->setExtractFlags(SplPriorityQueue::EXTR_BOTH);
-        $cutoff = $this->maxDistance;
-        $index = 0;
+        $weights = $this->prepareWeights($weights, count($vector), 'Query');
+        $eligible = [];
         foreach ($rows as $row) {
             $prepared = $this->prepareRows([$row])[0];
-            if (count($prepared['vector']) !== $dimensions) {
+            if (count($prepared['vector']) !== count($vector)) {
                 throw new InvalidArgumentException('Knowledge feature dimensions do not match.');
             }
-            if ($prepared['decision_at_ms'] >= $asOfMs || $prepared['label_available_at_ms'] >= $asOfMs) {
-                $index++;
-                continue;
+            if ($prepared['decision_at_ms'] < $asOfMs && $prepared['label_available_at_ms'] < $asOfMs) {
+                $eligible[] = $prepared;
             }
-            $rowWeights = $prepared['feature_weights'] ?? [];
-            $distance = $weights === [] && $rowWeights === []
-                ? $this->unweightedDistance($vector, $prepared['vector'], $dimensions, $cutoff)
-                : $this->weightedDistance($vector, $prepared['vector'], $weights, $rowWeights, $dimensions, $cutoff);
-            if ($distance !== null && $distance <= $cutoff && $distance <= $this->maxDistance) {
-                $heap->insert(['distance' => $distance, 'label' => $prepared['label'],
-                    'decision_at_ms' => $prepared['decision_at_ms']], [$distance, $index]);
-                if ($heap->count() > $k) {
-                    $heap->extract();
-                }
-                if ($heap->count() === $k) {
-                    $heap->top();
-                    $worst = $heap->current();
-                    $cutoff = min($this->maxDistance, (float) $worst['data']['distance']);
-                }
-            }
-            $index++;
         }
 
-        $neighbors = [];
-        foreach ($heap as $entry) {
-            $neighbors[] = $entry['data'];
-        }
-
-        return array_reverse($neighbors);
+        return $this->rubixNeighbors($eligible, $vector, $k, $weights);
     }
 
     public function neighborsPrepared(array $rows, array $vector, int $k, int $asOfMs, array $weights = []): array
@@ -154,43 +128,44 @@ final class WeightedKnn
         if ($weights !== [] && count($weights) !== $dimensions) {
             throw new InvalidArgumentException('Query feature weights do not match the vector.');
         }
-        if ($rows !== [] && count($rows[array_key_first($rows)]['vector']) !== $dimensions) {
-            throw new InvalidArgumentException('Knowledge feature dimensions do not match.');
+        $eligible = [];
+        foreach ($rows as $row) {
+            if (count($row['vector']) !== $dimensions) {
+                throw new InvalidArgumentException('Knowledge feature dimensions do not match.');
+            }
+            if ($row['decision_at_ms'] < $asOfMs && $row['label_available_at_ms'] < $asOfMs) {
+                $eligible[] = $row;
+            }
         }
 
-        $heap = new SplPriorityQueue;
-        $heap->setExtractFlags(SplPriorityQueue::EXTR_BOTH);
-        $cutoff = $this->maxDistance;
-        foreach ($rows as $index => $row) {
-            if ($row['decision_at_ms'] >= $asOfMs || $row['label_available_at_ms'] >= $asOfMs) {
-                continue;
-            }
-            $rowWeights = $row['feature_weights'] ?? [];
-            $distance = $weights === [] && $rowWeights === []
-                ? $this->unweightedDistance($vector, $row['vector'], $dimensions, $cutoff)
-                : $this->weightedDistance($vector, $row['vector'], $weights, $rowWeights, $dimensions, $cutoff);
-            if ($distance === null || $distance > $cutoff || $distance > $this->maxDistance) {
-                continue;
-            }
-            $heap->insert(['distance' => $distance, 'label' => $row['label'],
-                'decision_at_ms' => $row['decision_at_ms']], [$distance, $index]);
-            if ($heap->count() > $k) {
-                $heap->extract();
-            }
-            if ($heap->count() === $k) {
-                $heap->top();
-                $worst = $heap->current();
-                $cutoff = min($this->maxDistance, (float) $worst['data']['distance']);
-            }
-        }
-        $neighbors = [];
-        foreach ($heap as $entry) {
-            $neighbors[] = $entry['data'];
-        }
-
-        return array_reverse($neighbors);
+        return $this->rubixNeighbors($eligible, $vector, $k, $weights);
     }
 
+    private function rubixNeighbors(array $rows, array $vector, int $k, array $weights): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+        $n = count($vector);
+        $samples = [];
+        foreach ($rows as $row) {
+            $samples[] = [...$row['vector'], ...($row['feature_weights'] ?? array_fill(0, $n, 1.0))];
+        }
+        $rubix = new RubixNearestNeighbors($k, true, new RubixWeightedRms);
+        $rubix->attach($samples);
+        $nearest = [];
+        foreach ($rubix->locate([...$vector, ...($weights ?: array_fill(0, $n, 1.0))]) as $entry) {
+            if ($entry['distance'] <= $this->maxDistance) {
+                $row = $rows[$entry['index']];
+                $nearest[] = ['distance' => $entry['distance'], 'label' => $row['label'],
+                    'decision_at_ms' => $row['decision_at_ms']];
+            }
+        }
+
+        return $nearest;
+    }
+
+    /** Rubix 3.1 owns the weighted classification distribution. */
     public function vote(array $neighbors, int $k, array $classWeights = []): array
     {
         foreach ($classWeights as $label => $weight) {
@@ -203,43 +178,59 @@ final class WeightedKnn
         if ($neighbors === []) {
             return self::abstain('no_similar_history');
         }
-        // Exact matches carry all evidence. Distant rows must not inflate their effective count.
         if ($neighbors[0]['distance'] <= 1e-12) {
-            $neighbors = array_values(array_filter($neighbors, fn (array $row): bool => $row['distance'] <= 1e-12));
+            $neighbors = array_values(array_filter($neighbors,
+                fn (array $row): bool => $row['distance'] <= 1e-12));
         }
-        $votes = ['buy' => 0.0, 'hodl' => 0.0, 'sell' => 0.0];
-        $weightSum = $squaredSum = $similaritySum = 0.0;
         foreach ($neighbors as $neighbor) {
-            if (! array_key_exists($neighbor['label'], $votes)) {
+            if (! in_array($neighbor['label'], ['buy', 'hodl', 'sell'], true)) {
                 throw new InvalidArgumentException('Unknown knowledge label.');
             }
-            $weight = ($classWeights[$neighbor['label']] ?? 1.0) / max(1e-9, $neighbor['distance']);
-            $votes[$neighbor['label']] += $weight;
-            $weightSum += $weight;
-            $squaredSum += $weight ** 2;
-            $similaritySum += $weight * (1 - $neighbor['distance']);
         }
-        if ($weightSum <= 0) {
+        $classifier = new KNearestNeighbors(count($neighbors), true);
+        $classifier->train(new Labeled(
+            array_map(static fn (array $row): array => [(float) $row['distance']], $neighbors),
+            array_column($neighbors, 'label')
+        ));
+        $rubix = $classifier->proba(new Unlabeled([[0.0]]))[0];
+        $raw = ['buy' => 0.0, 'hodl' => 0.0, 'sell' => 0.0];
+        $sum = $squared = $similarity = 0.0;
+        foreach ($neighbors as $row) {
+            // Rubix ML 3.1 weighted KNN uses 1 / (1 + distance).
+            $weight = ($classWeights[$row['label']] ?? 1.0) / (1.0 + $row['distance']);
+            $sum += $weight;
+            $squared += $weight * $weight;
+            $similarity += $weight * (1 - $row['distance']);
+        }
+        if ($sum <= 0.0) {
             return self::abstain('no_weighted_evidence');
         }
-        $effective = $weightSum ** 2 / $squaredSum;
-        $probabilities = array_map(fn (float $vote): float => $vote / $weightSum, $votes);
-        arsort($probabilities);
-        $ordered = array_values($probabilities);
+        foreach ($raw as $label => &$share) {
+            $share = ($rubix[$label] ?? 0.0) * ($classWeights[$label] ?? 1.0);
+        }
+        unset($share);
+        $total = array_sum($raw);
+        if ($total <= 0.0) {
+            return self::abstain('no_weighted_evidence');
+        }
+        $votes = array_map(static fn (float $share): float => $share / $total, $raw);
+        arsort($votes);
+        $values = array_values($votes);
+        $effective = $sum * $sum / $squared;
         $evidence = ['neighbors' => count($neighbors), 'effective_neighbors' => $effective,
-            'similarity' => $similaritySum / $weightSum, 'votes' => $probabilities];
+            'similarity' => $similarity / $sum, 'votes' => $votes];
         if ($effective + 1e-9 < $this->minEffective) {
             return array_replace(self::abstain('insufficient_effective_neighbors'), $evidence);
         }
-        if (abs($ordered[0] - $ordered[1]) < 1e-12) {
+        if (abs($values[0] - $values[1]) < 1e-12) {
             return array_replace(self::abstain('tied_votes'), $evidence);
         }
-        $confidence = $ordered[0] * $evidence['similarity'];
+        $confidence = $values[0] * $evidence['similarity'];
         if ($confidence < $this->minConfidence) {
             return array_replace(self::abstain('weak_consensus'), $evidence);
         }
 
-        return ['action' => array_key_first($probabilities), 'confidence' => $confidence,
+        return ['action' => array_key_first($votes), 'confidence' => $confidence,
             'reason' => 'supported', ...$evidence];
     }
 
@@ -305,44 +296,4 @@ final class WeightedKnn
         unset($weight);
     }
 
-    private function unweightedDistance(array $vector, array $other, int $dimensions, float $cutoff): ?float
-    {
-        $sum = 0.0;
-        $limit = $cutoff * $cutoff * $dimensions;
-        for ($i = 0; $i < $dimensions; $i++) {
-            $sum += ($vector[$i] - $other[$i]) ** 2;
-            if ($sum > $limit + self::EARLY_EXIT_EPSILON) {
-                return null;
-            }
-        }
-
-        return sqrt($sum / $dimensions);
-    }
-
-    private function weightedDistance(array $vector, array $other, array $weights, array $otherWeights,
-        int $dimensions, float $cutoff): ?float
-    {
-        $effectiveDimensions = 0.0;
-        for ($i = 0; $i < $dimensions; $i++) {
-            $effectiveDimensions += min($weights[$i] ?? 1.0, $otherWeights[$i] ?? 1.0);
-        }
-        if ($effectiveDimensions <= 0) {
-            return null;
-        }
-
-        $sum = 0.0;
-        $limit = $cutoff * $cutoff * $effectiveDimensions;
-        for ($i = 0; $i < $dimensions; $i++) {
-            $weight = min($weights[$i] ?? 1.0, $otherWeights[$i] ?? 1.0);
-            if ($weight <= 0) {
-                continue;
-            }
-            $sum += $weight * ($vector[$i] - $other[$i]) ** 2;
-            if ($sum > $limit + self::EARLY_EXIT_EPSILON) {
-                return null;
-            }
-        }
-
-        return sqrt($sum / $effectiveDimensions);
-    }
 }

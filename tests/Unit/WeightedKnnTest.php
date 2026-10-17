@@ -22,7 +22,7 @@ it('weights nearby examples and excludes labels unavailable at decision time', f
 
     expect($result['action'])->toBe('buy');
     expect($result['neighbors'])->toBe(3);
-    expect($result['confidence'])->toBeGreaterThan(0.75);
+    expect($result['confidence'])->toBeGreaterThan(0.55);
 });
 
 it('abstains on distant evidence ties and too few effective exact neighbors', function () {

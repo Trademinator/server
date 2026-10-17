@@ -4,6 +4,9 @@ namespace App\Domain\Intelligence;
 
 use App\Domain\Research\SemanticLabels;
 use InvalidArgumentException;
+use Rubix\ML\Classifiers\KNearestNeighbors;
+use Rubix\ML\Datasets\Labeled;
+use Rubix\ML\Datasets\Unlabeled;
 
 final class OutcomeKnn
 {
@@ -27,13 +30,19 @@ final class OutcomeKnn
             $neighbors = array_values(array_filter($neighbors, fn (array $row): bool => $row['distance'] <= 1e-12));
         }
 
+        $rubix = new KNearestNeighbors(count($neighbors), true);
+        $rubix->train(new Labeled(
+            array_map(static fn (array $row): array => [(float) $row['distance']], $neighbors),
+            array_column($neighbors, 'label')
+        ));
+        $shares = $rubix->proba(new Unlabeled([[0.0]]))[0];
         $votes = array_fill_keys(SemanticLabels::OUTCOMES, 0.0);
         $weightSum = $squaredSum = $similaritySum = 0.0;
         foreach ($neighbors as $neighbor) {
             if (! array_key_exists($neighbor['label'], $votes)) {
                 throw new InvalidArgumentException('Unknown Outcome knowledge label.');
             }
-            $weight = ($classWeights[$neighbor['label']] ?? 1.0) / max(1e-9, $neighbor['distance']);
+            $weight = ($classWeights[$neighbor['label']] ?? 1.0) / (1.0 + $neighbor['distance']);
             $votes[$neighbor['label']] += $weight;
             $weightSum += $weight;
             $squaredSum += $weight ** 2;
@@ -44,7 +53,16 @@ final class OutcomeKnn
         }
 
         $effective = $weightSum ** 2 / $squaredSum;
-        $votes = array_map(fn (float $vote): float => $vote / $weightSum, $votes);
+        // Rubix owns inverse-(1+distance) weighted class probabilities.
+        foreach ($votes as $label => &$vote) {
+            $vote = ($shares[$label] ?? 0.0) * ($classWeights[$label] ?? 1.0);
+        }
+        unset($vote);
+        $weightedTotal = array_sum($votes);
+        if ($weightedTotal <= 0.0) {
+            return self::abstain('no_weighted_evidence');
+        }
+        $votes = array_map(fn (float $vote): float => $vote / $weightedTotal, $votes);
         arsort($votes);
         $ordered = array_values($votes);
         $similarity = $similaritySum / $weightSum;
