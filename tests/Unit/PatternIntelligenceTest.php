@@ -107,6 +107,26 @@ it('uses the memory-bounded forest for pattern candidates', function () {
     }
 });
 
+it('trains and predicts three-candle patterns with integer endpoints decoded from JSON', function (string $type) {
+    mt_srand(42);
+    $rows = [];
+    for ($i = 0; $i < 180; $i++) {
+        $complete = $i % 2 === 0;
+        $rows[] = ['vector' => [$complete ? 0 : 1], 'decision_at_ms' => $i * 1000,
+            'patterns' => [['type' => $type, 'length' => 3, 'stage' => 2,
+                'progress' => 2 / 3, 'similarity' => 1, 'label' => $complete ? 'completed' : 'failed',
+                'label_available_at_ms' => ($i + 2) * 1000]]];
+    }
+    $trainer = new PatternTrainer(new PatternCatalog, new ProbabilityCalibration);
+
+    $bundle = $trainer->train($rows, ['min_samples' => 50, 'min_block_rows' => 10, 'trees' => 5, 'k' => 5], microtime(true) + 20);
+    $restored = unserialize(serialize($bundle));
+
+    expect($restored['report'][$type]['status'])->toBe('validated');
+    expect($trainer->predict($restored, [0], [$rows[0]['patterns'][0]], 999999)[0]['completion_probability'])
+        ->toBeGreaterThan(0.9);
+})->with(['morning_star', 'evening_star']);
+
 it('chooses the pattern algorithm before inspecting final evaluation labels', function () {
     $rows = [];
     for ($i = 0; $i < 400; $i++) {

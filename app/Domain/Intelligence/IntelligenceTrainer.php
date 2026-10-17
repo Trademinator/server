@@ -13,8 +13,8 @@ use RuntimeException;
 
 final class IntelligenceTrainer
 {
-    // A new version prevents pre-Phase-2 Action readiness from bypassing evidence gates.
-    public const VERSION = 'm6-outcome-action-knn-v6';
+    // Rubix 3 changes numeric feature typing and serialized estimator state.
+    public const VERSION = 'm6-outcome-action-knn-v7';
 
     public function __construct(
         private DatasetStore $datasets,

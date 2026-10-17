@@ -44,6 +44,7 @@ it('requires verification and scopes dashboard charts to active subscriptions of
         'generation_key' => null, 'sha256' => str_repeat('0', 64), 'report' => json_encode([
             'model_id' => $modelId, 'dataset_id' => $datasetId, 'status' => 'ready',
             'validation_version' => IntelligenceTrainer::VERSION, 'trained_as_of_ms' => now()->getTimestampMs(),
+            'rubix_ml_major' => \Rubix\ML\VERSION,
             'outcome' => ['status' => 'ready', 'reason' => 'validated'],
             'action' => ['status' => 'abstaining', 'reason' => 'action_model_unavailable'],
         ], JSON_THROW_ON_ERROR), 'created_at' => now(),

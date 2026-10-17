@@ -4,6 +4,7 @@ namespace App\Domain\Intelligence;
 
 use App\Domain\Operations\ActionLog;
 use App\Domain\Research\FeatureSchema;
+use Composer\InstalledVersions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -21,6 +22,7 @@ final class ModelStore
     public static function isReadyReport(?array $report): bool
     {
         return $report !== null && FeatureSchema::modelCompatible($report)
+            && self::rubixCompatible($report)
             && ($report['status'] ?? null) === 'ready'
             && ($report['validation_version'] ?? null) === IntelligenceTrainer::VERSION
             && ($report['trained_as_of_ms'] ?? 0) >= KnowledgeWindow::fromMs(now()->getTimestampMs());
@@ -31,6 +33,7 @@ final class ModelStore
     {
         $unavailable = match (true) {
             $report === null => 'no_model',
+            ! self::rubixCompatible($report) => 'model_version_mismatch',
             ($report['validation_version'] ?? null) !== IntelligenceTrainer::VERSION => 'model_version_mismatch',
             ! FeatureSchema::modelCompatible($report) => 'model_schema_outdated',
             ($report['trained_as_of_ms'] ?? 0) < KnowledgeWindow::fromMs(now()->getTimestampMs()) => 'stale_model',
@@ -54,6 +57,18 @@ final class ModelStore
         }
 
         return $readiness;
+    }
+
+    public static function rubixCompatible(array $report): bool
+    {
+        return ($report['rubix_ml_major'] ?? null) === \Rubix\ML\VERSION;
+    }
+
+    private function requireCompatibleRubix(array $report, string $id): void
+    {
+        if (! self::rubixCompatible($report)) {
+            throw new ModelRebuildRequired($id);
+        }
     }
 
     public function path(string $id): string
@@ -97,6 +112,7 @@ final class ModelStore
         if (($bundle['status'] ?? null) !== 'validated') {
             return null;
         }
+        $this->requireCompatibleRubix($artifact, (string) $artifact['model_id']);
         $digest = $bundle['estimator_sha256'] ?? null;
         $path = $this->coinGeckoPath((string) $artifact['model_id']);
         $bytes = is_file($path) ? file_get_contents($path) : false;
@@ -123,6 +139,8 @@ final class ModelStore
         $artifact['model_id'] = $id;
         $artifact['created_at'] = now()->toIso8601String();
         $artifact['format_version'] = 'm4-intelligence-v3';
+        $artifact['rubix_ml_major'] = \Rubix\ML\VERSION;
+        $artifact['rubix_ml_version'] = InstalledVersions::getPrettyVersion('rubix/ml');
         $path = $this->path($id);
         $knowledgePath = $this->knowledgePath($id);
         if (! is_dir(dirname($path)) && ! mkdir(dirname($path), 0700, true)) {
@@ -409,6 +427,8 @@ final class ModelStore
         if ($record === null || $bytes === false || ! hash_equals($record->sha256, hash('sha256', $bytes))) {
             throw new RuntimeException('Intelligence model is missing or its checksum does not match.');
         }
+        // Check independently stored JSON before any old Rubix __unserialize() can run.
+        $this->requireCompatibleRubix(json_decode($record->report, true, flags: JSON_THROW_ON_ERROR), $id);
         // Only our private artifacts, authenticated by the independently stored DB digest, are decoded.
         // Never accept arbitrary uploaded or user-supplied serialized models.
         $artifact = unserialize($bytes);
@@ -416,6 +436,7 @@ final class ModelStore
             || ($artifact['model_id'] ?? null) !== $id) {
             throw new RuntimeException('Unsupported intelligence artifact.');
         }
+        $this->requireCompatibleRubix($artifact, $id);
 
         return $artifact;
     }

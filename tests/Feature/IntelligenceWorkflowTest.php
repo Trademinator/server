@@ -1,11 +1,8 @@
 <?php
 
-use App\Domain\Features\FeatureEngine;
 use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
-use App\Domain\Operations\ActionContext;
-use App\Domain\Operations\ActionLog;
 use App\Domain\Research\DatasetSnapshotBuilder;
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\FeatureSchema;
@@ -13,7 +10,6 @@ use App\Domain\Research\SemanticLabels;
 use App\Jobs\TrainMarketIntelligence;
 use App\Models\Exchange;
 use App\Models\Market;
-use App\Models\MarketFeature;
 use App\Models\MarketFeed;
 use App\Models\MarketSubscription;
 use App\Models\User;
@@ -22,8 +18,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
-use Monolog\Handler\TestHandler;
-use Monolog\Logger;
 use Tests\Support\IntelligenceFixtures;
 
 beforeEach(function () {
@@ -290,6 +284,67 @@ it('builds once per weekly job even if the queue delivers it again', function ()
 
     $this->assertDatabaseCount('intelligence_models', 1);
     $this->assertDatabaseCount('research_datasets', 1);
+});
+
+it('queues every selected and published market period once per forced invocation', function () {
+    $this->travelTo('2024-01-01 04:10:00 UTC');
+    config(['queue.default' => 'database', 'intelligence.enabled' => false, 'intelligence.schema' => 'core']);
+    $exchange = Exchange::query()->create(['name' => 'Kraken', 'class' => 'kraken', 'config' => '{}']);
+    $market = Market::query()->create(['exchange_id' => $exchange->exchange_id, 'symbol' => 'BTC/USD', 'tick_size' => '0.01']);
+    MarketFeed::query()->create(['market_id' => $market->market_id, 'selected_period' => '1m', 'status' => 'active']);
+    foreach (User::factory()->count(2)->create() as $user) {
+        MarketSubscription::query()->create(['user_id' => $user->user_id, 'market_id' => $market->market_id, 'active' => true]);
+    }
+    $manifest = IntelligenceFixtures::snapshot();
+    foreach (['1m', '15m'] as $period) {
+        $id = (string) Str::uuid7();
+        $key = ModelStore::marketKey('kraken', 'BTC/USD', $period);
+        DB::table('intelligence_models')->insert([
+            'model_id' => $id, 'dataset_id' => $manifest['dataset_id'], 'market_key' => $key,
+            'status' => 'ready', 'sha256' => str_repeat('0', 64), 'created_at' => now(),
+            'report' => json_encode(['exchange' => 'kraken', 'symbol' => 'BTC/USD', 'period' => $period,
+                'schema_selection' => ['requested_schema' => 'enhanced']]),
+        ]);
+        DB::table('intelligence_heads')->insert(['market_key' => $key, 'model_id' => $id, 'updated_at' => now()]);
+    }
+    Queue::fake([TrainMarketIntelligence::class]);
+
+    $this->artisan('trademinator:dispatch-market-intelligence', ['--force' => true, '--all' => true])->assertSuccessful();
+    $this->artisan('trademinator:dispatch-market-intelligence', ['--force' => true, '--all' => true])->assertSuccessful();
+
+    $jobs = Queue::pushed(TrainMarketIntelligence::class);
+    expect($jobs)->toHaveCount(4)
+        ->and($jobs->pluck('week')->unique())->toHaveCount(2)
+        ->and($jobs->pluck('period')->all())->toBe(['1m', '15m', '1m', '15m'])
+        ->and($jobs->pluck('schema')->all())->toBe(['core', 'enhanced', 'core', 'enhanced']);
+    foreach ($jobs as $job) {
+        expect($job->week)->toStartWith('manual:');
+    }
+});
+
+it('requires an explicit force request to rebuild previously published market periods', function () {
+    Queue::fake();
+
+    $this->artisan('trademinator:dispatch-market-intelligence', ['--all' => true])
+        ->expectsOutput('--all requires --force.')->assertFailed();
+
+    Queue::assertNothingPushed();
+});
+
+it('rebuilds after a completed weekly generation and keeps forced job retries idempotent', function () {
+    $this->travelTo('2024-01-01 02:00:00 UTC');
+    IntelligenceFixtures::candles();
+    $service = app(MarketIntelligence::class);
+    (new TrainMarketIntelligence('kraken', 'BTC/USD', '1m', '2024-01-01'))->handle($service);
+    $old = app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m');
+    $forced = new TrainMarketIntelligence('kraken', 'BTC/USD', '1m', 'manual:rubix-upgrade');
+
+    $forced->handle($service);
+    $forced->handle($service);
+
+    $this->assertDatabaseCount('intelligence_models', 2);
+    $this->assertDatabaseCount('research_datasets', 2);
+    expect(app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m')['model_id'])->not->toBe($old['model_id']);
 });
 
 it('returns zero confidence without any model and rejects mismatched frozen markets', function () {

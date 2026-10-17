@@ -33,6 +33,7 @@ function dashboardModel(MarketSubscription $subscription, array $overrides = [])
         'status' => 'ready', 'sha256' => str_repeat('0', 64), 'created_at' => now(),
         'report' => json_encode(array_replace(['model_id' => $model, 'dataset_id' => $dataset, 'status' => 'ready',
             'validation_version' => IntelligenceTrainer::VERSION, 'trained_as_of_ms' => now()->getTimestampMs(),
+            'rubix_ml_major' => \Rubix\ML\VERSION,
             'keys' => $keys, 'training_data' => ['schema' => 'core'],
             'outcome' => ['status' => 'ready', 'reason' => 'validated', 'schema' => 'core'],
             'action' => ['status' => 'abstaining', 'reason' => 'action_model_unavailable']], $overrides))]);

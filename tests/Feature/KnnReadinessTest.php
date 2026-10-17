@@ -10,6 +10,7 @@ it('shows Outcome and Action KNN readiness independently of the combined build s
     $report = array_replace_recursive([
         'status' => 'ready',
         'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
         'trained_as_of_ms' => now()->getTimestampMs(),
         'outcome' => ['status' => 'ready', 'reason' => 'validated'],
         'action' => ['status' => 'ready', 'reason' => 'validated'],
@@ -59,6 +60,7 @@ it('escapes diagnostic reasons in readiness tooltips', function () {
     $report = [
         'status' => 'abstaining',
         'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
         'trained_as_of_ms' => now()->getTimestampMs(),
         'outcome' => ['status' => 'abstaining', 'reason' => '<script>alert(1)</script>'],
         'action' => ['status' => 'ready', 'reason' => 'validated'],

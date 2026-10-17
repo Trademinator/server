@@ -20,7 +20,7 @@
         "laravel/tinker": "^3.0",
         "maxmind-db/reader": "^1.13.1",
         "pear/console_color2": "^0.1.2",
-        "rubix/ml": "^2.5",
+        "rubix/ml": "~3.1.0",
         "symfony/http-client": "^7.3",
         "symfony/mailgun-mailer": "^7.3",
         "trademinator/bcmath": "0.1.0",

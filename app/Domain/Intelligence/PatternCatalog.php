@@ -72,8 +72,8 @@ final class PatternCatalog
 
     public function vector(array $vector, array $candidate): array
     {
-        return [...$vector, $candidate['length'] / 3, $candidate['stage'] / 3,
-            $candidate['progress'], $candidate['similarity']];
+        return RubixFeatures::vector([...$vector, $candidate['length'] / 3, $candidate['stage'] / 3,
+            $candidate['progress'], $candidate['similarity']]);
     }
 
     private function candidate(string $type, int $length, int $stage, float $similarity, array $prefix): array

@@ -56,7 +56,8 @@ final class CandleGuidance
         $this->deadline($deadline);
         $k = min(config('human_training.candle_k'), count($opinions));
         $estimator = new KNearestNeighbors($k, true);
-        $estimator->train(new Labeled(array_column($opinions, 'vector'), array_column($opinions, 'action')));
+        $estimator->train(new Labeled(array_map(RubixFeatures::vector(...), array_column($opinions, 'vector')),
+            array_column($opinions, 'action')));
         $bundle = [...$bundle, 'estimator' => $estimator, 'k' => $k,
             'input_keys' => $manifest['keys'],
             'keys' => array_map(fn (string $action): string => 'candle_human.'.$action, CandleTraining::ACTIONS),
@@ -71,7 +72,9 @@ final class CandleGuidance
         $rawShares = [];
         foreach ($later as $row) {
             $this->deadline($deadline);
-            $rawShares[] = $estimator->proba(new Unlabeled([array_slice($row['vector'], 0, count($manifest['keys']))]))[0];
+            $rawShares[] = $estimator->proba(new Unlabeled([
+                RubixFeatures::vector(array_slice($row['vector'], 0, count($manifest['keys']))),
+            ]))[0];
         }
         $policies = [
             'natural' => ClassPriorWeights::fit($counts),
@@ -257,7 +260,7 @@ final class CandleGuidance
     /** Ordered human-action shares, not calibrated probabilities of price movement or profit. */
     public function features(array $bundle, array $vector): array
     {
-        $probabilities = $bundle['estimator']->proba(new Unlabeled([$vector]))[0];
+        $probabilities = $bundle['estimator']->proba(new Unlabeled([RubixFeatures::vector($vector)]))[0];
 
         if (($bundle['version'] ?? self::VERSION) === 'm4.4-candle-guidance-v2') {
             return array_map(fn (string $action): float => (float) ($probabilities[$action] ?? 0.0), CandleTraining::ACTIONS);

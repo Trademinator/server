@@ -54,7 +54,8 @@ final class MarketIntelligence
             'reason' => 'coingecko_independent_optional_insight',
         ];
         if ($generation !== null) {
-            $generation = hash('sha256', $generation.'|'.FeatureSchema::VERSION.'|'.KnnSchemaFallback::VERSION);
+            $generation = hash('sha256', $generation.'|'.FeatureSchema::VERSION.'|'.KnnSchemaFallback::VERSION
+                .'|'.IntelligenceTrainer::VERSION.'|rubix:'.\Rubix\ML\VERSION);
         }
         $buildPerformance['started_at'] ??= now()->toIso8601String();
         $buildPerformance['started_monotonic_ns'] = hrtime(true);
@@ -140,10 +141,17 @@ final class MarketIntelligence
     private function evaluate(string $exchange, string $symbol, string $period, ?int $asOfMs): array
     {
         $asOfMs = min($asOfMs ?? now()->getTimestampMs(), now()->getTimestampMs());
-        $model = $this->models->currentForPrediction($exchange, $symbol, $period);
         $context = ['exchange' => $exchange, 'symbol' => $symbol, 'period' => $period,
-            'horizon_candles' => $model['label_definition']['horizon'] ?? null,
-            'model_id' => $model['model_id'] ?? null, 'regime' => 'neutral', 'lead_lag' => [], 'patterns' => [], 'patterns_evaluated' => false];
+            'horizon_candles' => null,
+            'model_id' => null, 'regime' => 'neutral', 'lead_lag' => [], 'patterns' => [], 'patterns_evaluated' => false];
+        try {
+            $model = $this->models->currentForPrediction($exchange, $symbol, $period);
+        } catch (ModelRebuildRequired $error) {
+            return [...WeightedKnn::abstain('model_version_mismatch'), ...$context,
+                'model_id' => $error->modelId, 'rebuild_required' => true];
+        }
+        $context['horizon_candles'] = $model['label_definition']['horizon'] ?? null;
+        $context['model_id'] = $model['model_id'] ?? null;
         if ($model === null) {
             return [...WeightedKnn::abstain('no_model'), ...$context];
         }

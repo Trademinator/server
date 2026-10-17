@@ -30,6 +30,7 @@ function degradedSignalDisplayFixture(User $user, int $ageMinutes = 15, string $
     $report = [
         'model_id' => $model, 'dataset_id' => $dataset, 'status' => 'abstaining',
         'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
         'trained_as_of_ms' => now()->subHour()->getTimestampMs(),
         'outcome' => ['status' => 'abstaining', 'reason' => 'holdout_failed', 'schema' => 'core'],
         'action' => ['status' => 'ready', 'reason' => 'validated'],

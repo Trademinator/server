@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\KnnTuner;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\Intelligence\WeightedKnn;
@@ -33,7 +34,8 @@ function phase3PersistedModel(array $overrides = [], bool $current = true): stri
     $report = array_replace_recursive([
         'model_id' => $model, 'dataset_id' => $dataset,
         'exchange' => 'bitso', 'symbol' => 'ATOM/USD', 'period' => '15m',
-        'validation_version' => \App\Domain\Intelligence\IntelligenceTrainer::VERSION,
+        'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
         'status' => 'abstaining', 'reason' => 'outcome_knn_unavailable',
         // Confusion belongs to Outcome, and is intentionally not a 3-class matrix.
         'holdout' => ['macro_f1' => 0.18, 'failed_gates' => ['macro_f1']],
