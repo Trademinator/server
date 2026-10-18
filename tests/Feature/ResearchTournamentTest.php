@@ -37,3 +37,10 @@ it('evaluates the four Rubix candidates for Outcome and Action without changing 
     $this->assertDatabaseCount('intelligence_heads', 0);
     $this->assertDatabaseCount('intelligence_tournaments', 1);
 });
+
+it('isolates candidate training into bounded PHP subprocesses without changing published models', function () {
+    $manifest = IntelligenceFixtures::snapshot(120);
+    $report = app(ResearchTournament::class)->run($manifest['dataset_id'], 110, isolate: true);
+    expect($report['tasks']['action']['candidates']['decision_tree']['status'])->toBe('evaluated', json_encode($report['tasks']['action']['candidates']['decision_tree']));
+    $this->assertDatabaseCount('intelligence_heads', 0);
+});

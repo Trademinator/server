@@ -44,7 +44,7 @@ final class TrainIntelligenceTournament implements ShouldQueue, ShouldBeUnique
         $key = 'trademinator:tournament:status:'.$this->datasetId;
         Cache::put($key, ['status' => 'running', 'started_at' => now()->toIso8601String()], now()->addDays(2));
         try {
-            $result = $tournament->run($this->datasetId, $this->maxRows);
+            $result = $tournament->run($this->datasetId, $this->maxRows, isolate: true);
             Cache::put($key, ['status' => 'completed', 'finished_at' => now()->toIso8601String(),
                 'tasks' => array_keys($result['tasks'])], now()->addDays(2));
         } catch (Throwable $error) {
