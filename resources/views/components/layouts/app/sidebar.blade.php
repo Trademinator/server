@@ -23,6 +23,9 @@
                     </x-navlist.item>
                 </x-navlist.group>
                 @can('train-intelligence')
+                    <x-navlist.item before="phosphor-chart-bar" :href="route('human-training.evaluations.index')" :current="request()->routeIs('human-training.evaluations.*')">
+                        {{ __('Model evaluations') }}
+                    </x-navlist.item>
                     <x-navlist.item before="phosphor-chart-line" :href="route('human-training.index')" :current="request()->routeIs('human-training.*')">
                         {{ __('Human training') }}
                     </x-navlist.item>
@@ -43,6 +46,9 @@
                         </x-navlist.item>
                         <x-navlist.item before="phosphor-calendar-check" :href="route('owner.events')" :current="request()->routeIs('owner.events*')">
                             {{ __('Event review') }}
+                        </x-navlist.item>
+                        <x-navlist.item before="phosphor-chart-bar" :href="route('owner.evaluations.index')" :current="request()->routeIs('owner.evaluations.*')">
+                            {{ __('Model evaluations') }}
                         </x-navlist.item>
                         <x-navlist.item before="phosphor-brain" :href="route('owner.intelligence')" :current="request()->routeIs('owner.intelligence*')">
                             {{ __('Intelligence') }}

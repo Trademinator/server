@@ -42,6 +42,11 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
         return ModelStore::marketKey($this->exchange, $this->symbol, $this->period).':'.$this->week.':'.$schema.':'.IntelligenceTrainer::VERSION.':'.KnnSchemaFallback::VERSION;
     }
 
+    public function displayName(): string
+    {
+        return self::class.':'.$this->exchange.':'.$this->symbol.':'.$this->period;
+    }
+
     public function handle(MarketIntelligence $intelligence): void
     {
         $key = 'trademinator:intelligence-week:'.$this->uniqueId();
@@ -53,6 +58,11 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
             if (Cache::has($key)) {
                 return;
             }
+            app(ActionLog::class)->write('intelligence.training.started', [
+                'exchange' => $this->exchange, 'symbol' => $this->symbol, 'period' => $this->period,
+                'job_id' => $this->job?->uuid(), 'queue' => $this->job?->getQueue() ?? config('intelligence.queue'),
+                'memory_bytes' => memory_get_usage(true),
+            ]);
             try {
                 $intelligence->build($this->exchange, $this->symbol, $this->period,
                     schema: $this->schema ?? (string) config('intelligence.schema'),

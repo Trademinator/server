@@ -36,6 +36,13 @@ if (intelligenceTooltips.length) {
     })
 }
 
+document.querySelectorAll('[data-evaluation-chart]').forEach(element => {
+    import('./components/evaluation-chart').then(({ mountEvaluationChart }) =>
+        mountEvaluationChart(element)).catch(() => {
+        element.querySelector('[data-status]').textContent = 'Chart unavailable. The evaluation metrics are still visible.';
+    });
+});
+
 const reviewChart = document.querySelector('[data-review-chart]')
 if (reviewChart) {
     import('./components/market-review-chart').then(({ mountReviewChart }) => mountReviewChart(reviewChart)).catch(() => {

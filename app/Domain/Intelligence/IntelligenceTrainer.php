@@ -276,6 +276,7 @@ final class IntelligenceTrainer
                 'feature_version' => FeatureEngine::VERSION,
                 'knn_schema_version' => FeatureSchema::VERSION,
                 'normalization' => NormalizedVector::VERSION,
+                'knn_engine' => 'rubix-ml-3.1-weighted',
                 'keys' => $manifest['keys'],
                 'pattern_keys' => $patternKeys,
                 'patterns' => $patternBundle,

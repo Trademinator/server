@@ -126,8 +126,20 @@ final class KnnTuner
             $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $k,
                 $row['decision_at_ms'], $row['feature_weights'] ?? []);
             $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), 1);
+            $accumulator['trace'][] = [
+                'decision_at_ms' => $row['decision_at_ms'],
+                'actual' => $row['label'],
+                'predicted' => $accumulator['last_prediction']['action'],
+                'supported' => $accumulator['last_prediction']['reason'] === 'supported',
+                'reason' => $accumulator['last_prediction']['reason'],
+                'confidence' => $accumulator['last_prediction']['confidence'],
+            ];
+            if (count($accumulator['trace']) > 180) {
+                array_shift($accumulator['trace']);
+            }
         }
 
+        unset($accumulator['last_prediction']);
         return $this->finishAccumulator($accumulator, $settings);
     }
 
@@ -135,7 +147,7 @@ final class KnnTuner
     {
         return ['k' => $k, 'evaluated' => 0, 'supported' => 0, 'abstained' => 0,
             'directional' => 0, 'correct' => 0, 'supported_holds' => 0, 'correct_holds' => 0,
-            'contradictions' => 0, 'confidence' => 0.0, 'folds' => [],
+            'contradictions' => 0, 'confidence' => 0.0, 'folds' => [], 'trace' => [],
             // Confusion includes only supported predictions, never fail-closed abstentions.
             'confusion' => array_fill_keys(['buy', 'hodl', 'sell'], array_fill_keys(['buy', 'hodl', 'sell'], 0)),
             'abstentions_by_label' => array_fill_keys(['buy', 'hodl', 'sell'], 0),
@@ -148,6 +160,7 @@ final class KnnTuner
 
     private function accumulate(array &$state, array $row, array $result, int $fold): void
     {
+        $state['last_prediction'] = $result;
         $label = $row['label'] ?? null;
         $labelAvailable = $row['label_available_at_ms'] ?? null;
         if (! in_array($label, ['buy', 'hodl', 'sell'], true)
@@ -201,6 +214,7 @@ final class KnnTuner
 
     private function finishAccumulator(array $state, array $settings): array
     {
+        unset($state['last_prediction']);
         $directional = $state['directional'];
         $precision = $directional ? $state['correct'] / $directional : 0;
         $coverage = $state['evaluated'] ? $directional / $state['evaluated'] : 0;

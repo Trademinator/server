@@ -6,6 +6,7 @@
             <p>Use Outcome Training to assess a whole frozen setup, or Action Training to mark the BUY, HOLD or SELL action you would take on individual candles.</p></header>
         @if(session('status'))<p class="guide-notice" role="status">{{ session('status') }}</p>@endif
         @if($errors->any())<div class="guide-notice guide-error" role="alert"><ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+        <p><a class="guide-button" href="{{ route('human-training.evaluations.index') }}">Explore historical model evaluations</a></p>
         <div class="guide-grid">
             <section class="guide-panel">
                 <p class="review-eyebrow">Existing workflow</p>

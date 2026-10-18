@@ -3,11 +3,9 @@
 namespace App\Domain\Intelligence;
 
 use App\Domain\Features\FeatureEngine;
-use App\Domain\MarketData\MarketCatalog;
 use App\Domain\Research\DatasetRows;
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\SemanticLabels;
-use App\Models\Exchange;
 use App\Models\HumanCandleLabel;
 use App\Models\HumanTrainingSnapshot;
 use App\Models\User;
@@ -16,7 +14,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 use function Trademinator\BcMath\bcconv;
 use function Trademinator\BcMath\bcdec;
@@ -241,7 +238,7 @@ final class CandleTraining
 
         $tickers = $this->autoLabelContext($rows);
 
-        $tickers = $this->autoLabeler->labels($tickers, $takerFee);
+        $this->autoLabeler->labelInPlace($tickers, $takerFee);
 
         // Keep the full algorithm context, but verify only one chronological
         // page per request. Snapshot UUIDs reflect review order, not candle time.
@@ -427,11 +424,14 @@ final class CandleTraining
         $autoLabels = [];
         foreach ($available as $row) {
             $action = $row['action_label'] ?? null;
-            if ($action === 'hodl') $action = 'hold';
+            if ($action === 'hodl') {
+                $action = 'hold';
+            }
             if (in_array($action, self::ACTIONS, true)) {
                 $autoLabels[] = ['time' => intdiv((int) $row['microtimestamp'], 1000), 'action' => $action];
             }
         }
+
         return ['labels' => $visibleLabels, 'auto_labels' => $autoLabels, 'decisions' => $decisions, 'allowed_actions' => $allowedActions];
     }
 
@@ -538,5 +538,4 @@ final class CandleTraining
     {
         return $this->takerFees->for($manifest['exchange'], $manifest['symbol']);
     }
-
 }

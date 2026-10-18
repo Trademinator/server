@@ -1,4 +1,5 @@
 <x-owner.layout title="Model validation details">
+    <p><a href="{{ route('owner.evaluations.show', $model) }}">View candlestick evaluation and prediction overlays →</a></p>
     <section class="owner-panel"><h2>{{ $report['exchange'] ?? '' }} · {{ $report['symbol'] ?? '' }} · {{ $report['period'] ?? '' }}</h2>
         <dl class="owner-details"><dt>Model UUID</dt><dd><code>{{ $model }}</code></dd><dt>Dataset UUID</dt><dd><code>{{ $report['dataset_id'] ?? 'Unknown' }}</code></dd>
             <dt>Intelligence readiness</dt><dd><x-knn-readiness :report="$report" :coingecko="$coingecko" /></dd><dt>Build result</dt><dd>{{ $report['status'] ?? 'Unknown' }} · {{ $report['reason'] ?? 'Unknown' }}</dd><dt>Knowledge rows</dt><dd>{{ \App\Helpers\Decimal::format($report['knowledge_rows'] ?? 0) }}</dd><dt>Selected K</dt><dd>{{ $report['k'] ?? 'No eligible K' }}</dd><dt>Built at</dt><dd><x-display-time :value="$report['created_at'] ?? null" fallback="Unknown" /></dd>

@@ -97,16 +97,29 @@ final class OutcomeKnnTuner
     {
         $state = $this->emptyReport($k);
         $baseline = $this->majorityLabel($training);
+        $trace = [];
         foreach ($test as $row) {
             if (microtime(true) > $deadline) {
                 throw new RuntimeException('Outcome KNN evaluation time budget exceeded.');
             }
             $neighbors = $this->neighbors->neighborsPrepared($training, $row['vector'], $k,
                 $row['decision_at_ms'], $row['feature_weights'] ?? []);
-            $this->accumulate($state, $row, $this->outcomes->vote($neighbors, $k), $baseline);
+            $prediction = $this->outcomes->vote($neighbors, $k);
+            $this->accumulate($state, $row, $prediction, $baseline);
+            $trace[] = [
+                'decision_at_ms' => $row['decision_at_ms'],
+                'actual' => $row['label'],
+                'predicted' => $prediction['outcome'],
+                'supported' => $prediction['reason'] === 'supported',
+                'reason' => $prediction['reason'],
+                'confidence' => $prediction['confidence'],
+            ];
+            if (count($trace) > 180) {
+                array_shift($trace);
+            }
         }
 
-        return $this->finish($state, $settings);
+        return [...$this->finish($state, $settings), 'trace' => $trace];
     }
 
     private function emptyReport(int $k): array

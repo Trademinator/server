@@ -66,7 +66,8 @@ trait CandleAutoDetection
     {
         $survivorIndex = null;
 
-        foreach (array_keys($tickers) as $index) {
+        // References avoid both a copied key list and foreach copy-on-write.
+        foreach ($tickers as $index => &$ticker) {
             $action = $tickers[$index]['action'] ?? null;
             if (! in_array($action, ['buy', 'sell'], true)) {
                 continue;
@@ -74,12 +75,14 @@ trait CandleAutoDetection
 
             if ($survivorIndex === null) {
                 $survivorIndex = $index;
+
                 continue;
             }
 
             $survivorAction = $tickers[$survivorIndex]['action'] ?? null;
             if ($survivorAction !== $action) {
                 $survivorIndex = $index;
+
                 continue;
             }
 
@@ -94,6 +97,7 @@ trait CandleAutoDetection
                 unset($tickers[$index]['action']);
             }
         }
+        unset($ticker);
 
         return $tickers;
     }
@@ -221,13 +225,10 @@ trait CandleAutoDetection
         return $this->unlabel_endpoints($tickers);
     }
 
-
     /**
      * Process BUY/SELL candidates chronologically against the last surviving
      * trade pivot. HOLD and every other action are deliberately invisible.
      */
-
-
 
     /** Reserve future HOLDs before broad BUY/SELL assignment. */
     private function candle_auto_mark_hold_candidates(array &$tickers): array
@@ -271,7 +272,7 @@ trait CandleAutoDetection
         $scale = $this->precisionPolicy()->minimumScale;
         $survivorIndex = null;
 
-        foreach (array_keys($tickers) as $index) {
+        foreach ($tickers as $index => &$ticker) {
             $action = $tickers[$index]['action'] ?? null;
             if (! in_array($action, ['buy', 'sell'], true)
                 || $this->candle_auto_is_reserved_hold($tickers[$index])) {
@@ -280,12 +281,14 @@ trait CandleAutoDetection
 
             if ($survivorIndex === null) {
                 $survivorIndex = $index;
+
                 continue;
             }
 
             $survivorAction = $tickers[$survivorIndex]['action'] ?? null;
             if (! in_array($survivorAction, ['buy', 'sell'], true)) {
                 $survivorIndex = $index;
+
                 continue;
             }
 
@@ -300,6 +303,7 @@ trait CandleAutoDetection
                 } else {
                     unset($tickers[$index]['action']);
                 }
+
                 continue;
             }
 
@@ -309,10 +313,12 @@ trait CandleAutoDetection
             if (bccomp($survivorClose, '0', $scale) <= 0) {
                 unset($tickers[$survivorIndex]['action']);
                 $survivorIndex = $index;
+
                 continue;
             }
             if (bccomp($candidateClose, '0', $scale) <= 0) {
                 unset($tickers[$index]['action']);
+
                 continue;
             }
 
@@ -322,11 +328,13 @@ trait CandleAutoDetection
 
             if (bccomp($movement, $minimumMovement, $scale) <= 0) {
                 unset($tickers[$index]['action']);
+
                 continue;
             }
 
             $survivorIndex = $index;
         }
+        unset($ticker);
 
         return $tickers;
     }
@@ -363,5 +371,4 @@ trait CandleAutoDetection
 
         return null;
     }
-
 }

@@ -3,6 +3,7 @@
 namespace App\Domain\Intelligence;
 
 use App\Domain\MarketData\CandleTimeframe;
+use App\Domain\Operations\ActionLog;
 use App\Repositories\TickerRepository;
 use InvalidArgumentException;
 
@@ -19,6 +20,10 @@ final class ActionLabelAnalysis
 
     public function analyze(string $exchange, string $symbol, string $period, int $asOfMs): array
     {
+        $fields = ['exchange' => $exchange, 'symbol' => $symbol, 'period' => $period, 'stage' => 'action_labeling'];
+        app(ActionLog::class)->write('intelligence.action_labels.started', [
+            ...$fields, 'memory_bytes' => memory_get_usage(true),
+        ]);
         $fromMs = KnowledgeWindow::fromMs($asOfMs);
         $fee = $this->takerFees->for($exchange, $symbol);
         if ($fee === null) {
@@ -29,7 +34,6 @@ final class ActionLabelAnalysis
         $actionAvailability = [];
         $actionCounts = ['buy' => 0, 'hold' => 0, 'sell' => 0];
         $frequencies = [];
-        $distances = [];
         $pivotCount = 0;
         $candles = 0;
         $gaps = 0;
@@ -39,24 +43,24 @@ final class ActionLabelAnalysis
 
         $consume = function () use (
             &$run, &$runs, &$actionLabels, &$actionAvailability, &$actionCounts,
-            &$frequencies, &$distances, &$pivotCount, $fee, $period
+            &$frequencies, &$pivotCount, $fee, $period, $fields
         ): void {
             if ($run === []) {
                 return;
             }
             $runs++;
-            $summary = $this->summarizeRun($run, $fee, $period);
-            $actionLabels += $summary['action_labels'];
-            $actionAvailability += $summary['action_available_at_ms'];
+            app(ActionLog::class)->write('intelligence.action_labels.run', [
+                ...$fields, 'rows' => count($run), 'memory_bytes' => memory_get_usage(true),
+            ]);
+            $summary = $this->summarizeRun($run, $fee, $period, $actionLabels, $actionAvailability);
+            $run = [];
             foreach ($actionCounts as $action => $_) {
                 $actionCounts[$action] += $summary['action_counts'][$action];
             }
             foreach ($summary['distance_frequencies'] as $distance => $frequency) {
                 $frequencies[$distance] = ($frequencies[$distance] ?? 0) + $frequency;
             }
-            array_push($distances, ...$summary['distances']);
             $pivotCount += $summary['pivot_count'];
-            $run = [];
         };
 
         foreach ($this->tickers->streamHistory($exchange, $symbol, $period, $fromMs, $asOfMs) as $timestamp => $candle) {
@@ -72,15 +76,28 @@ final class ActionLabelAnalysis
         $consume();
 
         ksort($frequencies, SORT_NUMERIC);
-        sort($distances, SORT_NUMERIC);
-        $observations = count($distances);
-        $mean = $observations > 0 ? array_sum($distances) / $observations : null;
+        $observations = array_sum($frequencies);
+        $weighted = 0;
+        foreach ($frequencies as $distance => $frequency) {
+            $weighted += $distance * $frequency;
+        }
+        $mean = $observations > 0 ? $weighted / $observations : null;
         $median = null;
         if ($observations > 0) {
-            $middle = intdiv($observations, 2);
-            $median = $observations % 2
-                ? (float) $distances[$middle]
-                : ($distances[$middle - 1] + $distances[$middle]) / 2;
+            $lowerPosition = intdiv($observations - 1, 2);
+            $upperPosition = intdiv($observations, 2);
+            $seen = 0;
+            $lower = null;
+            foreach ($frequencies as $distance => $frequency) {
+                $seen += $frequency;
+                if ($lower === null && $seen > $lowerPosition) {
+                    $lower = $distance;
+                }
+                if ($seen > $upperPosition) {
+                    $median = $observations % 2 ? (float) $distance : ($lower + $distance) / 2;
+                    break;
+                }
+            }
         }
         $minimum = max(1, (int) config(
             'intelligence.min_horizon_distance_observations',
@@ -95,8 +112,8 @@ final class ActionLabelAnalysis
             'minimum_distance_observations' => $minimum,
             'distance_observations' => $observations,
             'distance_frequencies' => $frequencies,
-            'distance_min' => $observations ? min($distances) : null,
-            'distance_max' => $observations ? max($distances) : null,
+            'distance_min' => $observations ? array_key_first($frequencies) : null,
+            'distance_max' => $observations ? array_key_last($frequencies) : null,
             'distance_mean' => $mean,
             'distance_median' => $median,
             'horizon' => $horizon,
@@ -122,13 +139,15 @@ final class ActionLabelAnalysis
         return $analysis;
     }
 
-    private function summarizeRun(array $rawRun, float $fee, string $period): array
+    private function summarizeRun(array &$labelled, float $fee, string $period,
+        array &$actionLabels, array &$actionAvailability): array
     {
-        $labelled = $this->labels->labels($rawRun, $fee);
-        $actionLabels = [];
-        $actionAvailability = [];
+        $this->labels->labelInPlace($labelled, $fee);
+        // Write into the final maps, rather than copying two maps for every run.
         $actionCounts = ['buy' => 0, 'hold' => 0, 'sell' => 0];
-        $pivots = [];
+        $previousPivot = null;
+        $pivotCount = 0;
+        $frequencies = [];
 
         foreach ($labelled as $index => $ticker) {
             $action = $ticker['action'] ?? null;
@@ -137,16 +156,15 @@ final class ActionLabelAnalysis
                 $actionLabels[$timestamp] = $action === 'hold' ? 'hodl' : $action;
                 $actionCounts[$action]++;
             }
-            if (is_int($timestamp) && in_array($action, ['buy', 'sell'], true)) {
-                $pivots[] = ['index' => $index, 'timestamp' => $timestamp, 'action' => $action];
+            if (! is_int($timestamp) || ! in_array($action, ['buy', 'sell'], true)) {
+                continue;
             }
-        }
-
-        $frequencies = [];
-        $distances = [];
-        for ($i = 0, $last = count($pivots) - 1; $i < $last; $i++) {
-            $left = $pivots[$i];
-            $right = $pivots[$i + 1];
+            $pivotCount++;
+            $left = $previousPivot;
+            $right = $previousPivot = ['index' => $index, 'timestamp' => $timestamp, 'action' => $action];
+            if ($left === null) {
+                continue;
+            }
             if ($left['action'] === $right['action']) {
                 throw new InvalidArgumentException(
                     'Finalized Action pivots must alternate before deriving Outcome horizon.'
@@ -156,27 +174,23 @@ final class ActionLabelAnalysis
             if ($distance < 1) {
                 continue;
             }
-            $distances[] = $distance;
             $frequencies[$distance] = ($frequencies[$distance] ?? 0) + 1;
 
             // Retrospective Action labels inside this completed swing become
             // available only when the opposite pivot candle has closed.
             $availableAt = $this->timeframe->next($right['timestamp'], $period);
             for ($j = $left['index']; $j < $right['index']; $j++) {
-                $timestamp = $labelled[$j]['microtimestamp'] ?? null;
-                if (is_int($timestamp) && isset($actionLabels[$timestamp])) {
-                    $actionAvailability[$timestamp] = $availableAt;
+                $labelTimestamp = $labelled[$j]['microtimestamp'] ?? null;
+                if (is_int($labelTimestamp) && isset($actionLabels[$labelTimestamp])) {
+                    $actionAvailability[$labelTimestamp] = $availableAt;
                 }
             }
         }
 
         return [
-            'action_labels' => $actionLabels,
-            'action_available_at_ms' => $actionAvailability,
             'action_counts' => $actionCounts,
             'distance_frequencies' => $frequencies,
-            'distances' => $distances,
-            'pivot_count' => count($pivots),
+            'pivot_count' => $pivotCount,
         ];
     }
 }

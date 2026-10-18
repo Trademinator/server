@@ -14,6 +14,7 @@ use App\Http\Controllers\Owner\FailedJobController;
 use App\Http\Controllers\Owner\HistoryRecoveryController;
 use App\Http\Controllers\Owner\MarketEventController;
 use App\Http\Controllers\Owner\ReportController;
+use App\Http\Controllers\Markets\EvaluationController;
 use App\Http\Controllers\Owner\StatusController;
 use App\Http\Controllers\Owner\UserController;
 use App\Http\Controllers\Settings;
@@ -83,6 +84,8 @@ require __DIR__.'/auth.php';
 
 Route::prefix('human-training')->name('human-training.')->middleware(['auth', 'verified', 'can:train-intelligence'])->group(function () {
     Route::get('/', [HumanTrainingController::class, 'index'])->name('index');
+    Route::get('evaluations', [EvaluationController::class, 'index'])->name('evaluations.index');
+    Route::get('evaluations/{model}', [EvaluationController::class, 'show'])->whereUuid('model')->name('evaluations.show');
     Route::post('/', [HumanTrainingController::class, 'store'])->middleware('throttle:6,1,human-training-store')->name('store');
     Route::post('export', [HumanTrainingController::class, 'export'])->middleware('can:manage-server')->name('export');
     Route::post('candles', [CandleTrainingController::class, 'store'])->middleware('throttle:30,1,human-training-candles-start')->name('candles.start');
@@ -114,6 +117,8 @@ Route::prefix('owner')->name('owner.')->middleware(['auth', 'verified', 'server-
     Route::post('history-recovery/{market}', [HistoryRecoveryController::class, 'store'])->whereUuid('market')
         ->middleware(['throttle:6,1,history-recovery', ConfirmHistoryRecoveryPassword::class])->name('history-recovery.store');
     Route::get('intelligence', [ReportController::class, 'intelligence'])->name('intelligence');
+    Route::get('evaluations', [EvaluationController::class, 'index'])->name('evaluations.index');
+    Route::get('evaluations/{model}', [EvaluationController::class, 'show'])->whereUuid('model')->name('evaluations.show');
     Route::get('status', [StatusController::class, 'index'])->name('status');
     Route::delete('status/purge', [StatusController::class, 'purge'])->middleware(['password.confirm', 'throttle:6,1,owner-status-purge'])->name('status.purge');
     Route::get('coingecko-mappings', [CoinGeckoMappingController::class, 'index'])->name('coingecko-mappings.index');

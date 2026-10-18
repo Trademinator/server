@@ -41,8 +41,16 @@ final class ActionAutoLabeler
     /** @return list<array<string,mixed>> */
     public function labels(array $tickers, float $takerFee): array
     {
+        $this->labelInPlace($tickers, $takerFee);
+
+        return $tickers;
+    }
+
+    /** Mutate an owned context without retaining a second full candle array. */
+    public function labelInPlace(array &$tickers, float $takerFee): void
+    {
         if ($tickers === []) {
-            return [];
+            return;
         }
         $this->candle_auto_mark_hold_candidates($tickers);
         $this->mark_all_blacks_and_whites($tickers);
@@ -54,8 +62,6 @@ final class ActionAutoLabeler
         $this->hodl_all_dojis($tickers);
         $this->hodl_middle_chains($tickers);
         $this->unlabel_endpoints($tickers);
-
-        return $tickers;
     }
 
     public function horizon(array $labelled): int

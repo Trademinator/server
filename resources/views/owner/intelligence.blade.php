@@ -9,6 +9,7 @@
             <button type="submit">Filter models</button>
             @if ($filters['q'] !== '')<a href="{{ route('owner.intelligence', array_diff_key($filters, ['q' => true])) }}">Clear search</a>@endif
         </form>
+        <p><a href="{{ route('owner.evaluations.index') }}">Visual Outcome / Action evaluations →</a></p>
         <p class="owner-muted">{{ \App\Helpers\Decimal::format($models->total()) }} matching models. Markets awaiting their first model are shown in the subscription report.</p>
         <div class="owner-scroll">
             <table class="owner-table">
