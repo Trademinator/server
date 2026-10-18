@@ -26,6 +26,13 @@ it('evaluates the four Rubix candidates for Outcome and Action without changing 
             expect($report['tasks'][$task]['candidates'][$candidate]['status'])->toBe('evaluated', $task.' '.$candidate.' '.json_encode($report['tasks'][$task]['candidates'][$candidate]));
         }
     }
+    foreach (['action', 'outcome'] as $task) {
+        foreach (ResearchTournament::CANDIDATES as $name) {
+            $candidate = $report['tasks'][$task]['candidates'][$name];
+            expect($candidate)->toHaveKeys(['folds', 'failed_gates', 'eligible', 'research_rank_score'])
+                ->and($candidate['folds'])->toHaveCount(3);
+        }
+    }
     $this->assertDatabaseCount('intelligence_models', 0);
     $this->assertDatabaseCount('intelligence_heads', 0);
     $this->assertDatabaseCount('intelligence_tournaments', 1);

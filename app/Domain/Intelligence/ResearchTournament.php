@@ -23,7 +23,7 @@ use Throwable;
  */
 final class ResearchTournament
 {
-    public const VERSION = 'rubix-research-tournament-v1';
+    public const VERSION = 'rubix-research-tournament-v2-walk-forward';
     public const CANDIDATES = ['weighted_knn', 'decision_tree', 'random_forest', 'neural_network'];
 
     public function __construct(private DatasetStore $datasets) {}
@@ -89,13 +89,67 @@ final class ResearchTournament
         $output = ['train_rows' => count($train), 'holdout_rows' => count($test),
             'holdout_from_ms' => $test[0]['decision_at_ms'] ?? null, 'candidates' => []];
         foreach (self::CANDIDATES as $name) {
-            $output['candidates'][$name] = $this->candidate($train, $test, $task, $classes, $name);
+            $folds = [];
+            // Expanding training windows; all candidates evaluated on identical chronological segments.
+            // Final 20% holdout is never used in fold selection or candidate qualification.
+            $warmup = (int) floor(count($train) * 0.4);
+            $step = max(1, (int) floor((count($train) - $warmup) / 3));
+            for ($i = 0; $i < 3; $i++) {
+                $foldEnd = $warmup + $step * $i;
+                $foldTest = array_slice($train, $foldEnd, $step);
+                if ($foldTest === []) continue;
+                $foldCutoff = $foldTest[0]['decision_at_ms'];
+                $foldTraining = array_values(array_filter(array_slice($train, 0, $foldEnd),
+                    static fn (array $row): bool => $row[$timeKey] < $foldCutoff));
+                $result = $this->candidate($foldTraining, $foldTest, $task, $classes, $name);
+                unset($result['trace'], $result['confusion']);
+                $folds[] = $result;
+            }
+            $holdout = $this->candidate($train, $test, $task, $classes, $name);
+            $evaluated = array_values(array_filter($folds,
+                static fn (array $r): bool => $r['status'] === 'evaluated'));
+            $scores = array_column($evaluated, 'score');
+            $coverage = count($evaluated) ? array_sum(array_column($evaluated, 'coverage')) / count($evaluated) : 0;
+            $mean = $scores ? array_sum($scores) / count($scores) : 0;
+            $minimum = $scores ? min($scores) : 0;
+            $directional = array_sum(array_column($evaluated, 'directional_predictions'));
+            $reasons = [];
+            if (count($evaluated) !== 3) $reasons[] = 'incomplete_walk_forward';
+            if ($mean < ($task === 'outcome' ? 0.25 : 0.55)) $reasons[] = 'low_validation_quality';
+            if ($minimum < ($task === 'outcome' ? 0.15 : 0.45)) $reasons[] = 'unstable_fold_quality';
+            if ($coverage < 0.10) $reasons[] = 'low_validation_coverage';
+            if ($task === 'action' && $directional < 5) $reasons[] = 'insufficient_directional_predictions';
+            // Conservative interval discourages high precision based on a handful of BUY/SELL calls.
+            $directionalCorrect = array_sum(array_column($evaluated, 'directional_correct'));
+            $wilsonLower = $this->wilsonLower($directionalCorrect, $directional);
+            if ($task === 'action' && $wilsonLower < 0.45) $reasons[] = 'directional_wilson_lower_bound';
+            if ($holdout['status'] !== 'evaluated') $reasons[] = 'holdout_unavailable';
+            if (($holdout['coverage'] ?? 0) < 0.10) $reasons[] = 'low_holdout_coverage';
+            if (($holdout['score'] ?? 0) < ($task === 'outcome' ? 0.15 : 0.45)) $reasons[] = 'low_holdout_quality';
+            $output['candidates'][$name] = [...$holdout, 'folds' => $folds,
+                'walk_forward_mean' => $mean, 'walk_forward_min' => $minimum,
+                'walk_forward_coverage' => $coverage,
+                'directional_wilson_lower_95' => $task === 'action' ? $wilsonLower : null,
+                'failed_gates' => $reasons,
+                'eligible' => $reasons === [], 'research_rank_score' => $mean];
         }
-        $ranked = array_filter($output['candidates'], static fn (array $r): bool => $r['status'] === 'evaluated');
-        uasort($ranked, static fn (array $a, array $b): int => ($b['score'] <=> $a['score'])
-            ?: ($b['coverage'] <=> $a['coverage']));
+        $ranked = array_filter($output['candidates'], static fn (array $r): bool => $r['eligible']);
+        uasort($ranked, static fn (array $a, array $b): int =>
+            ($b['research_rank_score'] <=> $a['research_rank_score'])
+            ?: ($b['walk_forward_min'] <=> $a['walk_forward_min']));
         $output['research_leader'] = array_key_first($ranked);
+        $output['selection_policy'] = 'walk_forward_eligibility_then_mean_rank_final_holdout_gate';
         return $output;
+    }
+
+    private function wilsonLower(int $successes, int $count): float
+    {
+        if ($count === 0) return 0.0;
+        $p = $successes / $count;
+        $z = 1.959963984540054;
+        $d = 1 + $z * $z / $count;
+        return max(0.0, ($p + $z * $z / (2 * $count)
+            - $z * sqrt(($p * (1 - $p) + $z * $z / (4 * $count)) / $count)) / $d);
     }
 
     private function candidate(array $train, array $test, string $task, array $classes, string $name): array
@@ -179,7 +233,8 @@ final class ResearchTournament
             $score = $task === 'outcome' ? $macroF1 : $directionalPrecision;
             return ['status' => 'evaluated', 'score' => $score, 'macro_f1' => $macroF1,
                 'directional_precision' => $task === 'action' ? $directionalPrecision : null,
-                'directional_predictions' => $directional, 'coverage' => $coverage,
+                'directional_predictions' => $directional, 'directional_correct' => $directionalCorrect,
+                'coverage' => $coverage,
                 'correct' => $correct, 'supported' => $supported, 'holdout_rows' => count($test),
                 'confusion' => $confusion, 'trace' => $trace,
                 'elapsed_ms' => round((hrtime(true) - $start) / 1_000_000, 1),
