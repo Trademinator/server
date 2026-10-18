@@ -26,9 +26,45 @@
             </section>
         </div>
         <section class="guide-panel">
+            <h2>Rubix ML research tournament</h2>
+            <p class="guide-help">Four separate Rubix classifiers compete on the same chronological sample: Weighted KNN, Classification Tree, Random Forest and Multilayer Perceptron. Research rankings do not select production signals or execute trades. Results require a separate CLI research run.</p>
+            @if($tournament)
+                @foreach(['outcome' => 'Five-class Outcome', 'action' => 'BUY / HOLD / SELL Action'] as $task => $caption)
+                    @php($competition = $tournament['tasks'][$task] ?? [])
+                    <h3>{{ $caption }} · research leader: {{ $competition['research_leader'] ?? 'none' }}</h3>
+                    <p class="guide-help">Training {{ $competition['train_rows'] ?? 0 }} · untouched holdout {{ $competition['holdout_rows'] ?? 0 }} · model ID is unchanged</p>
+                    <div class="review-table-wrap"><table>
+                        <thead><tr><th>Rubix candidate</th><th>Status</th><th>{{ $task === 'outcome' ? 'Macro F1' : 'BUY/SELL precision' }}</th><th>Coverage</th><th>Time</th><th>Memory peak</th></tr></thead>
+                        <tbody>
+                        @foreach(($competition['candidates'] ?? []) as $name => $candidate)
+                            <tr><th>{{ str_replace('_', ' ', ucwords($name, '_')) }}</th>
+                                <td>{{ $candidate['status'] }}</td>
+                                <td>{{ isset($candidate['score']) ? number_format($candidate['score'] * 100, 1).'%' : '—' }}</td>
+                                <td>{{ number_format(($candidate['coverage'] ?? 0) * 100, 1) }}%</td>
+                                <td>{{ $candidate['elapsed_ms'] ?? '—' }} ms</td>
+                                <td>{{ $candidate['peak_memory_mb'] ?? '—' }} MB</td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table></div>
+                @endforeach
+            @else
+                <p>No tournament results for this frozen dataset yet. Run <code>php -d memory_limit=512M artisan trademinator:tournament {{ $report['dataset_id'] ?? 'DATASET_UUID' }}</code> to evaluate challengers.</p>
+            @endif
+        </section>
+        <section class="guide-panel">
             <h2>Historical prediction overlay</h2>
             <p class="guide-help">Green ↑ BUY · Red ↓ SELL · Blue circles Outcome BULL · Orange circles Outcome BEAR. Faded marks are incorrect. Gray marks indicate supported HOLD; abstentions are hidden unless toggled. No execution or profitability is implied.</p>
             <div class="flex flex-wrap gap-4">
+                <label for="evaluation-algorithm">Model</label>
+                <select id="evaluation-algorithm" data-algorithm>
+                    <option value="production">Published KNN</option>
+                    @if($tournament)
+                        @foreach(['weighted_knn' => 'Rubix weighted KNN', 'decision_tree' => 'Decision Tree', 'random_forest' => 'Random Forest', 'neural_network' => 'Neural Network'] as $name => $label)
+                            <option value="{{ $name }}">{{ $label }} (research)</option>
+                        @endforeach
+                    @endif
+                </select>
                 <label><input type="checkbox" data-action-toggle checked> Action predictions</label>
                 <label><input type="checkbox" data-outcome-toggle checked> Outcome predictions</label>
                 <label><input type="checkbox" data-abstain-toggle> Abstentions</label>

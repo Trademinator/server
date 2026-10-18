@@ -1,6 +1,6 @@
 # Trademinator CLI reference
 
-Canonical operator reference for all **41 `trademinator:*` commands**, the local `inspire` command, and the committed metadata utility. Common Laravel operating commands are listed separately; package-provided commands vary with installed dependencies, so `php artisan list` remains the complete runtime inventory.
+Canonical operator reference for all **44 `trademinator:*` commands**, the local `inspire` command, and the committed metadata utility. Common Laravel operating commands are listed separately; package-provided commands vary with installed dependencies, so `php artisan list` remains the complete runtime inventory.
 
 Command signatures, descriptions and behavior were checked against repository source at `c0ce12f87ec570783381fd7854f03905ae2bc5bd`. Update this file whenever a command or its parameters change. `tests/Feature/TrademinatorCliDocumentationTest.php` checks the registered project-command inventory, exact normalized signatures and descriptions.
 
@@ -731,6 +731,17 @@ php artisan trademinator:dispatch-lead-lag
 ```
 
 Implementation: [`DispatchLeadLagIntelligence.php`](../app/Console/Commands/DispatchLeadLagIntelligence.php).
+
+## trademinator:tournament
+
+Signature: `trademinator:tournament {dataset? : Frozen research dataset UUID, omitted with --all} {--max-rows=1200 : Shared chronological sample cap between 100 and 4000} {--all : Queue each currently published market dataset}`
+
+Description: Queue research-only Rubix Outcome and Action tournaments on the dedicated tournament queue
+
+Dispatch one unique queue job per dataset to the dedicated tournament queue. Each worker runs Rubix weighted KNN, Classification Tree, Random Forest and Multilayer Perceptron sequentially for Outcome and Action. Results are research-only and do not affect production signals. Use a separate one-worker tournament queue consumer under a 512 MB PHP limit. Use:
+
+    php -d memory_limit=512M artisan trademinator:tournament DATASET_UUID --max-rows=1200
+    php -d memory_limit=512M artisan trademinator:tournament --all --max-rows=1200
 
 ## trademinator:signal
 

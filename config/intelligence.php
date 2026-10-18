@@ -4,6 +4,7 @@ return [
     'enabled' => env('INTELLIGENCE_ENABLED', true),
     'path' => storage_path('app/private/intelligence'),
     'queue' => env('INTELLIGENCE_QUEUE', 'intelligence'),
+    'tournament' => ['queue' => env('INTELLIGENCE_TOURNAMENT_QUEUE', 'tournament')],
     'schema' => env('INTELLIGENCE_SCHEMA', 'core'),
     // Previous full-context fallback is retired: CoinGecko never enters Core/Technical KNN.
     'context_fallback' => 'none',

@@ -58,15 +58,29 @@ final class ModelEvaluation
             ->exists();
     }
 
-    public function series(array $report): array
+    public function tournament(string $datasetId): ?array
+    {
+        $record = DB::table('intelligence_tournaments')->where('dataset_id', $datasetId)->value('report');
+        return $record === null ? null : json_decode($record, true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    public function series(array $report, ?array $tournament = null): array
     {
         $action = $report['action']['algorithmic']['holdout']['trace'] ?? [];
         $outcome = $report['outcome']['algorithmic']['holdout']['trace'] ?? [];
+        $extra = [];
+        foreach (['action', 'outcome'] as $task) {
+            foreach (($tournament['tasks'][$task]['candidates'] ?? []) as $name => $candidate) {
+                $extra[$task][$name] = $candidate['trace'] ?? [];
+            }
+        }
         $period = (string) ($report['period'] ?? '');
-        if (($action === [] && $outcome === []) || ! in_array($period, CandleTimeframe::SUPPORTED, true)) {
+        if (($action === [] && $outcome === [] && $extra === []) || ! in_array($period, CandleTimeframe::SUPPORTED, true)) {
             return ['candles' => [], 'action' => [], 'outcome' => []];
         }
-        $times = array_column([...$action, ...$outcome], 'decision_at_ms');
+        $all = [...$action, ...$outcome];
+        foreach ($extra as $task) foreach ($task as $trace) $all = [...$all, ...$trace];
+        $times = array_column($all, 'decision_at_ms');
         if ($times === []) {
             return ['candles' => [], 'action' => [], 'outcome' => []];
         }
@@ -125,6 +139,13 @@ final class ModelEvaluation
             return $markers;
         };
 
-        return ['candles' => $candles, 'action' => $markers($action), 'outcome' => $markers($outcome)];
+        $candidateMarkers = [];
+        foreach ($extra as $task => $candidates) {
+            foreach ($candidates as $name => $trace) {
+                $candidateMarkers[$task][$name] = $markers($trace);
+            }
+        }
+        return ['candles' => $candles, 'action' => $markers($action), 'outcome' => $markers($outcome),
+            'candidates' => $candidateMarkers];
     }
 }

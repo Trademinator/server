@@ -20,9 +20,11 @@ final class EvaluationController extends Controller
     public function show(Request $request, string $model, ModelEvaluation $evaluations): View
     {
         $report = $evaluations->report($model, $request->user()->isOwner(), $request->user()->getAuthIdentifier());
+        $tournament = $evaluations->tournament((string) ($report['dataset_id'] ?? ''));
         return view('markets.evaluations-show', [
             'report' => $report,
-            'series' => $evaluations->series($report),
+            'tournament' => $tournament,
+            'series' => $evaluations->series($report, $tournament),
             'model' => $model,
             'ownerRoute' => $request->routeIs('owner.*'),
         ]);

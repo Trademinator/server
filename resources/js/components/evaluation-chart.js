@@ -26,12 +26,16 @@ export async function mountEvaluationChart(root) {
     });
     series.setData(candles);
     const markers = createSeriesMarkers(series, []);
+    const algorithm = root.parentElement.querySelector('[data-algorithm]');
     const action = root.parentElement.querySelector('[data-action-toggle]');
     const outcome = root.parentElement.querySelector('[data-outcome-toggle]');
     const abstain = root.parentElement.querySelector('[data-abstain-toggle]');
     const render = () => {
         const marks = [];
-        if (action?.checked) for (const item of (data.action || [])) {
+        const selected = algorithm?.value || 'production';
+        const actionPoints = selected === 'production' ? data.action : data.candidates?.action?.[selected];
+        const outcomePoints = selected === 'production' ? data.outcome : data.candidates?.outcome?.[selected];
+        if (action?.checked) for (const item of (actionPoints || [])) {
             if (!item.supported && !abstain.checked) continue;
             const buy = item.predicted === 'buy';
             const sell = item.predicted === 'sell';
@@ -45,7 +49,7 @@ export async function mountEvaluationChart(root) {
                 size: 1,
             });
         }
-        if (outcome?.checked) for (const item of (data.outcome || [])) {
+        if (outcome?.checked) for (const item of (outcomePoints || [])) {
             if (!item.supported && !abstain.checked) continue;
             const bull = String(item.predicted).includes('bull');
             const bear = String(item.predicted).includes('bear');
@@ -60,13 +64,14 @@ export async function mountEvaluationChart(root) {
         marks.sort((a, b) => a.time - b.time || a.position.localeCompare(b.position));
         markers.setMarkers(marks);
     };
-    [action, outcome, abstain].forEach(toggle => toggle?.addEventListener('change', render));
+    [algorithm, action, outcome, abstain].forEach(toggle => toggle?.addEventListener('change', render));
     render();
     chart.timeScale().fitContent();
     chart.subscribeCrosshairMove(param => {
         if (!param.time) return;
-        const actions = (data.action || []).filter(x => x.time === param.time);
-        const outcomes = (data.outcome || []).filter(x => x.time === param.time);
+        const selected = algorithm?.value || 'production';
+        const actions = (selected === 'production' ? data.action : data.candidates?.action?.[selected] || []).filter(x => x.time === param.time);
+        const outcomes = (selected === 'production' ? data.outcome : data.candidates?.outcome?.[selected] || []).filter(x => x.time === param.time);
         inspect.textContent = [formatTimestamp(Number(param.time) * 1000, { precision: 'minutes' }),
             ...actions.map(x => 'Action: ' + (x.supported ? x.predicted : 'ABSTAIN') + ' / actual ' + x.actual + ' / confidence ' + Number(x.confidence).toFixed(3)),
             ...outcomes.map(x => 'Outcome: ' + (x.supported ? x.predicted : 'ABSTAIN') + ' / actual ' + x.actual + ' / confidence ' + Number(x.confidence).toFixed(3))].join(' · ');
