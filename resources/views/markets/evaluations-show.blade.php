@@ -33,8 +33,14 @@
                     @php($competition = $tournament['tasks'][$task] ?? [])
                     <h3>{{ $caption }} · research leader: {{ $competition['research_leader'] ?? 'No eligible champion' }}</h3>
                     <p class="guide-help">Training {{ $competition['train_rows'] ?? 0 }} · untouched holdout {{ $competition['holdout_rows'] ?? 0 }} · model ID is unchanged</p>
+                    @if(isset($competition['baseline']))
+                        <p class="guide-help">Training-only baseline: majority {{ $competition['baseline']['majority_class'] ?? '—' }} ·
+                        baseline macro F1 {{ number_format(100*($competition['baseline']['macro_f1'] ?? 0), 1) }}%
+                        @if($task === 'action') · dominant directional class {{ $competition['baseline']['directional_class'] ?? '—' }} · directional reference {{ number_format(100*($competition['baseline']['directional_precision'] ?? 0), 1) }}% @endif
+                        </p>
+                    @endif
                     <div class="review-table-wrap"><table>
-                        <thead><tr><th>Rubix candidate</th><th>Status</th><th>{{ $task === 'outcome' ? 'Macro F1' : 'BUY/SELL precision' }}</th><th>Coverage</th><th>Walk-forward mean</th><th>Lowest fold</th><th>Eligibility</th><th>Time</th><th>Memory peak</th></tr></thead>
+                        <thead><tr><th>Rubix candidate</th><th>Status</th><th>{{ $task === 'outcome' ? 'Macro F1' : 'BUY/SELL precision' }}</th><th>Coverage</th><th>Walk-forward mean</th><th>Lowest fold</th><th>Eligibility</th><th>Calibration (5 bins)</th><th>Time</th><th>Memory peak</th></tr></thead>
                         <tbody>
                         @foreach(($competition['candidates'] ?? []) as $name => $candidate)
                             <tr><th>{{ str_replace('_', ' ', ucwords($name, '_')) }}</th>
@@ -44,6 +50,19 @@
                                 <td>{{ isset($candidate['walk_forward_mean']) ? number_format(100*$candidate['walk_forward_mean'], 1).'%' : '—' }}</td>
                                 <td>{{ isset($candidate['walk_forward_min']) ? number_format(100*$candidate['walk_forward_min'], 1).'%' : '—' }}</td>
                                 <td>{{ ($candidate['eligible'] ?? false) ? 'Eligible' : implode(', ', $candidate['failed_gates'] ?? ['Not evaluated']) }}</td>
+                                <td>
+                                    @if(isset($candidate['calibration']))
+                                        @foreach($candidate['calibration'] as $index => $bin)
+                                            <span title="Confidence {{ $index*20 }}–{{ ($index+1)*20 }}%">
+                                                {{ $index*20 }}–{{ ($index+1)*20 }}%:
+                                                {{ $bin['samples'] }} samples,
+                                                {{ $bin['accuracy'] !== null ? number_format(100*$bin['accuracy'], 1).'%' : '—' }} accuracy
+                                            </span>
+                                        @endforeach
+                                    @else
+                                        —
+                                    @endif
+                                </td>
                                 <td>{{ $candidate['elapsed_ms'] ?? '—' }} ms</td>
                                 <td>{{ $candidate['peak_memory_mb'] ?? '—' }} MB</td>
                             </tr>

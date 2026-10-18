@@ -23,7 +23,7 @@ use Throwable;
  */
 final class ResearchTournament
 {
-    public const VERSION = 'rubix-research-tournament-v2.1-hardened';
+    public const VERSION = 'rubix-research-tournament-v2.2-calibrated';
     public const CANDIDATES = ['weighted_knn', 'decision_tree', 'random_forest', 'neural_network'];
 
     public function __construct(private DatasetStore $datasets) {}
@@ -88,6 +88,8 @@ final class ResearchTournament
             static fn (array $row): bool => $row[$timeKey] < $cutoff));
         $output = ['train_rows' => count($train), 'holdout_rows' => count($test),
             'holdout_from_ms' => $test[0]['decision_at_ms'] ?? null, 'candidates' => []];
+        $baseline = $this->baseline($train, $task, $classes);
+        $output['baseline'] = $baseline;
         foreach (self::CANDIDATES as $name) {
             $folds = [];
             // Expanding training windows; all candidates evaluated on identical chronological segments.
@@ -102,7 +104,7 @@ final class ResearchTournament
                 $foldTraining = array_values(array_filter(array_slice($train, 0, $foldEnd),
                     static fn (array $row): bool => $row[$timeKey] < $foldCutoff));
                 $result = $this->evaluateCandidate($foldTraining, $foldTest, $task, $classes, $name, $isolate);
-                unset($result['trace'], $result['confusion']);
+                unset($result['confusion']);
                 $folds[] = $result;
             }
             $holdout = $this->evaluateCandidate($train, $test, $task, $classes, $name, $isolate);
@@ -123,6 +125,10 @@ final class ResearchTournament
             $directionalCorrect = array_sum(array_column($evaluated, 'directional_correct'));
             $wilsonLower = $this->wilsonLower($directionalCorrect, $directional);
             if ($task === 'action' && $wilsonLower < 0.45) $reasons[] = 'directional_wilson_lower_bound';
+            if ($task === 'outcome' && $mean <= $baseline['macro_f1']) $reasons[] = 'below_majority_baseline';
+            if ($task === 'action' && $mean <= $baseline['directional_precision'] && $baseline['directional_count'] >= 5) {
+                $reasons[] = 'below_directional_baseline';
+            }
             // Holdout confirms a preselected research champion, never selects one.
             $validationEligible = $reasons === [];
             $holdoutPassed = $holdout['status'] === 'evaluated'
@@ -132,6 +138,7 @@ final class ResearchTournament
                 'walk_forward_mean' => $mean, 'walk_forward_min' => $minimum,
                 'walk_forward_coverage' => $coverage,
                 'directional_wilson_lower_95' => $task === 'action' ? $wilsonLower : null,
+                'calibration' => $this->calibration($folds),
                 'failed_gates' => $reasons, 'validation_eligible' => $validationEligible,
                 'holdout_confirmed' => $holdoutPassed,
                 'eligible' => $validationEligible && $holdoutPassed,
@@ -147,6 +154,47 @@ final class ResearchTournament
             && ($output['candidates'][$selected]['holdout_confirmed'] ?? false) ? $selected : null;
         $output['selection_policy'] = 'walk_forward_selection_final_holdout_confirmation_only';
         return $output;
+    }
+
+    /** Baselines are defined using training history alone, never the final holdout. */
+    private function baseline(array $train, string $task, array $classes): array
+    {
+        $labels = array_column($train, $task);
+        $counts = array_count_values($labels);
+        arsort($counts);
+        $majority = array_key_first($counts);
+        $n = count($labels);
+        $rate = $n ? ($counts[$majority] ?? 0) / $n : 0.0;
+        $macro = $rate > 0 ? (2 * $rate / (1 + $rate)) / count($classes) : 0.0;
+        $directions = array_filter($counts, static fn ($label): bool => in_array($label, ['buy', 'sell'], true), ARRAY_FILTER_USE_KEY);
+        arsort($directions);
+        $dominant = array_key_first($directions);
+        // Majority-direction prediction precision within the chronological training window.
+        $directionalCount = array_sum($directions);
+        return ['majority_class' => $majority, 'macro_f1' => $macro,
+            'directional_class' => $dominant,
+            'directional_precision' => $directionalCount ? ($directions[$dominant] ?? 0) / $directionalCount : 0.0,
+            'directional_count' => $directionalCount,
+            'reference' => 'training_label_frequency_only'];
+    }
+
+    /** Bin confidence against observed fold correctness; descriptive, not leaked to holdout. */
+    private function calibration(array $folds): array
+    {
+        $bins = [];
+        foreach ([0, 1, 2, 3, 4] as $bin) $bins[$bin] = ['n' => 0, 'correct' => 0, 'sum_confidence' => 0.0];
+        foreach ($folds as $fold) {
+            foreach (($fold['trace'] ?? []) as $point) {
+                $confidence = max(0.0, min(1.0, (float) ($point['confidence'] ?? 0)));
+                $index = min(4, (int) floor($confidence * 5));
+                $bins[$index]['n']++;
+                $bins[$index]['correct'] += (int) (($point['predicted'] ?? null) === ($point['actual'] ?? null));
+                $bins[$index]['sum_confidence'] += $confidence;
+            }
+        }
+        return array_map(static fn ($item) => ['samples' => $item['n'],
+            'accuracy' => $item['n'] ? $item['correct'] / $item['n'] : null,
+            'mean_confidence' => $item['n'] ? $item['sum_confidence'] / $item['n'] : null], $bins);
     }
 
     private function wilsonLower(int $successes, int $count): float
@@ -171,10 +219,22 @@ final class ResearchTournament
         string $name, bool $isolate): array
     {
         if (! $isolate) return $this->candidate($train, $test, $task, $classes, $name);
-        $process = new \Symfony\Component\Process\Process([
-            PHP_BINARY, '-d', 'memory_limit=512M', base_path('tools/tournament-candidate.php'),
-        ], base_path(), null, json_encode(compact('train', 'test', 'task', 'classes', 'name'), JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION), 140);
+        $file = tempnam(sys_get_temp_dir(), 'tm-candidate-');
+        if ($file === false) {
+            return ['status' => 'failed', 'reason' => 'temporary_file_unavailable',
+                'score' => null, 'coverage' => 0, 'trace' => []];
+        }
         try {
+            chmod($file, 0600);
+            $payload = json_encode(compact('train', 'test', 'task', 'classes', 'name'),
+                JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+            if (file_put_contents($file, $payload, LOCK_EX) !== strlen($payload)) {
+                throw new \RuntimeException('Incomplete candidate input.');
+            }
+            $process = new \Symfony\Component\Process\Process([
+                PHP_BINARY, '-d', 'memory_limit=512M',
+                base_path('tools/tournament-candidate.php'), $file, hash('sha256', $payload),
+            ], base_path(), null, null, 140);
             $process->run();
             if (! $process->isSuccessful()) {
                 return ['status' => 'failed', 'reason' => 'subprocess_failed: '.$process->getExitCode(),
@@ -188,6 +248,8 @@ final class ResearchTournament
         } catch (Throwable $error) {
             return ['status' => 'failed', 'reason' => 'subprocess_error: '.get_class($error),
                 'score' => null, 'coverage' => 0, 'trace' => []];
+        } finally {
+            @unlink($file);
         }
     }
 
