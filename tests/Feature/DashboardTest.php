@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Intelligence\IntelligenceTrainer;
+use App\Domain\Research\FeatureSchema;
 use App\Domain\Intelligence\ModelStore;
 use App\Models\MarketFeed;
 use App\Models\MarketSignal;
@@ -22,7 +23,7 @@ test('authenticated users can visit the dashboard', function () {
     $this->get('/dashboard')->assertOk()->assertHeader('X-Trademinator-Trace')->assertDontSee('Server administration');
 
     config(['operations.owner_uuid' => $user->getKey()]);
-    $this->get('/dashboard')->assertOk()->assertHeader('X-Trademinator-Trace')->assertSee('Server administration');
+    $this->get('/dashboard')->assertOk()->assertHeader('X-Trademinator-Trace')->assertSee('Server owner');
     $this->get(route('owner.overview'))->assertOk();
 });
 
@@ -43,6 +44,7 @@ it('requires verification and scopes dashboard charts to active subscriptions of
         'model_id' => $modelId, 'dataset_id' => $datasetId, 'market_key' => $marketKey, 'status' => 'ready',
         'generation_key' => null, 'sha256' => str_repeat('0', 64), 'report' => json_encode([
             'model_id' => $modelId, 'dataset_id' => $datasetId, 'status' => 'ready',
+            'keys' => FeatureSchema::keys('core'), 'training_data' => ['schema' => 'core'],
             'validation_version' => IntelligenceTrainer::VERSION, 'trained_as_of_ms' => now()->getTimestampMs(),
             'rubix_ml_major' => \Rubix\ML\VERSION,
             'outcome' => ['status' => 'ready', 'reason' => 'validated'],
@@ -54,7 +56,7 @@ it('requires verification and scopes dashboard charts to active subscriptions of
     $this->getJson($url)->assertUnauthorized();
     $this->actingAs(User::factory()->unverified()->create())->get('/dashboard')->assertRedirect(route('verification.notice'));
     $this->actingAs($other)->getJson($url)->assertNotFound();
-    $this->get(route('dashboard', ['subscription' => $sub->getKey()]))->assertNotFound();
+    $this->get(route('dashboard', ['subscription' => $sub->getKey()]))->assertOk()->assertDontSee('BTC/USD');
     $this->get('/dashboard')->assertOk()->assertDontSee('BTC/USD')->assertDontSee('privateExchange');
     $this->actingAs($owner)->get('/dashboard')->assertOk()->assertSee('BTC/USD')->assertSee('Waiting for evidence')
         ->assertSee('aria-label="Outcome KNN: Ready"', false)->assertSee('Action KNN: Not ready')

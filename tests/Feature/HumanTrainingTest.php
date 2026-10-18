@@ -81,7 +81,7 @@ it('freezes only pre-cutoff candles and strips future targets from the review re
     expect($payload['patterns'][0])->not->toHaveKeys(['label', 'label_available_at_ms']);
     expect(array_column($payload['series'], 'time'))->toHaveCount(11);
     expect(max(array_column($payload['series'], 'time')))->toBe(intdiv(IntelligenceFixtures::START, 1000) + 600);
-    $this->get('/human-training/'.$review->review_id)->assertOk()->assertSee('Future candles are hidden');
+    $this->get('/human-training/'.$review->review_id)->assertOk()->assertSee('Outcome chart with highlighted decision and future H candles');
     $this->post('/human-training', ['dataset' => $manifest['dataset_id']])->assertRedirect('/human-training/'.$review->review_id);
     $this->assertDatabaseCount('human_training_reviews', 1);
     $this->put('/human-training/'.$review->review_id, ['label' => 'neutral'])->assertRedirect();

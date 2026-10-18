@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Intelligence\IntelligenceTrainer;
+use App\Domain\Research\FeatureSchema;
 
 it('shows Outcome and Action KNN readiness independently of the combined build status', function (
     array $overrides, bool $outcome, bool $action
@@ -9,6 +10,8 @@ it('shows Outcome and Action KNN readiness independently of the combined build s
     config(['intelligence.max_model_age_days' => 14]);
     $report = array_replace_recursive([
         'status' => 'ready',
+        'keys' => FeatureSchema::keys('core'),
+        'training_data' => ['schema' => 'core'],
         'validation_version' => IntelligenceTrainer::VERSION,
         'rubix_ml_major' => \Rubix\ML\VERSION,
         'trained_as_of_ms' => now()->getTimestampMs(),
@@ -59,6 +62,8 @@ it('escapes diagnostic reasons in readiness tooltips', function () {
     $this->freezeTime();
     $report = [
         'status' => 'abstaining',
+        'keys' => FeatureSchema::keys('core'),
+        'training_data' => ['schema' => 'core'],
         'validation_version' => IntelligenceTrainer::VERSION,
         'rubix_ml_major' => \Rubix\ML\VERSION,
         'trained_as_of_ms' => now()->getTimestampMs(),

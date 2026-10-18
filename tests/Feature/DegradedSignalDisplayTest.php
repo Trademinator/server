@@ -139,7 +139,15 @@ it('shows the underlying degraded Action KNN proposal while signal memory waits 
         'raw_action' => 'buy',
         'raw_reason' => 'degraded_action_only',
     ];
-    $recorded->update(['action' => 'hodl', 'reason' => 'awaiting_price_displacement', 'payload' => $payload]);
+    MarketSignal::query()->create([
+        'market_id' => $recorded->market_id,
+        'snapshot_key' => hash('sha256', $recorded->snapshot_key.'-awaiting'),
+        'period' => $recorded->period, 'model_id' => $recorded->model_id,
+        'decision_at_ms' => $recorded->decision_at_ms,
+        'recorded_at_ms' => $recorded->recorded_at_ms + 1,
+        'is_change' => true, 'action' => 'hodl',
+        'reason' => 'awaiting_price_displacement', 'payload' => $payload,
+    ]);
 
     $this->actingAs($user)->get(route('markets.intelligence', $subscription->getKey()))
         ->assertOk()

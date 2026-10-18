@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Intelligence\IntelligenceTrainer;
+use App\Domain\Research\FeatureSchema;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\MarketData\ExchangeMetadata;
 use App\Models\Exchange;
@@ -87,6 +88,7 @@ it('groups subscriptions in independent collapsible exchanges and links each pai
         'model_id' => $modelId, 'dataset_id' => $datasetId, 'market_key' => $marketKey, 'status' => 'ready',
         'generation_key' => null, 'sha256' => str_repeat('0', 64), 'report' => json_encode([
             'model_id' => $modelId, 'dataset_id' => $datasetId, 'status' => 'ready',
+            'keys' => FeatureSchema::keys('core'), 'training_data' => ['schema' => 'core'],
             'validation_version' => IntelligenceTrainer::VERSION, 'trained_as_of_ms' => now()->getTimestampMs(),
             'rubix_ml_major' => \Rubix\ML\VERSION,
             'outcome' => ['status' => 'ready', 'reason' => 'validated'],

@@ -24,6 +24,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
+function backfillExpectedGeneration(string $id, int $revision): string
+{
+    return hash('sha256', hash('sha256', 'history:'.$id.':'.$revision)
+        .'|'.\App\Domain\Research\FeatureSchema::VERSION
+        .'|'.\App\Domain\Intelligence\KnnSchemaFallback::VERSION
+        .'|'.\App\Domain\Intelligence\IntelligenceTrainer::VERSION
+        .'|rubix:'.\Rubix\ML\VERSION);
+}
+
 function backfillTrainingCandle(int $timestamp): array
 {
     $phase = $timestamp / 3600000;
@@ -119,7 +128,7 @@ it('coalesces successful imports into a feature rebuild followed by one fresh KN
             'holdout_ms', 'human_guidance_ms', 'candle_guidance_ms', 'persistence_ms',
         ])
         ->and($report['build_performance']['feature_replay']['rows_processed'])->toBeGreaterThan(0);
-    $this->assertDatabaseHas('intelligence_models', ['generation_key' => hash('sha256', 'history:'.$id.':2')]);
+    $this->assertDatabaseHas('intelligence_models', ['generation_key' => backfillExpectedGeneration($id, 2)]);
     $this->assertDatabaseHas('market_history_backfills', ['trained_revision' => 2, 'build_stage' => null, 'build_error' => null]);
     Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 2);
 });
@@ -138,7 +147,7 @@ it('rebuilds after a successful backfill even when the weekly generation is alre
 
     $current = app(ModelStore::class)->current('kraken', 'BTC/USD', '1h');
     expect($current['model_id'])->not->toBe($weekly['model_id']);
-    expect($current['generation_key'])->toBe(hash('sha256', 'history:'.$id.':1'));
+    expect($current['generation_key'])->toBe(backfillExpectedGeneration($id, 1));
     $this->assertDatabaseCount('intelligence_models', 2);
     Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 2);
 });
@@ -163,8 +172,8 @@ it('restarts stale prepared features without publishing an obsolete revision', f
     $this->assertDatabaseHas('market_history_backfills', ['trained_revision' => 2, 'history_revision' => 2, 'build_stage' => null]);
     $this->assertDatabaseCount('intelligence_models', 1);
     $this->assertDatabaseCount('research_datasets', 1);
-    $this->assertDatabaseHas('intelligence_models', ['generation_key' => hash('sha256', 'history:'.$id.':2')]);
-    $this->assertDatabaseMissing('intelligence_models', ['generation_key' => hash('sha256', 'history:'.$id.':1')]);
+    $this->assertDatabaseHas('intelligence_models', ['generation_key' => backfillExpectedGeneration($id, 2)]);
+    $this->assertDatabaseMissing('intelligence_models', ['generation_key' => backfillExpectedGeneration($id, 1)]);
     Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 4);
 });
 

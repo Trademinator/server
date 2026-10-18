@@ -147,7 +147,7 @@ it('uses technical snapshots independently of CoinGecko and normalizes direction
     DB::table('market_features')->where('feature_id', $feature->feature_id)->update(['payload' => json_encode($payload)]);
     $this->travelTo('2024-01-01 04:11:00 UTC');
     $signal = app(MarketIntelligence::class)->predict('kraken', 'BTC/USD', '1m');
-    expect($signal['action'])->toBe('hodl')->and($signal['reason'])->toBe('degraded_action_only')
+    expect($signal['action'])->toBe('buy')->and($signal['reason'])->toBe('degraded_action_only')
         ->and($signal['outcome_knn']['sources']['components']['algorithmic']['reason'])->toBe('missing_selected_features')
         ->and($signal['action_knn']['sources']['components']['human']['reason'])->toBe('supported')
         ->and($signal['action_knn']['sources']['effective_weights'])->toBe(['algorithmic' => 0.0, 'human' => 1.0]);

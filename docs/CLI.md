@@ -628,7 +628,7 @@ Use this command to investigate Outcome target/horizon/feature quality before ch
 
 ## trademinator:knn-build
 
-Signature: `trademinator:knn-build {exchange} {symbol} {period} {--dataset=} {--schema=core} {--from=} {--to=} {--as-of=} {--context-fallback= : none or technical; defaults to INTELLIGENCE_CONTEXT_FALLBACK}`
+Signature: `trademinator:knn-build {exchange} {symbol} {period} {--dataset=} {--schema=core} {--from=} {--to=} {--as-of=} {--context-fallback= : Deprecated compatibility flag; CoinGecko is always optional}`
 
 Description: Build closed-candle semantic knowledge and validate KNN and pattern intelligence
 
@@ -683,7 +683,7 @@ php -d memory_limit=512M artisan trademinator:knn-build bitso 'ATOM/USD' 15m --s
 
 Signature: `trademinator:auto-label {exchange? : Optional exchange class, for example bitso} {symbol? : Optional pair; requires exchange, for example ATOM/USD} {--json : Emit machine-readable JSON instead of a table}`
 
-Description: Run Action auto-labeling and Outcome horizon diagnostics for active market feeds
+Description: Run Action auto-labeling and publish shared Outcome/Action diagnostics for active market feeds
 
 Run the exact Action auto-label / horizon analysis used by weekly intelligence training without publishing a model. With no arguments it analyzes every active subscribed market with a selected period. Supplying only `exchange` limits the run to that exchange; supplying `exchange symbol` limits it to one pair.
 
@@ -702,7 +702,7 @@ This command is diagnostic/manual auto-label execution only. Use `trademinator:k
 
 ## trademinator:dispatch-market-intelligence
 
-Signature: `trademinator:dispatch-market-intelligence`
+Signature: `trademinator:dispatch-market-intelligence {--force : Create a fresh build generation, even if this week was already built or scheduling is disabled} {--all : With --force, also rebuild every previously published market and period}`
 
 Description: Queue weekly KNN and pattern training once per subscribed market and selected period
 
@@ -734,9 +734,9 @@ Implementation: [`DispatchLeadLagIntelligence.php`](../app/Console/Commands/Disp
 
 ## trademinator:signal
 
-Signature: `trademinator:signal {exchange} {symbol} {period}`
+Signature: `trademinator:signal {exchange} {symbol} {period} {--raw : Compute a raw, unfiltered KNN proposal without advancing signal memory} {--recorded : Read the latest recorded Server observation without running inference}`
 
-Description: Explain the latest closed-candle KNN signal and calibrated pattern probabilities
+Description: Explain the recorded Server signal, or explicitly inspect a raw KNN proposal
 
 Run inference immediately and print the current closed-candle signal/evidence as JSON. Does not train a new model or place an exchange order. Missing, stale, invalid or insufficient evidence can produce abstention; inspect the reported reasons rather than interpreting every HOLD as supported directional evidence.
 
@@ -770,7 +770,7 @@ Implementation: [`DispatchMarketSignals.php`](../app/Console/Commands/DispatchMa
 
 ## trademinator:model-info
 
-Signature: `trademinator:model-info {model} {--validation-summary}`
+Signature: `trademinator:model-info {model} {--validation-summary : Show compact persisted Outcome/Action validation without reading private KNN sidecars}`
 
 Description: Verify an intelligence artifact or inspect its persisted validation summary
 
@@ -814,7 +814,7 @@ Implementation: [`CompactIntelligenceModel.php`](../app/Console/Commands/Compact
 
 ## trademinator:analyze-validation-gates
 
-Signature: `trademinator:analyze-validation-gates {--directional=5,20,30,50,75,100} {--precision=0.55,0.60,0.65} {--baseline-lift=0.10} {--wilson-floor=0.50} {--all-models} {--limit=500} {--json}`
+Signature: `trademinator:analyze-validation-gates {--directional=5,20,30,50,75,100 : Comma-separated candidate minimum directional counts} {--precision=0.55,0.60,0.65 : Comma-separated candidate absolute semantic precision floors} {--baseline-lift=0.10 : Required Wilson lower-bound lift over the observed Action holdout prediction-mix baseline} {--wilson-floor=0.50 : Absolute Wilson 95% lower-bound floor} {--all-models : Include historical models instead of current heads only} {--limit=500 : Maximum models when --all-models is used} {--json : Print the complete report as JSON}`
 
 Description: Read-only Action KNN holdout calibration; never uses Outcome confusion
 
@@ -1030,7 +1030,7 @@ Implementation: [`PortableImport.php`](../app/Console/Commands/PortableImport.ph
 
 Signature: `trademinator:prune-portable-archives`
 
-Description: Delete expired temporary multipart portable archive transfers and files.
+Description: Delete expired temporary multipart portable archive transfers and files
 
 Delete expired **staged multipart** import/export directories under `ARCHIVE_PORTABLE_PATH` and their `portable_archive_transfers` metadata (including related part metadata). Expiration is controlled by `ARCHIVE_PORTABLE_RETENTION_HOURS` (default 24). Deletion is immediate; this command does **not** delete permanent cold-history archives or hot ticker rows. The scan is performed in bounded batches, and the command reports how many transfers were pruned.
 

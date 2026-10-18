@@ -79,7 +79,7 @@ it('renders actual history counts and failed validation requirements for an abst
             ->assertSee(route('human-training.index', [
                 'exchange' => $exchange->class, 'symbol' => $market->symbol, 'period' => '1m',
             ]))
-            ->assertSee('At least 50')->assertSee('Missing / failed')
+            ->assertSee('minimum validation sample')->assertSee('No tuning results are available yet.')
             ->assertSee('Pattern training history')->assertSee('0 out of 100')
             ->assertSee('<progress', false)->assertSee('role="progressbar"', false)
             ->assertDontSee('Build performance');
