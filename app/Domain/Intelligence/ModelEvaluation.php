@@ -85,7 +85,12 @@ final class ModelEvaluation
             return ['candles' => [], 'action' => [], 'outcome' => []];
         }
         $start = min($times);
+        $horizon = max(0, min(10000, (int) ($report['label_definition']['horizon'] ?? 0)));
         $end = max($times);
+        // Load the last observed H-candle close, not just the decision bars.
+        for ($i = 0; $i < $horizon; $i++) {
+            $end = $this->timeframe->next($end, $period);
+        }
         $from = $this->timeframe->previous($start, $period);
         $candles = [];
         $indexed = [];
@@ -146,6 +151,6 @@ final class ModelEvaluation
             }
         }
         return ['candles' => $candles, 'action' => $markers($action), 'outcome' => $markers($outcome),
-            'candidates' => $candidateMarkers];
+            'horizon_candles' => $horizon, 'candidates' => $candidateMarkers];
     }
 }

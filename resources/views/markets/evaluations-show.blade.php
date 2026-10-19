@@ -40,7 +40,7 @@
                         </p>
                     @endif
                     <div class="review-table-wrap"><table>
-                        <thead><tr><th>Rubix candidate</th><th>Status</th><th>{{ $task === 'outcome' ? 'Macro F1' : 'BUY/SELL precision' }}</th><th>Coverage</th><th>Walk-forward mean</th><th>Lowest fold</th><th>Eligibility</th><th>Calibration (5 bins)</th><th>Time</th><th>Memory peak</th></tr></thead>
+                        <thead><tr><th>Rubix candidate</th><th>Status</th><th>{{ $task === 'outcome' ? 'Macro F1' : 'BUY/SELL precision' }}</th><th>Coverage</th><th>Walk-forward mean</th><th>Lowest fold</th><th>Eligibility</th><th>Baseline Δ</th><th>Calibration (5 bins)</th><th>Time</th><th>Memory peak</th></tr></thead>
                         <tbody>
                         @foreach(($competition['candidates'] ?? []) as $name => $candidate)
                             <tr><th>{{ str_replace('_', ' ', ucwords($name, '_')) }}</th>
@@ -50,6 +50,7 @@
                                 <td>{{ isset($candidate['walk_forward_mean']) ? number_format(100*$candidate['walk_forward_mean'], 1).'%' : '—' }}</td>
                                 <td>{{ isset($candidate['walk_forward_min']) ? number_format(100*$candidate['walk_forward_min'], 1).'%' : '—' }}</td>
                                 <td>{{ ($candidate['eligible'] ?? false) ? 'Eligible' : implode(', ', $candidate['failed_gates'] ?? ['Not evaluated']) }}</td>
+                                <td>{{ isset($candidate['baseline_margin']) ? number_format(100*$candidate['baseline_margin'], 1).' pp' : '—' }}</td>
                                 <td>
                                     @if(isset($candidate['calibration']))
                                         @foreach($candidate['calibration'] as $index => $bin)
@@ -76,7 +77,7 @@
         </section>
         <section class="guide-panel">
             <h2>Historical prediction overlay</h2>
-            <p class="guide-help">Green ↑ BUY · Red ↓ SELL · Blue circles Outcome BULL · Orange circles Outcome BEAR. Faded marks are incorrect. Gray marks indicate supported HOLD; abstentions are hidden unless toggled. No execution or profitability is implied.</p>
+            <p class="guide-help">Green ↑ BUY · Red ↓ SELL. Outcome predictions appear as green (BULL), red (BEAR), or gray (NEUTRAL) close-to-close lines across H candles. The line shows observed price movement, not a predicted price target. Labels remain when the slope is subtle. Supported HOLD and abstention remain distinct; abstentions are hidden unless toggled. No execution or profitability is implied.</p>
             <div class="flex flex-wrap gap-4">
                 <label for="evaluation-algorithm">Model</label>
                 <select id="evaluation-algorithm" data-algorithm>

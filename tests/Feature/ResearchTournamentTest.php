@@ -30,7 +30,7 @@ it('evaluates the four Rubix candidates for Outcome and Action without changing 
         expect($report['tasks'][$task]['baseline'])->toHaveKeys(['majority_class', 'macro_f1', 'directional_precision']);
         foreach (ResearchTournament::CANDIDATES as $name) {
             $candidate = $report['tasks'][$task]['candidates'][$name];
-            expect($candidate)->toHaveKeys(['folds', 'failed_gates', 'eligible', 'research_rank_score', 'calibration'])
+            expect($candidate)->toHaveKeys(['folds', 'failed_gates', 'eligible', 'research_rank_score', 'calibration', 'walk_forward_baseline', 'baseline_margin', 'calibration_error'])
                 ->and($candidate['calibration'])->toHaveCount(5)
                 ->and($candidate['folds'])->toHaveCount(3);
         }

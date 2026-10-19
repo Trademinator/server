@@ -23,7 +23,7 @@ use Throwable;
  */
 final class ResearchTournament
 {
-    public const VERSION = 'rubix-research-tournament-v2.2-calibrated';
+    public const VERSION = 'rubix-research-tournament-v2.3-validated';
     public const CANDIDATES = ['weighted_knn', 'decision_tree', 'random_forest', 'neural_network'];
 
     public function __construct(private DatasetStore $datasets) {}
@@ -88,21 +88,29 @@ final class ResearchTournament
             static fn (array $row): bool => $row[$timeKey] < $cutoff));
         $output = ['train_rows' => count($train), 'holdout_rows' => count($test),
             'holdout_from_ms' => $test[0]['decision_at_ms'] ?? null, 'candidates' => []];
+        // Each fold's reference is fitted only to labels available before that fold.
         $baseline = $this->baseline($train, $task, $classes);
         $output['baseline'] = $baseline;
+        $foldBaselines = [];
+        $foldDefinitions = [];
+        $warmup = (int) floor(count($train) * 0.4);
+        $step = max(1, (int) floor((count($train) - $warmup) / 3));
+        for ($i = 0; $i < 3; $i++) {
+            $foldEnd = $warmup + $step * $i;
+            $foldTest = array_slice($train, $foldEnd, $step);
+            if ($foldTest === []) continue;
+            $foldCutoff = $foldTest[0]['decision_at_ms'];
+            $foldTraining = array_values(array_filter(array_slice($train, 0, $foldEnd),
+                static fn (array $row): bool => $row[$timeKey] < $foldCutoff));
+            $foldDefinitions[] = [$foldTraining, $foldTest];
+            $foldBaselines[] = $this->evaluateBaseline($foldTraining, $foldTest, $task, $classes);
+        }
+        $output['fold_baselines'] = $foldBaselines;
         foreach (self::CANDIDATES as $name) {
             $folds = [];
             // Expanding training windows; all candidates evaluated on identical chronological segments.
             // Final 20% holdout is never used in fold selection or candidate qualification.
-            $warmup = (int) floor(count($train) * 0.4);
-            $step = max(1, (int) floor((count($train) - $warmup) / 3));
-            for ($i = 0; $i < 3; $i++) {
-                $foldEnd = $warmup + $step * $i;
-                $foldTest = array_slice($train, $foldEnd, $step);
-                if ($foldTest === []) continue;
-                $foldCutoff = $foldTest[0]['decision_at_ms'];
-                $foldTraining = array_values(array_filter(array_slice($train, 0, $foldEnd),
-                    static fn (array $row): bool => $row[$timeKey] < $foldCutoff));
+            foreach ($foldDefinitions as [$foldTraining, $foldTest]) {
                 $result = $this->evaluateCandidate($foldTraining, $foldTest, $task, $classes, $name, $isolate);
                 unset($result['confusion']);
                 $folds[] = $result;
@@ -125,10 +133,12 @@ final class ResearchTournament
             $directionalCorrect = array_sum(array_column($evaluated, 'directional_correct'));
             $wilsonLower = $this->wilsonLower($directionalCorrect, $directional);
             if ($task === 'action' && $wilsonLower < 0.45) $reasons[] = 'directional_wilson_lower_bound';
-            if ($task === 'outcome' && $mean <= $baseline['macro_f1']) $reasons[] = 'below_majority_baseline';
-            if ($task === 'action' && $mean <= $baseline['directional_precision'] && $baseline['directional_count'] >= 5) {
-                $reasons[] = 'below_directional_baseline';
-            }
+            $referenceScores = array_column($foldBaselines, 'score');
+            $reference = $referenceScores ? array_sum($referenceScores) / count($referenceScores) : 0.0;
+            if ($mean <= $reference + 0.01) $reasons[] = 'below_walk_forward_baseline';
+            $calibration = $this->calibration($folds);
+            $calibrationError = $this->calibrationError($calibration);
+            if ($calibrationError !== null && $calibrationError > 0.30) $reasons[] = 'poor_probability_calibration';
             // Holdout confirms a preselected research champion, never selects one.
             $validationEligible = $reasons === [];
             $holdoutPassed = $holdout['status'] === 'evaluated'
@@ -138,7 +148,8 @@ final class ResearchTournament
                 'walk_forward_mean' => $mean, 'walk_forward_min' => $minimum,
                 'walk_forward_coverage' => $coverage,
                 'directional_wilson_lower_95' => $task === 'action' ? $wilsonLower : null,
-                'calibration' => $this->calibration($folds),
+                'calibration' => $calibration, 'calibration_error' => $calibrationError,
+                'walk_forward_baseline' => $reference, 'baseline_margin' => $mean - $reference,
                 'failed_gates' => $reasons, 'validation_eligible' => $validationEligible,
                 'holdout_confirmed' => $holdoutPassed,
                 'eligible' => $validationEligible && $holdoutPassed,
@@ -195,6 +206,44 @@ final class ResearchTournament
         return array_map(static fn ($item) => ['samples' => $item['n'],
             'accuracy' => $item['n'] ? $item['correct'] / $item['n'] : null,
             'mean_confidence' => $item['n'] ? $item['sum_confidence'] / $item['n'] : null], $bins);
+    }
+
+    /** Time-safe reference: each fold uses its own previously available labels. */
+    private function evaluateBaseline(array $training, array $testing, string $task, array $classes): array
+    {
+        $counts = array_count_values(array_column($training, $task));
+        arsort($counts);
+        $majority = array_key_first($counts);
+        if ($majority === null || $testing === []) {
+            return ['class' => null, 'score' => 0.0, 'samples' => count($testing)];
+        }
+        if ($task === 'action') {
+            // HOLD-only is not an actionable baseline; choose the dominant historical direction.
+            $directions = array_intersect_key($counts, array_flip(['buy', 'sell']));
+            arsort($directions);
+            $class = array_key_first($directions);
+            $correct = count(array_filter($testing, static fn (array $r): bool => $r[$task] === $class));
+            $score = $class === null ? 0.0 : $correct / count($testing);
+        } else {
+            $class = $majority;
+            $tp = count(array_filter($testing, static fn (array $r): bool => $r[$task] === $class));
+            $precision = $tp / count($testing);
+            $score = (2 * $precision / (1 + $precision)) / count($classes);
+        }
+        return ['class' => $class, 'score' => $score, 'samples' => count($testing)];
+    }
+
+    /** Expected calibration error over supported out-of-fold observations. */
+    private function calibrationError(array $bins): ?float
+    {
+        $n = array_sum(array_column($bins, 'samples'));
+        if ($n === 0) return null;
+        $error = 0.0;
+        foreach ($bins as $bin) {
+            if (!$bin['samples']) continue;
+            $error += $bin['samples'] / $n * abs($bin['accuracy'] - $bin['mean_confidence']);
+        }
+        return $error;
     }
 
     private function wilsonLower(int $successes, int $count): float

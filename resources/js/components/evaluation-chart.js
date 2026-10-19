@@ -1,7 +1,26 @@
 import { chartTimeOptions, formatTimestamp } from './time-display.js';
 
+/**
+ * Outcomes are observed close-to-close changes H complete candles later.
+ * The predicted class is retained as metadata, never converted to a target price.
+ */
+export function evaluationOutcomeSegments(candles, predictions, horizon) {
+    if (!Number.isInteger(horizon) || horizon < 1) return [];
+    const positions = new Map(candles.map((c, i) => [Number(c.time), i]));
+    return (predictions || []).flatMap(item => {
+        if (!item.supported || !['super_bear', 'bear', 'neutral', 'bull', 'super_bull'].includes(item.predicted)) return [];
+        const start = positions.get(Number(item.time));
+        const end = start === undefined ? -1 : start + horizon;
+        if (end < 0 || end >= candles.length) return [];
+        const a = candles[start], b = candles[end];
+        if (!Number.isFinite(a.close) || !Number.isFinite(b.close)) return [];
+        return [{ predicted: item.predicted, actual: item.actual, confidence: item.confidence,
+            points: [{ time: a.time, value: a.close }, { time: b.time, value: b.close }] }];
+    });
+}
+
 export async function mountEvaluationChart(root) {
-    const { createChart, CandlestickSeries, createSeriesMarkers } = await import('lightweight-charts');
+    const { createChart, CandlestickSeries, LineSeries, createSeriesMarkers } = await import('lightweight-charts');
     const data = JSON.parse(root.dataset.series || '{}');
     const candles = data.candles || [];
     const status = root.querySelector('[data-status]');
@@ -26,6 +45,11 @@ export async function mountEvaluationChart(root) {
     });
     series.setData(candles);
     const markers = createSeriesMarkers(series, []);
+    let outcomeLines = [];
+    const clearOutcomeLines = () => {
+        outcomeLines.forEach(line => chart.removeSeries(line));
+        outcomeLines = [];
+    };
     const algorithm = root.parentElement.querySelector('[data-algorithm]');
     const action = root.parentElement.querySelector('[data-action-toggle]');
     const outcome = root.parentElement.querySelector('[data-outcome-toggle]');
@@ -49,17 +73,26 @@ export async function mountEvaluationChart(root) {
                 size: 1,
             });
         }
-        if (outcome?.checked) for (const item of (outcomePoints || [])) {
-            if (!item.supported && !abstain.checked) continue;
-            const bull = String(item.predicted).includes('bull');
-            const bear = String(item.predicted).includes('bear');
-            marks.push({
-                time: item.time, position: 'aboveBar', shape: 'circle',
-                color: !item.supported ? '#94a3b8' : item.predicted === item.actual
-                    ? bull ? '#2563eb' : bear ? '#f97316' : '#64748b' : '#eab308',
-                text: item.supported ? String(item.predicted).toUpperCase().replace('SUPER_', 'S.') : 'ABSTAIN',
-                size: 0.7,
-            });
+        clearOutcomeLines();
+        if (outcome?.checked) {
+            const segments = evaluationOutcomeSegments(candles, outcomePoints, Number(data.horizon_candles)).slice(-120);
+            for (const segment of segments) {
+                const color = segment.predicted.includes('bear') ? '#dc2626'
+                    : segment.predicted.includes('bull') ? '#16a34a' : '#64748b';
+                const line = chart.addSeries(LineSeries, { color, lineWidth: 2,
+                    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+                line.setData(segment.points);
+                outcomeLines.push(line);
+                const [a, b] = segment.points;
+                if (segment.predicted === 'neutral' || Math.abs(b.value / a.value - 1) < 0.002) {
+                    marks.push({ time: a.time, position: 'aboveBar', shape: 'circle', color,
+                        text: segment.predicted.toUpperCase().replace('SUPER_', 'S.'), size: 0.5 });
+                }
+            }
+            if (abstain?.checked) for (const item of (outcomePoints || [])) {
+                if (!item.supported) marks.push({ time: item.time, position: 'aboveBar',
+                    shape: 'circle', color: '#94a3b8', text: 'ABSTAIN', size: 0.5 });
+            }
         }
         marks.sort((a, b) => a.time - b.time || a.position.localeCompare(b.position));
         markers.setMarkers(marks);
@@ -78,6 +111,6 @@ export async function mountEvaluationChart(root) {
     });
     const observer = new MutationObserver(() => chart.applyOptions(theme()));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    window.addEventListener('pagehide', () => { observer.disconnect(); chart.remove(); }, { once: true });
-    status.textContent = candles.length + ' historical candles · BUY/SELL and Outcome overlays (not executions)';
+    window.addEventListener('pagehide', () => { observer.disconnect(); clearOutcomeLines(); chart.remove(); }, { once: true });
+    status.textContent = candles.length + ' historical candles · BUY/SELL markers and observed close-to-close Outcome lines over H candles (not price targets or executions)';
 }
