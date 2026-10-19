@@ -222,7 +222,13 @@ final class MarketIntelligence
         // soft-closed ticker. Do not imply otherwise in the Client API.
         $context['prediction_input_basis'] = 'completed_candle';
 
-        $prepared = $this->predictionVector($model, $current->payload, $history, $current->available_at_ms, $context);
+        return $this->inferPayload($model, $current->payload, $history, $current->available_at_ms, $context);
+    }
+
+    /** Reuse the production fusion path without publishing a signal or writing market features. */
+    public function inferPayload(array $model, array $payload, array $history, int $inferenceAt, array $context): array
+    {
+        $prepared = $this->predictionVector($model, $payload, $history, $inferenceAt, $context);
         $preparedError = $prepared['error'] ?? null;
 
         $settings = $model['settings'];
@@ -239,12 +245,12 @@ final class MarketIntelligence
             && is_int($outcomeK) && $outcomeK > 0) {
             $neighbors = $neighborKnn->neighborsIterable(
                 $this->models->knowledge($model), $prepared['vector'], $outcomeK,
-                $current->available_at_ms, $prepared['weights']
+                $inferenceAt, $prepared['weights']
             );
             $outcomeAlgorithmic = (new OutcomeKnn($settings))->vote($neighbors, $outcomeK);
         }
         $outcomeHuman = $this->humanOutcome->predict(
-            $model['outcome']['human'] ?? [], $current->payload, $current->available_at_ms,
+            $model['outcome']['human'] ?? [], $payload, $inferenceAt,
             $this->models->humanKnowledge($model, 'outcome')
         );
         $outcome = $sourceFusion->combine(
@@ -257,7 +263,7 @@ final class MarketIntelligence
         $coreOutcome = $outcome;
         try {
             $insight = $this->coinGeckoInsight->predict(
-                $model['coingecko_insight'] ?? [], $current->payload,
+                $model['coingecko_insight'] ?? [], $payload,
                 $this->models->coinGeckoEstimator($model)
             );
         } catch (RuntimeException $error) {
@@ -277,11 +283,11 @@ final class MarketIntelligence
             && is_int($actionK) && $actionK > 0) {
             $actionAlgorithmic = $neighborKnn->predictIterable(
                 $this->actionKnowledge($this->models->knowledge($model)), $prepared['vector'], $actionK,
-                $current->available_at_ms, $prepared['weights']
+                $inferenceAt, $prepared['weights']
             );
         }
         $actionHuman = $this->candleKnn->predict(
-            $model['action']['human'] ?? [], $current->payload, $current->available_at_ms,
+            $model['action']['human'] ?? [], $payload, $inferenceAt,
             $this->models->humanKnowledge($model, 'action')
         );
         $action = $sourceFusion->combine(

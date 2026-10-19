@@ -304,6 +304,12 @@ final class ModelStore
         return $id === null ? null : $this->load($id);
     }
 
+    /** Load a pinned model while keeping KNN knowledge in streamed sidecars. */
+    public function forPrediction(string $id): array
+    {
+        return $this->loadArtifact($id);
+    }
+
     public function currentForPrediction(string $exchange, string $symbol, string $period): ?array
     {
         $id = DB::table('intelligence_heads')->where('market_key', self::marketKey($exchange, $symbol, $period))->value('model_id');
