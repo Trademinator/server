@@ -73,3 +73,14 @@ $scheduleArtisan('trademinator:archive-eligible-tickers')
 // Prune expired multipart export/import staging files and metadata, never permanent archives.
 $scheduleArtisan('trademinator:prune-portable-archives')
     ->dailyAt('04:40')->onOneServer()->withoutOverlapping(60)->runInBackground();
+
+
+// Shadow research never affects published intelligence or Client actions.
+// Jobs run on separate tournament workers via the scheduler's asynchronous connection.
+$scheduleArtisan('trademinator:shadow publish')
+    ->dailyAt('05:15')->onOneServer()->withoutOverlapping(30);
+
+$scheduleArtisan('trademinator:shadow predict')
+    ->everyFiveMinutes()->onOneServer()->withoutOverlapping(5);
+$scheduleArtisan('trademinator:shadow score')
+    ->hourly()->onOneServer()->withoutOverlapping(20);

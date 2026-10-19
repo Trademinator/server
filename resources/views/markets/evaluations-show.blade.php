@@ -76,6 +76,22 @@
             @endif
         </section>
         <section class="guide-panel">
+            <h2>Live research shadow evaluation</h2>
+            <p class="guide-help">Shadow predictions are research-only and never sent to the Client. Scoring waits for independently finalized labels in a newer frozen dataset.</p>
+            @forelse(($shadowSummary ?? []) as $shadow)
+                <p>{{ ucfirst($shadow['task']) }} · {{ str_replace('_', ' ', $shadow['algorithm']) }}:
+                    {{ $shadow['predictions'] }} recorded predictions,
+                    {{ $shadow['scored'] }} scored,
+                    {{ $shadow['scored'] ? number_format(100*$shadow['correct']/$shadow['scored'], 1).'%' : '—' }} correct among scored.
+                    @if($shadow['predictions'] > $shadow['scored'])
+                        Awaiting finalized labels: {{ $shadow['predictions'] - $shadow['scored'] }}.
+                    @endif
+                </p>
+            @empty
+                <p>No published shadow challengers for this frozen dataset yet.</p>
+            @endforelse
+        </section>
+        <section class="guide-panel">
             <h2>Historical prediction overlay</h2>
             <p class="guide-help">Green ↑ BUY · Red ↓ SELL. Outcome predictions appear as green (BULL), red (BEAR), or gray (NEUTRAL) close-to-close lines across H candles. The line shows observed price movement, not a predicted price target. Labels remain when the slope is subtle. Supported HOLD and abstention remain distinct; abstentions are hidden unless toggled. No execution or profitability is implied.</p>
             <div class="flex flex-wrap gap-4">

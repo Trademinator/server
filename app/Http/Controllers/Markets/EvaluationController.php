@@ -24,6 +24,7 @@ final class EvaluationController extends Controller
         return view('markets.evaluations-show', [
             'report' => $report,
             'tournament' => $tournament,
+            'shadowSummary' => $evaluations->shadowSummary((string) ($report['dataset_id'] ?? '')),
             'series' => $evaluations->series($report, $tournament),
             'model' => $model,
             'ownerRoute' => $request->routeIs('owner.*'),

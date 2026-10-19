@@ -743,6 +743,14 @@ Dispatch one unique queue job per dataset to the dedicated tournament queue. Eac
     php -d memory_limit=512M artisan trademinator:tournament DATASET_UUID --max-rows=1200
     php -d memory_limit=512M artisan trademinator:tournament --all --max-rows=1200
 
+## trademinator:shadow
+
+Signature: `trademinator:shadow {mode : publish|predict|score} {--dataset= : Tournament dataset UUID}`
+
+Description: Research-only versioned challenger publishing, candle prediction and delayed scoring
+
+Publish validated research champions using `trademinator:shadow publish --dataset=DATASET_UUID`. `trademinator:shadow predict` dispatches research-only inference jobs to the tournament queue; `trademinator:shadow score` dispatches delayed scoring jobs. Scores require a **newer** frozen research dataset with finalized labels and label-availability times after the original prediction; no retroactive scoring against the training snapshot. Nothing modifies the published KNN or Client trading logic.
+
 ## trademinator:signal
 
 Signature: `trademinator:signal {exchange} {symbol} {period} {--raw : Compute a raw, unfiltered KNN proposal without advancing signal memory} {--recorded : Read the latest recorded Server observation without running inference}`

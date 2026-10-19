@@ -64,6 +64,25 @@ final class ModelEvaluation
         return $record === null ? null : json_decode($record, true, flags: JSON_THROW_ON_ERROR);
     }
 
+    public function shadowSummary(string $datasetId): array
+    {
+        $models = DB::table('tournament_shadow_models')->where('dataset_id', $datasetId)
+            ->orderBy('task')->get(['shadow_model_id', 'task', 'algorithm', 'published_at_ms']);
+        $summary = [];
+        foreach ($models as $model) {
+            $counts = DB::table('tournament_shadow_predictions as p')
+                ->leftJoin('tournament_shadow_scores as s', 's.shadow_prediction_id', '=', 'p.shadow_prediction_id')
+                ->where('p.shadow_model_id', $model->shadow_model_id)
+                ->selectRaw('COUNT(*) as predictions, SUM(CASE WHEN s.shadow_prediction_id IS NOT NULL THEN 1 ELSE 0 END) as scored, SUM(CASE WHEN s.correct = 1 THEN 1 ELSE 0 END) as correct')
+                ->first();
+            $summary[] = ['task' => $model->task, 'algorithm' => $model->algorithm,
+                'predictions' => (int) ($counts->predictions ?? 0),
+                'scored' => (int) ($counts->scored ?? 0),
+                'correct' => (int) ($counts->correct ?? 0)];
+        }
+        return $summary;
+    }
+
     public function series(array $report, ?array $tournament = null): array
     {
         $action = $report['action']['algorithmic']['holdout']['trace'] ?? [];
