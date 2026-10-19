@@ -21,7 +21,7 @@ use RuntimeException;
 /** Research only. Does not write intelligence_heads, market_signals, or client decisions. */
 final class TournamentShadow
 {
-    public function __construct(private DatasetStore $datasets) {}
+    public function __construct(private DatasetStore $datasets, private FinalizedShadowLabels $finalized) {}
 
     private function path(string $id): string
     {
@@ -174,41 +174,42 @@ final class TournamentShadow
         $model=DB::table('tournament_shadow_models')->where('shadow_model_id',$modelId)->first();
         if (!$model) throw new RuntimeException('Shadow model not found.');
         $meta=json_decode($model->metadata,true,flags:JSON_THROW_ON_ERROR);
-        $newer = DB::table('research_datasets')
-            ->where('created_at','>', $model->created_at)
-            ->orderByDesc('created_at')->limit(20)->get(['dataset_id','manifest']);
-        $snapshots=[];
-        foreach ($newer as $candidate) {
-            $description=json_decode($candidate->manifest,true);
-            if (($description['exchange']??null)!==$meta['exchange']
-                || ($description['symbol']??null)!==$meta['symbol']
-                || ($description['period']??null)!==$meta['period']
-                || $candidate->dataset_id===$model->dataset_id) continue;
-            $snapshots[]=$candidate->dataset_id;
+        $asOfMs = now()->getTimestampMs();
+        $pending = DB::table('tournament_shadow_predictions as p')
+            ->leftJoin('tournament_shadow_scores as s', 's.shadow_prediction_id', '=', 'p.shadow_prediction_id')
+            ->where('p.shadow_model_id', $modelId)->whereNull('s.shadow_prediction_id')
+            ->where('p.decision_at_ms', '<', $asOfMs)
+            ->select('p.*')->orderBy('p.decision_at_ms')->limit(500)->get();
+        if ($pending->isEmpty()) return 0;
+
+        $actionLabels = [];
+        if ($model->task === 'action') {
+            $actionLabels = $this->finalized->actions($meta['exchange'], $meta['symbol'], $meta['period'], $asOfMs);
+        } elseif ($model->task !== 'outcome') {
+            throw new RuntimeException('Unknown shadow model task.');
         }
-        $pending=DB::table('tournament_shadow_predictions as p')
-            ->leftJoin('tournament_shadow_scores as s','s.shadow_prediction_id','=','p.shadow_prediction_id')
-            ->where('p.shadow_model_id',$modelId)->whereNull('s.shadow_prediction_id')
-            ->select('p.*')->get();
-        $count=0;
+        $manifest = $this->datasets->manifest($model->dataset_id);
+        $horizon = (int)($manifest['label_definition']['horizon'] ?? 0);
+        $lookback = (int)($manifest['label_definition']['lookback'] ?? 0);
+        $count = 0;
         foreach ($pending as $prediction) {
-            $row=null;
-            foreach ($snapshots as $snapshotId) {
-                [, $dataset]=$this->datasets->open($snapshotId);
-                $row=$dataset->findDecision((int)$prediction->decision_at_ms);
-                if ($row !== null) break;
-            }
-            if (!$row) continue;
-            $available=(int)($row[$model->task==='action'?'action_label_available_at_ms':'label_available_at_ms']
-                ?? $row['label_available_at_ms']);
-            if ($available > now()->getTimestampMs() || $available <= (int)$prediction->predicted_at_ms) continue;
-            $actual=$row[$model->task==='action'?'action_label':'label'] ?? null;
-            if (!is_string($actual)) continue;
-            $count+=DB::table('tournament_shadow_scores')->insertOrIgnore([
-                'shadow_prediction_id'=>$prediction->shadow_prediction_id,'actual'=>$actual,
-                'label_available_at_ms'=>$available,'scored_at_ms'=>now()->getTimestampMs(),
-                'correct'=>$prediction->supported ? (bool)($actual===$prediction->prediction) : null,
-                'created_at'=>now(),'updated_at'=>now()]);
+            $label = $model->task === 'action'
+                ? ($actionLabels[(int)$prediction->decision_at_ms] ?? null)
+                : $this->finalized->outcome($meta['exchange'], $meta['symbol'], $meta['period'],
+                    (int)$prediction->decision_at_ms, $horizon, $lookback, $asOfMs);
+            if ($label === null || $label['available_at_ms'] > $asOfMs) continue;
+            // A label may have been finalized before a late-running inference job.
+            // It is still a valid score because the prediction is immutable and
+            // refers to a candle after the model was published.
+            $actual = $label['actual'];
+            $count += DB::table('tournament_shadow_scores')->insertOrIgnore([
+                'shadow_prediction_id' => $prediction->shadow_prediction_id,
+                'actual' => $actual,
+                'label_available_at_ms' => $label['available_at_ms'],
+                'scored_at_ms' => $asOfMs,
+                'correct' => $prediction->supported ? (bool)($actual === $prediction->prediction) : null,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
         }
         return $count;
     }
