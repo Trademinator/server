@@ -30,6 +30,7 @@ Use HTTPS outside local development.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `GET` | `/coingecko-mappings` | Read shared CoinGecko identities by exchange and market. |
 | `GET` | `/risk-factor` | Return the authenticated user's questionnaire-derived Risk Factor `R`. |
 | `GET` | `/markets` | List the authenticated user's market subscriptions. |
 | `GET` | `/markets/{subscription}` | Return one subscription, Client configuration, and the latest Server intelligence signal. |
@@ -1019,3 +1020,48 @@ docs/ACTION-KNN-PHASE-1-CONTRACT.md
 ```
 
 `docs/API.md` should remain the integration-oriented reference. Detailed internal algorithm documentation should remain in subsystem-specific documents rather than being required to consume the API.
+
+
+## Shared CoinGecko mappings
+
+`GET /api/v1/client/coingecko-mappings` uses the existing Client bearer key,
+account checks and 120-per-minute throttle. It returns public market metadata
+from `coin_gecko_market_mappings`, including owner corrections. The catalogue
+is shared across authenticated users and includes unsubscribed markets because
+Client accounting may need to value deposits outside active subscriptions.
+No user subscriptions, exchange configuration, provider credentials or diagnostic
+error text are returned. Reading the endpoint does not resolve mappings or call
+CoinGecko.
+
+```json
+{
+  "api_version": 1,
+  "mappings": [
+    {
+      "mapping_id": "00000000-0000-4000-8000-000000000001",
+      "exchange": "bitso",
+      "symbol": "ATOM/USD",
+      "base_symbol": "ATOM",
+      "vs_currency": "usd",
+      "status": "resolved",
+      "coin_id": "cosmos",
+      "manually_mapped": true,
+      "updated_at": "2026-10-21T00:00:00.000000Z"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+Pages contain at most 250 rows ordered by mapping UUID. If `next_cursor` is not
+null, request `?after=<next_cursor>` until it is null. Invalid cursors return 422.
+An empty catalogue is a successful response. Each page reads current data; pages
+are not a database snapshot across requests. Repeated refreshes pick up edits.
+
+Only `status: resolved` can supply an ID. Pending, ambiguous, unmapped and
+unsupported rows return `coin_id: null`, even if an older ID remains in storage.
+The Client must match the exact exchange and spot pair and replace its catalogue
+after a complete refresh, never merge it with local ticker overrides. Responses
+have `Cache-Control: private, no-store`. The Client refreshes its short-lived
+in-memory catalogue every five minutes and discards it on failure or expiry.
+No new database migration or configuration key is needed for this endpoint.
