@@ -10,7 +10,7 @@ final class OutcomeKnnTuner
 {
     public function __construct(private WeightedKnn $neighbors, private OutcomeKnn $outcomes) {}
 
-    public function tunePrepared(array $rows, array $settings, float $deadline): array
+    public function tunePrepared(array|TrainingRows $rows, array $settings, float $deadline): array
     {
         $trainSize = $settings['min_train_size'];
         $minimum = max(1, (int) floor($this->neighbors->minEffective) + 1);
@@ -24,23 +24,24 @@ final class OutcomeKnnTuner
             fn (int $k): bool => $k >= $minimum && $k <= $maximum)));
         sort($initialCandidates);
 
+        $rows = TrainingRows::from($rows);
+
         $reports = [];
         foreach (range($minimum, $maximum) as $k) {
             $reports[$k] = $this->emptyReport($k);
         }
 
         $folds = [];
-        foreach ((new WalkForward)->folds($rows, $trainSize, $settings['test_size'], $settings['gap'], true, null) as $fold) {
-            $training = array_map(fn (int $i): array => $rows[$i], $fold['train']);
+        foreach ((new WalkForward)->rowFolds($rows, $trainSize, $settings['test_size'], $settings['gap'], true, null) as $fold) {
+            $training = $fold['train'];
             $baseline = $this->majorityLabel($training);
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
-                'labels_available_by_ms' => max(array_column($training, 'label_available_at_ms')),
-                'test_from_ms' => $rows[$fold['test'][0]]['decision_at_ms']];
-            foreach ($fold['test'] as $index) {
+                'labels_available_by_ms' => $training->max('label_available_at_ms'),
+                'test_from_ms' => $fold['test'][0]['decision_at_ms']];
+            foreach ($fold['test'] as $row) {
                 if (microtime(true) > $deadline) {
                     throw new RuntimeException('Outcome K tuning time budget exceeded.');
                 }
-                $row = $rows[$index];
                 $neighbors = $this->neighbors->neighborsPrepared($training, $row['vector'], $maximum,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 foreach ($reports as $k => &$report) {
@@ -69,31 +70,32 @@ final class OutcomeKnnTuner
             'selection' => 'supported_macro_f1_then_baseline_improvement_accuracy_confidence_coverage'];
     }
 
-    public function evaluateWalkForwardPrepared(array $rows, array $settings, int $k, float $deadline): array
+    public function evaluateWalkForwardPrepared(array|TrainingRows $rows, array $settings, int $k, float $deadline): array
     {
+        $rows = TrainingRows::from($rows);
         $state = $this->emptyReport($k);
         $folds = [];
-        foreach ((new WalkForward)->folds($rows, $settings['min_train_size'], $settings['test_size'], $settings['gap'], true, null) as $fold) {
-            $training = array_map(fn (int $i): array => $rows[$i], $fold['train']);
+        foreach ((new WalkForward)->rowFolds($rows, $settings['min_train_size'], $settings['test_size'], $settings['gap'], true, null) as $fold) {
+            $training = $fold['train'];
             $baseline = $this->majorityLabel($training);
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
-                'labels_available_by_ms' => max(array_column($training, 'label_available_at_ms')),
-                'test_from_ms' => $rows[$fold['test'][0]]['decision_at_ms']];
-            foreach ($fold['test'] as $index) {
+                'labels_available_by_ms' => $training->max('label_available_at_ms'),
+                'test_from_ms' => $fold['test'][0]['decision_at_ms']];
+            foreach ($fold['test'] as $row) {
                 if (microtime(true) > $deadline) {
                     throw new RuntimeException('Outcome K tuning time budget exceeded.');
                 }
-                $row = $rows[$index];
                 $nearest = $this->neighbors->neighborsPrepared($training, $row['vector'], $k,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 $this->accumulate($state, $row, $this->outcomes->vote($nearest, $k), $baseline);
             }
+            unset($training);
         }
 
         return ['report' => $this->finish($state, $settings), 'folds' => $folds];
     }
 
-    public function evaluatePrepared(array $training, array $test, int $k, array $settings, float $deadline): array
+    public function evaluatePrepared(array|TrainingRows $training, array|TrainingRows $test, int $k, array $settings, float $deadline): array
     {
         $state = $this->emptyReport($k);
         $baseline = $this->majorityLabel($training);
@@ -280,7 +282,7 @@ final class OutcomeKnnTuner
         ];
     }
 
-    private function majorityLabel(array $rows): string
+    private function majorityLabel(iterable $rows): string
     {
         $counts = array_fill_keys(SemanticLabels::OUTCOMES, 0);
         foreach ($rows as $row) {

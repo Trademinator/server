@@ -3,7 +3,9 @@
 use App\Domain\Intelligence\OutcomeKnn;
 use App\Domain\Intelligence\OutcomeKnnTuner;
 use App\Domain\Intelligence\TrainingRequirements;
+use App\Domain\Intelligence\TrainingRows;
 use App\Domain\Intelligence\WeightedKnn;
+use App\Domain\Research\SemanticLabels;
 
 function outcomeValidationSettings(): array
 {
@@ -145,4 +147,25 @@ it('renders Outcome-specific readiness gates instead of Action semantic-precisio
         'Improvement over Outcome baseline',
         'Outcome coverage',
     ])->and(collect($gates)->every(fn (array $gate): bool => $gate['passed']))->toBeTrue();
+});
+
+it('preserves Outcome tuning and holdout reports with sliced and filtered training views', function () {
+    $source = [];
+    for ($id = 0; $id < 64; $id++) {
+        $source[] = ['id' => $id, 'vector' => [($id % 5) / 4], 'feature_weights' => [1.0],
+            'label' => SemanticLabels::OUTCOMES[$id % 5], 'decision_at_ms' => $id * 1000,
+            'label_available_at_ms' => ($id + ($id % 4 === 0 ? 9 : 3)) * 1000];
+    }
+    $eligible = static fn (array $row): bool => $row['id'] % 7 !== 0;
+    $expected = array_values(array_filter(array_slice($source, 3, 54), $eligible));
+    $views = TrainingRows::from($source)->slice(3, 54)->filter($eligible);
+    $settings = array_replace(outcomeValidationSettings(), ['min_train_size' => 10, 'test_size' => 7, 'gap' => 2]);
+    $tuner = new OutcomeKnnTuner(new WeightedKnn(1.0, 1.0, 0.5), new OutcomeKnn($settings));
+
+    expect($tuner->tunePrepared($views, $settings, microtime(true) + 10))
+        ->toBe($tuner->tunePrepared($expected, $settings, microtime(true) + 10));
+    expect($tuner->evaluateWalkForwardPrepared($views, $settings, 4, microtime(true) + 10))
+        ->toBe($tuner->evaluateWalkForwardPrepared($expected, $settings, 4, microtime(true) + 10));
+    expect($tuner->evaluatePrepared($views->slice(0, 20), $views->slice(30), 4, $settings, microtime(true) + 10))
+        ->toBe($tuner->evaluatePrepared(array_slice($expected, 0, 20), array_slice($expected, 30), 4, $settings, microtime(true) + 10));
 });

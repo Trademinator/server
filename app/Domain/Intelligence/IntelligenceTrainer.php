@@ -8,6 +8,7 @@ use App\Domain\Research\DatasetStore;
 use App\Domain\Research\FeatureSchema;
 use App\Domain\Research\SemanticLabels;
 use Closure;
+use Generator;
 use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 use RuntimeException;
@@ -56,45 +57,9 @@ final class IntelligenceTrainer
 
         $window = KnowledgeWindow::metadata($manifest['as_of_ms']);
         $snapshotRows = count($datasetRows);
-        $rows = [];
         $ageExcluded = 0;
-        foreach ($datasetRows as $row) {
-            if ($row['decision_at_ms'] < $window['from_ms']) {
-                $ageExcluded++;
-
-                continue;
-            }
-            $outcomeLabel = $row['label'] ?? null;
-            if (! isset($row['patterns'])
-                || $row['label_available_at_ms'] > $manifest['as_of_ms']
-                || ($outcomeLabel !== null && ! in_array($outcomeLabel, SemanticLabels::OUTCOMES, true))
-                || (($row['action_label'] ?? null) !== null
-                    && ! in_array($row['action_label'], ['buy', 'hodl', 'sell'], true))
-                || ($outcomeLabel === null && ($row['action_label'] ?? null) === null)) {
-                throw new InvalidArgumentException('Invalid Outcome/Action knowledge row.');
-            }
-            foreach ($row['patterns'] as $pattern) {
-                if (! in_array($pattern['type'] ?? null, PatternCatalog::TYPES, true)
-                    || ! in_array($pattern['label'] ?? null, ['completed', 'failed'], true)
-                    || ! is_int($pattern['label_available_at_ms'] ?? null)
-                    || $pattern['label_available_at_ms'] <= $row['decision_at_ms']
-                    || $pattern['label_available_at_ms'] > $row['label_available_at_ms']) {
-                    throw new InvalidArgumentException('Pattern outcome is outside the closed Outcome horizon.');
-                }
-            }
-            $rows[] = [
-                'decision_at_ms' => $row['decision_at_ms'],
-                'label_available_at_ms' => $row['label_available_at_ms'],
-                'vector' => NormalizedVector::from($row['vector'], $manifest['keys']),
-                'label' => $outcomeLabel,
-                'action_label' => $row['action_label'] ?? null,
-                'action_label_available_at_ms' => $row['action_label_available_at_ms'] ?? null,
-                'patterns' => $row['patterns'],
-                'context_features' => $row['context_features'] ?? [],
-                'context_snapshot_id' => $row['source']['context_snapshot_id'] ?? null,
-            ];
-        }
-        if ($rows === []) {
+        $rows = TrainingRows::from($this->projectRows($datasetRows, $manifest, $window['from_ms'], $ageExcluded));
+        if (count($rows) === 0) {
             throw new InvalidArgumentException('No eligible history within INTELLIGENCE_MAX_MODEL_AGE_DAYS.');
         }
 
@@ -117,11 +82,16 @@ final class IntelligenceTrainer
 
             $stageStarted = hrtime(true);
             if ($patternSettings['enabled']) {
-                $outcomePatternRows = array_values(array_filter(
-                    $rows, fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
-                ));
-                $patternRows = array_slice($outcomePatternRows, 0, (int) floor(count($outcomePatternRows) * 0.4));
-                if ($patternRows !== []) {
+                $outcomePatternRows = $rows->filter(
+                    fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
+                );
+                $patternRows = $outcomePatternRows->slice(0, (int) floor(count($outcomePatternRows) * 0.4))
+                    ->map(static function (array $row) use ($datasetRows): array {
+                        $row['patterns'] = $datasetRows->at($row['_dataset_position'])['patterns'];
+
+                        return $row;
+                    });
+                if (count($patternRows) > 0) {
                     $patternBundle = $this->patterns->train($patternRows, $patternSettings, $deadline);
                 }
                 unset($patternRows, $outcomePatternRows);
@@ -136,14 +106,8 @@ final class IntelligenceTrainer
             // Patterns remain trained and reported, but are intentionally excluded from every KNN feature vector.
             $candidatePatternKeys = [];
             $patternKnownAt = null;
-            // Release the original row buffer before mutating the working rows.
-            // Otherwise PHP's copy-on-write duplicates every normalized row.
             $technicalRows = $rows;
             unset($rows);
-            foreach ($technicalRows as &$row) {
-                unset($row['patterns']);
-            }
-            unset($row);
 
             $patternTreeSpools = [];
             foreach ($patternBundle['models'] as &$patternModel) {
@@ -152,7 +116,7 @@ final class IntelligenceTrainer
                     $patternTreeSpools[] = ['estimator' => $estimator, 'spools' => $estimator->spillTrees()];
                 }
             }
-            unset($patternModel);
+            unset($patternModel, $estimator);
 
             $leadLagSeries = $leadLag['series'];
             unset($leadLag['series']);
@@ -160,7 +124,7 @@ final class IntelligenceTrainer
                 $technicalRows, $leadLagBundle, $leadLagSeries
             );
             $stackedRows = null;
-            unset($leadLagSeries);
+            unset($leadLagSeries, $leadLag);
 
             $knn = new WeightedKnn(
                 $settings['max_distance'], $settings['min_effective_neighbors'], $settings['min_confidence']
@@ -173,11 +137,11 @@ final class IntelligenceTrainer
                 $technicalRows, $stackedRows, $candidatePatternKeys, $patternKnownAt,
                 $settings, $knn, $deadline
             );
-            $rows = $outcome['rows'] !== [] ? $outcome['rows'] : $actionFallbackRows;
+            $rows = count($outcome['rows']) > 0 ? $outcome['rows'] : $actionFallbackRows;
             $patternKeys = $outcome['pattern_keys'];
             $patternAblation = $outcome['pattern_ablation'];
             $leadLagExcluded = $technicalLeadLagExcluded;
-            unset($technicalRows, $stackedRows, $actionFallbackRows);
+            unset($outcome['rows'], $technicalRows, $stackedRows, $actionFallbackRows);
             $buildPerformance['stages']['knn_tuning_ms'] = $this->elapsedMs($stageStarted);
             // OutcomeKnnTuner currently performs its final holdout inside the same bounded pass.
             // Retain the historical stage key for operational/report compatibility.
@@ -214,7 +178,14 @@ final class IntelligenceTrainer
             $insightStarted = hrtime(true);
             $insightDeadline = min($publicationDeadline - 5.0, microtime(true) + 30.0);
             try {
-                $coingeckoInsight = $this->coinGeckoInsight->train($rows, $manifest['schema'], $insightDeadline);
+                $contextRows = $rows->map(static function (array $row) use ($datasetRows): array {
+                    $source = $datasetRows->at($row['_dataset_position']);
+                    $row['context_features'] = $source['context_features'] ?? [];
+                    $row['context_snapshot_id'] = $source['source']['context_snapshot_id'] ?? null;
+
+                    return $row;
+                });
+                $coingeckoInsight = $this->coinGeckoInsight->train($contextRows, $manifest['schema'], $insightDeadline);
             } catch (\Throwable $error) {
                 app(ActionLog::class)->write('coingecko.insight.failed', [
                     'reason' => $error::class, 'outcome' => 'skipped',
@@ -224,6 +195,8 @@ final class IntelligenceTrainer
                     'status' => 'optional_training_error', 'influence' => false,
                     'input_keys' => [], 'snapshots' => 0,
                 ]];
+            } finally {
+                unset($contextRows, $datasetRows);
             }
             $buildPerformance['stages']['coingecko_insight_ms'] = $this->elapsedMs($insightStarted);
             $buildPerformance['stages']['candle_guidance_ms'] = $this->elapsedMs($stageStarted);
@@ -239,7 +212,7 @@ final class IntelligenceTrainer
             $actionReady = $actionAlgorithmicReady || $actionHumanReady;
             $ready = $outcomeReady && $actionReady;
 
-            $availableAt = max(array_column($rows, 'label_available_at_ms') ?: [0]);
+            $availableAt = $rows->max('label_available_at_ms');
             foreach ([$humanOutcome['bundle'], $humanAction['bundle']] as $humanBundle) {
                 if (($humanBundle['influence'] ?? false) && isset($humanBundle['available_at_ms'])) {
                     $availableAt = max($availableAt, (int) $humanBundle['available_at_ms']);
@@ -252,8 +225,8 @@ final class IntelligenceTrainer
             }
             unset($spilledForest);
 
-            foreach ($rows as &$row) {
-                $row = [
+            $knowledge = $rows->map(static function (array $row): array {
+                return [
                     'decision_at_ms' => $row['decision_at_ms'],
                     'label_available_at_ms' => $row['label_available_at_ms'],
                     'vector' => $row['vector'],
@@ -262,9 +235,7 @@ final class IntelligenceTrainer
                     'action_label_available_at_ms' => $row['action_label_available_at_ms'] ?? null,
                     'feature_weights' => $row['feature_weights'] ?? [],
                 ];
-            }
-            unset($row);
-            $knowledge = $rows;
+            });
             unset($rows);
 
             $artifact = [
@@ -392,16 +363,55 @@ final class IntelligenceTrainer
         }
     }
 
-    private function trainOutcome(array $technicalRows, ?array $stackedRows, array $candidatePatternKeys,
+    /** @return Generator<int, array<string, mixed>> */
+    private function projectRows(iterable $datasetRows, array $manifest, int $fromMs, int &$ageExcluded): Generator
+    {
+        foreach ($datasetRows as $position => $row) {
+            if ($row['decision_at_ms'] < $fromMs) {
+                $ageExcluded++;
+
+                continue;
+            }
+            $outcomeLabel = $row['label'] ?? null;
+            if (! isset($row['patterns'])
+                || $row['label_available_at_ms'] > $manifest['as_of_ms']
+                || ($outcomeLabel !== null && ! in_array($outcomeLabel, SemanticLabels::OUTCOMES, true))
+                || (($row['action_label'] ?? null) !== null
+                    && ! in_array($row['action_label'], ['buy', 'hodl', 'sell'], true))
+                || ($outcomeLabel === null && ($row['action_label'] ?? null) === null)) {
+                throw new InvalidArgumentException('Invalid Outcome/Action knowledge row.');
+            }
+            foreach ($row['patterns'] as $pattern) {
+                if (! in_array($pattern['type'] ?? null, PatternCatalog::TYPES, true)
+                    || ! in_array($pattern['label'] ?? null, ['completed', 'failed'], true)
+                    || ! is_int($pattern['label_available_at_ms'] ?? null)
+                    || $pattern['label_available_at_ms'] <= $row['decision_at_ms']
+                    || $pattern['label_available_at_ms'] > $row['label_available_at_ms']) {
+                    throw new InvalidArgumentException('Pattern outcome is outside the closed Outcome horizon.');
+                }
+            }
+            yield [
+                'decision_at_ms' => $row['decision_at_ms'],
+                'label_available_at_ms' => $row['label_available_at_ms'],
+                'vector' => NormalizedVector::from($row['vector'], $manifest['keys']),
+                'label' => $outcomeLabel,
+                'action_label' => $row['action_label'] ?? null,
+                'action_label_available_at_ms' => $row['action_label_available_at_ms'] ?? null,
+                '_dataset_position' => $position,
+            ];
+        }
+    }
+
+    private function trainOutcome(TrainingRows $technicalRows, ?TrainingRows $stackedRows, array $candidatePatternKeys,
         ?int $patternKnownAt, array $settings, WeightedKnn $knn, float $deadline): array
     {
-        $technicalRows = array_values(array_filter(
-            $technicalRows, fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
-        ));
+        $technicalRows = $technicalRows->filter(
+            fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
+        );
         if ($stackedRows !== null) {
-            $stackedRows = array_values(array_filter(
-                $stackedRows, fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
-            ));
+            $stackedRows = $stackedRows->filter(
+                fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
+            );
         }
         [$baseTraining, $baseTest, $cutoff] = $this->splitRows($technicalRows);
         $defaultAblation = [
@@ -412,7 +422,7 @@ final class IntelligenceTrainer
             'candidate_pattern_keys' => $candidatePatternKeys,
             'common_rows' => 0,
         ];
-        if ($baseTest === [] || count($baseTraining) < $settings['min_train_size']) {
+        if (count($baseTest) === 0 || count($baseTraining) < $settings['min_train_size']) {
             return $this->emptyTraining('insufficient_outcome_history', count($baseTraining), count($baseTest))
                 + ['rows' => $technicalRows, 'pattern_keys' => [], 'pattern_ablation' => $defaultAblation];
         }
@@ -426,15 +436,15 @@ final class IntelligenceTrainer
         $patternAblation = $defaultAblation;
 
         $comparison = $this->patternAblation->comparisonCandidate($selection);
-        if ($stackedRows !== null && $stackedRows !== [] && $comparison !== null && $patternKnownAt !== null) {
+        if ($stackedRows !== null && count($stackedRows) > 0 && $comparison !== null && $patternKnownAt !== null) {
             $comparisonK = $comparison['k'];
-            $commonBaseTraining = array_values(array_filter(
-                $baseTraining, fn (array $row): bool => $row['decision_at_ms'] > $patternKnownAt
-            ));
-            $stackedTraining = array_values(array_filter(
-                $stackedRows, fn (array $row): bool => $row['decision_at_ms'] < $cutoff
+            $commonBaseTraining = $baseTraining->filter(
+                fn (array $row): bool => $row['decision_at_ms'] > $patternKnownAt
+            );
+            $stackedTraining = $stackedRows->filter(
+                fn (array $row): bool => $row['decision_at_ms'] < $cutoff
                     && $row['label_available_at_ms'] < $cutoff
-            ));
+            );
 
             if (count($commonBaseTraining) >= $settings['min_train_size']
                 && count($stackedTraining) === count($commonBaseTraining)) {
@@ -454,9 +464,9 @@ final class IntelligenceTrainer
                     $patternKeys = $candidatePatternKeys;
                     $rows = $stackedRows;
                     $training = $stackedTraining;
-                    $test = array_values(array_filter(
-                        $stackedRows, fn (array $row): bool => $row['decision_at_ms'] >= $cutoff
-                    ));
+                    $test = $stackedRows->filter(
+                        fn (array $row): bool => $row['decision_at_ms'] >= $cutoff
+                    );
                     $selection = $this->replaceSelectionCandidate(
                         $selection, $stackedComparison['report'], $stackedComparison['folds'], $comparisonK
                     );
@@ -467,7 +477,7 @@ final class IntelligenceTrainer
             }
         }
 
-        $holdout = $selection['k'] === null || $test === []
+        $holdout = $selection['k'] === null || count($test) === 0
             ? ['eligible' => false, 'reason' => 'no_eligible_k']
             : $tuner->evaluatePrepared($training, $test, $selection['k'], $settings, $deadline);
         $reason = $selection['k'] === null ? 'no_eligible_k'
@@ -479,46 +489,46 @@ final class IntelligenceTrainer
                 'holdout_rows' => count($test),
                 'samples' => count($rows),
                 'holdout_from_ms' => $cutoff,
-                'holdout_training_labels_available_by_ms' => max(array_column($training, 'label_available_at_ms') ?: [0]),
+                'holdout_training_labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'rows' => $rows,
                 'pattern_keys' => $patternKeys,
                 'pattern_ablation' => $patternAblation,
             ];
     }
 
-    private function trainAction(array $rows, array $settings, WeightedKnn $knn, float $deadline): array
+    private function trainAction(TrainingRows $rows, array $settings, WeightedKnn $knn, float $deadline): array
     {
-        $actionRows = [];
-        foreach ($rows as $row) {
+        $actionRows = $rows->filter(static function (array $row): bool {
             if (! in_array($row['action_label'] ?? null, ['buy', 'hodl', 'sell'], true)) {
-                continue;
+                return false;
             }
             // Historical reference labels must already be finalized. In real snapshots
             // Action labels have their own availability time; older fixture datasets
             // may carry only the common label_available_at_ms timestamp.
             $available = $row['action_label_available_at_ms'] ?? $row['label_available_at_ms'] ?? null;
-            if (! is_int($available) || $available <= $row['decision_at_ms']) {
-                continue;
-            }
+
+            return is_int($available) && $available > $row['decision_at_ms'];
+        })->map(static function (array $row): array {
             $label = $row['action_label'];
             $row['label'] = $label;
-            $row['label_available_at_ms'] = $available;
+            $row['label_available_at_ms'] = $row['action_label_available_at_ms'] ?? $row['label_available_at_ms'];
             $row['semantic_bottom'] = $label === 'buy';
             $row['semantic_top'] = $label === 'sell';
-            $actionRows[] = $row;
-        }
+
+            return $row;
+        });
         $count = count($actionRows);
         if ($count < $settings['min_train_size'] + $settings['test_size']) {
             return $this->emptyTraining('insufficient_action_history', 0, 0, $count);
         }
 
         $testStart = (int) floor($count * 0.8);
-        $test = array_slice($actionRows, $testStart);
+        $test = $actionRows->slice($testStart);
         $cutoff = $test[0]['decision_at_ms'];
-        $training = array_values(array_filter(
-            array_slice($actionRows, 0, $testStart),
+        $training = $actionRows->slice(0, $testStart)->filter(
             fn (array $row): bool => $row['label_available_at_ms'] < $cutoff
-        ));
+        );
+        unset($actionRows);
         if (count($training) < $settings['min_train_size']) {
             return $this->emptyTraining('insufficient_action_history', count($training), count($test), $count);
         }
@@ -554,23 +564,24 @@ final class IntelligenceTrainer
         ];
     }
 
-    private function splitRows(array $rows): array
+    private function splitRows(TrainingRows $rows): array
     {
         $testStart = (int) floor(count($rows) * 0.8);
-        $test = array_slice($rows, $testStart);
+        $test = $rows->slice($testStart);
         $cutoff = $test[0]['decision_at_ms'] ?? 0;
-        $training = array_values(array_filter(array_slice($rows, 0, $testStart),
-            fn (array $row): bool => $row['label_available_at_ms'] < $cutoff));
+        $training = $rows->slice(0, $testStart)->filter(
+            fn (array $row): bool => $row['label_available_at_ms'] < $cutoff
+        );
 
         return [$training, $test, $cutoff];
     }
 
     /**
-     * Enrich the owned dataset buffer without copying the entire dataset.
+     * Enrich one record at a time and release the original temporary row store.
      * DatasetStore guarantees strictly increasing decision timestamps, so
      * all pre-validation rows form a prefix of the array.
      */
-    private function applyLeadLag(array &$rows, array $bundle, array $series): int
+    private function applyLeadLag(TrainingRows &$rows, array $bundle, array $series): int
     {
         if ($bundle['keys'] === []) {
             return 0;
@@ -581,21 +592,20 @@ final class IntelligenceTrainer
         while ($excluded < $count && $rows[$excluded]['decision_at_ms'] <= $bundle['available_at_ms']) {
             $excluded++;
         }
-        if ($excluded > 0) {
-            $rows = array_slice($rows, $excluded);
-        }
-
-        foreach ($rows as &$row) {
-            $evidence = $this->leadLag->features($bundle, $series, $row['decision_at_ms']);
-            $row['feature_weights'] = array_fill(0, count($row['vector']), 1.0);
-            foreach ($evidence['weights'] as $weight) {
-                $row['feature_weights'][] = $weight;
+        $sourceRows = $rows->slice($excluded);
+        $rows = TrainingRows::from((function () use ($sourceRows, $bundle, $series): Generator {
+            foreach ($sourceRows as $row) {
+                $evidence = $this->leadLag->features($bundle, $series, $row['decision_at_ms']);
+                $row['feature_weights'] = array_fill(0, count($row['vector']), 1.0);
+                foreach ($evidence['weights'] as $weight) {
+                    $row['feature_weights'][] = $weight;
+                }
+                foreach ($evidence['vector'] as $value) {
+                    $row['vector'][] = $value;
+                }
+                yield $row;
             }
-            foreach ($evidence['vector'] as $value) {
-                $row['vector'][] = $value;
-            }
-        }
-        unset($row);
+        })());
 
         return $excluded;
     }

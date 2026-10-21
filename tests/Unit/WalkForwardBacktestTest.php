@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Features\FeatureEngine;
+use App\Domain\Intelligence\TrainingRows;
 use App\Domain\Research\BaselineBacktester;
 use App\Domain\Research\WalkForward;
 
@@ -84,4 +85,44 @@ it('rejects insufficient history invalid strategies and unsorted rows', function
     expect(fn () => (new BaselineBacktester)->run(researchManifest(), researchRows(3), 'majority', 3, 4))->toThrow(RuntimeException::class)
         ->and(fn () => (new BaselineBacktester)->run(researchManifest(), researchRows(), 'knn', 3, 4))->toThrow(InvalidArgumentException::class)
         ->and(fn () => iterator_to_array((new WalkForward)->folds(array_reverse(researchRows()), 3, 4)))->toThrow(InvalidArgumentException::class);
+});
+
+it('preserves purged chronological folds when using disk-backed row views', function (int $gap, bool $expanding) {
+    $rows = researchRows(31);
+    $rows[5]['label_available_at_ms'] = $rows[18]['decision_at_ms'];
+    $rows[12]['label_available_at_ms'] = $rows[21]['decision_at_ms'];
+    $disk = TrainingRows::from($rows);
+    $expected = [];
+    foreach ((new WalkForward)->folds($rows, 3, 4, $gap, $expanding) as $fold) {
+        $expected[] = ['fold' => $fold['fold'],
+            'train' => array_map(static fn (int $index): array => $rows[$index], $fold['train']),
+            'test' => array_map(static fn (int $index): array => $rows[$index], $fold['test']),
+            'purged_or_gap_rows' => $fold['purged_or_gap_rows']];
+    }
+
+    $actual = [];
+    foreach ((new WalkForward)->rowFolds($disk, 3, 4, $gap, $expanding) as $fold) {
+        $actual[] = ['fold' => $fold['fold'], 'train' => iterator_to_array($fold['train']),
+            'test' => iterator_to_array($fold['test']), 'purged_or_gap_rows' => $fold['purged_or_gap_rows']];
+    }
+
+    expect($actual)->toBe($expected);
+})->with([
+    'expanding without a gap' => [0, true],
+    'expanding with a gap' => [4, true],
+    'rolling without a gap' => [0, false],
+    'rolling with a gap' => [4, false],
+]);
+
+it('enforces chronology and fold budgets for training row views', function () {
+    $valid = TrainingRows::from(researchRows(31));
+    $reversed = TrainingRows::from(array_reverse(researchRows()));
+
+    expect(fn () => iterator_to_array((new WalkForward)->rowFolds($reversed, 3, 4)))
+        ->toThrow(InvalidArgumentException::class, 'chronological');
+    expect(fn () => iterator_to_array((new WalkForward)->rowFolds($valid, 3, 4, maxFolds: 2)))
+        ->toThrow(InvalidArgumentException::class, '1000 folds');
+    expect(fn () => iterator_to_array((new WalkForward)->rowFolds($valid, 0, 4)))
+        ->toThrow(InvalidArgumentException::class, 'positive');
+    expect(iterator_to_array((new WalkForward)->rowFolds(TrainingRows::from([]), 3, 4)))->toBe([]);
 });

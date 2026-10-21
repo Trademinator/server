@@ -1,7 +1,10 @@
 <?php
 
 use App\Domain\Intelligence\NormalizedVector;
+use App\Domain\Intelligence\RubixNearestNeighbors;
+use App\Domain\Intelligence\RubixWeightedRms;
 use App\Domain\Intelligence\WeightedKnn;
+use Symfony\Component\Process\Process;
 
 it('normalizes directional coordinates identically without changing ordinary features', function () {
     expect(NormalizedVector::from([-1, 0, 0.7], ['trend.direction', 'candle.direction', 'candle.body']))
@@ -133,4 +136,119 @@ it('rejects malformed vectors and weights before repeated neighbor scans', funct
         ->toThrow(InvalidArgumentException::class);
     expect(fn () => $knn->prepareRows([[...$base, 'vector' => [0.1], 'feature_weights' => [1.5]]]))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('preserves full Rubix neighbors across blocks with ties weights and historical cutoffs', function (int $k, float $maxDistance) {
+    $knn = new WeightedKnn($maxDistance, 1, 0.5);
+    $asOfMs = 3000;
+    $vector = [0.5, 0.5, 0.5];
+    $weights = [1.0, 0.5, 0.25];
+    $rows = [];
+    for ($i = 0; $i < 3073; $i++) {
+        $rows[] = [
+            'vector' => [($i % 9) / 8, (($i * 3) % 9) / 8, (($i * 5) % 9) / 8],
+            'feature_weights' => $i % 23 === 0 ? [0.0, 0.0, 0.0] : [1.0, 0.25, 0.5],
+            'label' => ['buy', 'hodl', 'sell'][$i % 3],
+            'decision_at_ms' => $i + 1,
+            'label_available_at_ms' => $i % 29 === 0 ? $asOfMs : $i + 2,
+        ];
+    }
+    $prepared = $knn->prepareRows($rows);
+    $eligible = array_values(array_filter($prepared, static fn (array $row): bool => $row['decision_at_ms'] < $asOfMs && $row['label_available_at_ms'] < $asOfMs));
+    $reference = new RubixNearestNeighbors($k, true, new RubixWeightedRms);
+    $reference->attach(array_map(static fn (array $row): array => [...$row['vector'], ...$row['feature_weights']], $eligible));
+    $expected = [];
+    foreach ($reference->locate([...$vector, ...$weights]) as $entry) {
+        if ($entry['distance'] <= $maxDistance) {
+            $row = $eligible[$entry['index']];
+            $expected[] = ['distance' => $entry['distance'], 'label' => $row['label'],
+                'decision_at_ms' => $row['decision_at_ms']];
+        }
+    }
+    $stream = static function (array $source): Generator {
+        foreach ($source as $index => $row) {
+            yield $index * 13 => $row;
+        }
+    };
+
+    $streamed = $knn->neighborsIterable($stream($rows), $vector, $k, $asOfMs, $weights);
+    $preparedStreamed = $knn->neighborsPrepared($stream($prepared), $vector, $k, $asOfMs, $weights);
+
+    expect($streamed)->toBe($expected);
+    expect($preparedStreamed)->toBe($expected);
+    expect($knn->vote($streamed, $k))->toBe($knn->vote($expected, $k));
+})->with([
+    'small neighborhood' => [5, 1.0],
+    'ordinary neighborhood' => [65, 1.0],
+    'more neighbors than one block' => [1280, 1.0],
+    'more neighbors than the entire history' => [4000, 1.0],
+    'distance-limited neighborhood' => [1280, 0.25],
+]);
+
+it('keeps the earliest exact matches across block boundaries and rejects unavailable later matches', function () {
+    $rows = [];
+    for ($i = 0; $i < 2300; $i++) {
+        $rows[] = ['vector' => [0.9], 'label' => 'sell',
+            'decision_at_ms' => $i + 1, 'label_available_at_ms' => $i + 2];
+    }
+    foreach ([1022, 1023, 1025, 2047, 2048] as $index) {
+        $rows[$index]['vector'] = [0.1];
+        $rows[$index]['label'] = 'buy';
+    }
+    $rows[0]['vector'] = [0.1];
+    $rows[0]['label_available_at_ms'] = 3000;
+    $knn = new WeightedKnn(1, 1, 0.5);
+
+    $neighbors = $knn->neighbors($rows, [0.1], 3, 3000);
+    $prediction = $knn->vote($neighbors, 3);
+
+    expect($neighbors)->toBe([
+        ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1023],
+        ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1024],
+        ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1026],
+    ]);
+    expect($prediction)->toMatchArray(['action' => 'buy', 'confidence' => 1.0, 'neighbors' => 3]);
+});
+
+it('validates later streamed rows even after finding enough exact neighbors', function () {
+    $rows = (static function (): Generator {
+        for ($i = 0; $i < 1100; $i++) {
+            yield ['vector' => [0.0], 'label' => 'buy',
+                'decision_at_ms' => $i + 1, 'label_available_at_ms' => $i + 2];
+        }
+        yield ['vector' => [0.0, 0.0], 'label' => 'sell',
+            'decision_at_ms' => 1101, 'label_available_at_ms' => 1102];
+    })();
+
+    expect(fn () => (new WeightedKnn)->neighborsIterable($rows, [0.0], 3, 2000))
+        ->toThrow(InvalidArgumentException::class, 'Knowledge feature dimensions do not match.');
+});
+
+it('searches all streamed knowledge within a fixed memory budget', function () {
+    $code = <<<'PHP'
+require 'vendor/autoload.php';
+$seen = 0;
+$rows = (function () use (&$seen): Generator {
+    for ($i = 0; $i < 50000; $i++) {
+        $seen++;
+        yield ['vector' => array_fill(0, 18, $i === 49999 ? 0.0 : 0.5),
+            'label' => 'buy', 'decision_at_ms' => $i + 1, 'label_available_at_ms' => $i + 2,
+            'context_features' => ['unused' => str_repeat((string) ($i % 10), 4096)]];
+    }
+})();
+$neighbors = (new App\Domain\Intelligence\WeightedKnn(1, 1, 0.5))
+    ->neighborsIterable($rows, array_fill(0, 18, 0.0), 65, 60000);
+echo json_encode(['seen' => $seen, 'neighbors' => count($neighbors),
+    'nearest_decision_at_ms' => $neighbors[0]['decision_at_ms'],
+    'peak_bytes' => memory_get_peak_usage(true)], JSON_THROW_ON_ERROR);
+PHP;
+    $process = new Process([PHP_BINARY, '-d', 'memory_limit=64M', '-r', $code], dirname(__DIR__, 2));
+    $process->setTimeout(60);
+
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput().$process->getOutput());
+    $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    expect($result)->toMatchArray(['seen' => 50000, 'neighbors' => 65, 'nearest_decision_at_ms' => 50000]);
+    expect($result['peak_bytes'])->toBeLessThan(64 * 1024 * 1024);
 });

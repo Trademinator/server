@@ -8,7 +8,6 @@ use Rubix\ML\Classifiers\ClassificationTree;
 use Rubix\ML\Classifiers\RandomForest;
 use Rubix\ML\Datasets\Labeled;
 use Rubix\ML\Datasets\Unlabeled;
-use RuntimeException;
 
 /**
  * Optional, independent five-class context advisor.
@@ -29,8 +28,8 @@ final class CoinGeckoInsight
         'context.market_cap_share', 'context.volume_share',
     ];
 
-    /** @param list<array<string, mixed>> $rows */
-    public function train(array $rows, string $schema, float $deadline): array
+    /** @param iterable<array<string, mixed>> $rows */
+    public function train(iterable $rows, string $schema, float $deadline): array
     {
         $bundle = [
             'version' => self::VERSION, 'optional' => true, 'status' => 'disabled',

@@ -10,7 +10,7 @@ final class LeadLagIntelligence
 {
     public function __construct(private LeadLagSeries $series, private LeadLagTrainer $trainer, private ExchangeTimezone $timezones) {}
 
-    public function prepare(array $manifest, array $rows, float $deadline): array
+    public function prepare(array $manifest, array|TrainingRows $rows, float $deadline): array
     {
         if (DB::transactionLevel() === 0 && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
             DB::statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
@@ -19,7 +19,7 @@ final class LeadLagIntelligence
         return DB::transaction(fn (): array => $this->snapshot($manifest, $rows, $deadline));
     }
 
-    private function snapshot(array $manifest, array $rows, float $deadline): array
+    private function snapshot(array $manifest, array|TrainingRows $rows, float $deadline): array
     {
         $settings = config('lead_lag');
         $bundle = ['version' => LeadLagTrainer::VERSION, 'models' => [], 'report' => [], 'settings' => $settings,

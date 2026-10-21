@@ -17,7 +17,7 @@ final class KnnTuner
         return $this->tunePrepared($rows, $settings, $deadline);
     }
 
-    public function tunePrepared(array $rows, array $settings, float $deadline): array
+    public function tunePrepared(array|TrainingRows $rows, array $settings, float $deadline): array
     {
         $trainSize = $settings['min_train_size'];
         $minimum = max(1, (int) floor($this->knn->minEffective) + 1);
@@ -31,6 +31,8 @@ final class KnnTuner
             fn (int $k): bool => $k >= $minimum && $k <= $maximum)));
         sort($initialCandidates);
 
+        $rows = TrainingRows::from($rows);
+
         // Score every feasible K incrementally while each neighbor list is hot.
         // The first walk-forward fold has exactly min_train_size rows, so K cannot
         // exceed that size even when later expanding folds contain much more history.
@@ -40,16 +42,15 @@ final class KnnTuner
         }
 
         $folds = [];
-        foreach ((new WalkForward)->folds($rows, $trainSize, $settings['test_size'], $settings['gap'], true, null) as $fold) {
-            $training = array_map(fn (int $i): array => $rows[$i], $fold['train']);
+        foreach ((new WalkForward)->rowFolds($rows, $trainSize, $settings['test_size'], $settings['gap'], true, null) as $fold) {
+            $training = $fold['train'];
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
-                'labels_available_by_ms' => max(array_column($training, 'label_available_at_ms')),
-                'test_from_ms' => $rows[$fold['test'][0]]['decision_at_ms']];
-            foreach ($fold['test'] as $index) {
+                'labels_available_by_ms' => $training->max('label_available_at_ms'),
+                'test_from_ms' => $fold['test'][0]['decision_at_ms']];
+            foreach ($fold['test'] as $row) {
                 if (microtime(true) > $deadline) {
                     throw new RuntimeException('K tuning time budget exceeded; reduce INTELLIGENCE_MAX_MODEL_AGE_DAYS or increase the build time budget.');
                 }
-                $row = $rows[$index];
                 $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $maximum,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 foreach ($accumulators as $k => &$accumulator) {
@@ -84,20 +85,20 @@ final class KnnTuner
             'reason' => $reason];
     }
 
-    public function evaluateWalkForwardPrepared(array $rows, array $settings, int $k, float $deadline): array
+    public function evaluateWalkForwardPrepared(array|TrainingRows $rows, array $settings, int $k, float $deadline): array
     {
+        $rows = TrainingRows::from($rows);
         $accumulator = $this->newAccumulator($k);
         $folds = [];
-        foreach ((new WalkForward)->folds($rows, $settings['min_train_size'], $settings['test_size'], $settings['gap'], true, null) as $fold) {
-            $training = array_map(fn (int $i): array => $rows[$i], $fold['train']);
+        foreach ((new WalkForward)->rowFolds($rows, $settings['min_train_size'], $settings['test_size'], $settings['gap'], true, null) as $fold) {
+            $training = $fold['train'];
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
-                'labels_available_by_ms' => max(array_column($training, 'label_available_at_ms')),
-                'test_from_ms' => $rows[$fold['test'][0]]['decision_at_ms']];
-            foreach ($fold['test'] as $index) {
+                'labels_available_by_ms' => $training->max('label_available_at_ms'),
+                'test_from_ms' => $fold['test'][0]['decision_at_ms']];
+            foreach ($fold['test'] as $row) {
                 if (microtime(true) > $deadline) {
                     throw new RuntimeException('K tuning time budget exceeded; reduce INTELLIGENCE_MAX_MODEL_AGE_DAYS or increase the build time budget.');
                 }
-                $row = $rows[$index];
                 $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $k,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), $fold['fold']);
@@ -116,7 +117,7 @@ final class KnnTuner
         return $this->evaluatePrepared($training, $test, $k, $settings, $deadline);
     }
 
-    public function evaluatePrepared(array $training, array $test, int $k, array $settings, float $deadline): array
+    public function evaluatePrepared(array|TrainingRows $training, array|TrainingRows $test, int $k, array $settings, float $deadline): array
     {
         $accumulator = $this->newAccumulator($k);
         foreach ($test as $row) {
@@ -140,6 +141,7 @@ final class KnnTuner
         }
 
         unset($accumulator['last_prediction']);
+
         return $this->finishAccumulator($accumulator, $settings);
     }
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Intelligence\KnnTuner;
+use App\Domain\Intelligence\TrainingRows;
 use App\Domain\Intelligence\WeightedKnn;
 
 function tuningRows(int $count = 180, bool $contradictory = false): array
@@ -89,4 +90,34 @@ it('accepts compact semantic flags without changing tuning results', function ()
 it('refuses an expired compute budget without selecting a partial winner', function () {
     expect(fn () => (new KnnTuner(new WeightedKnn))->tune(tuningRows(), tuningSettings(), microtime(true) - 1))
         ->toThrow(RuntimeException::class, 'time budget');
+});
+
+it('preserves Action tuning and holdout reports through filtered views with projected label endpoints', function () {
+    $knn = new WeightedKnn;
+    $source = $knn->prepareRows(tuningRows());
+    foreach ($source as $position => &$row) {
+        $row['action_label'] = $position % 17 === 0 ? null : $row['label'];
+        $row['action_label_available_at_ms'] = $row['label_available_at_ms'];
+        $row['label'] = 'neutral';
+        $row['label_available_at_ms'] += 50000;
+    }
+    unset($row);
+    $eligible = static fn (array $row): bool => $row['action_label'] !== null;
+    $project = static function (array $row): array {
+        $row['label'] = $row['action_label'];
+        $row['label_available_at_ms'] = $row['action_label_available_at_ms'];
+
+        return $row;
+    };
+    $expected = array_map($project, array_values(array_filter($source, $eligible)));
+    $views = TrainingRows::from($source)->filter($eligible)->map($project);
+    $tuner = new KnnTuner($knn);
+    $settings = tuningSettings();
+
+    expect($tuner->tunePrepared($views, $settings, microtime(true) + 10))
+        ->toBe($tuner->tunePrepared($expected, $settings, microtime(true) + 10));
+    expect($tuner->evaluateWalkForwardPrepared($views, $settings, 9, microtime(true) + 10))
+        ->toBe($tuner->evaluateWalkForwardPrepared($expected, $settings, 9, microtime(true) + 10));
+    expect($tuner->evaluatePrepared($views->slice(0, 80), $views->slice(90), 9, $settings, microtime(true) + 10))
+        ->toBe($tuner->evaluatePrepared(array_slice($expected, 0, 80), array_slice($expected, 90), 9, $settings, microtime(true) + 10));
 });

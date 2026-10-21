@@ -48,7 +48,7 @@ afterEach(function (): void {
     }
 });
 
-function recoveryMarket(bool $active = true): string
+function signalQueueRecoveryMarket(bool $active = true): string
 {
     $fixture = MarketSignal::factory()->create();
     $marketId = $fixture->market_id;
@@ -87,7 +87,7 @@ function recoveryHistory(string $marketId, string $token): string
 }
 
 it('defaults to a read-only report and leaves payloads, owners, and running lease timestamps unchanged', function (): void {
-    $marketId = recoveryMarket();
+    $marketId = signalQueueRecoveryMarket();
     $legacy = recoveryLegacySignal($marketId);
     $raw = recoveryPayload($legacy);
     $this->recoveryRedis->rpush('queues:intelligence', $raw);
@@ -113,7 +113,7 @@ it('defaults to a read-only report and leaves payloads, owners, and running leas
 });
 
 it('refuses recovery while either local worker guard is held', function (string $worker): void {
-    $raw = recoveryPayload(recoveryLegacySignal(recoveryMarket()));
+    $raw = recoveryPayload(recoveryLegacySignal(signalQueueRecoveryMarket()));
     $this->recoveryRedis->rpush('queues:intelligence', $raw);
     $handle = fopen($this->recoveryStorage.'/framework/trademinator-'.$worker.'-queue.lock', 'c');
     expect(flock($handle, LOCK_EX | LOCK_NB))->toBeTrue();
@@ -142,9 +142,9 @@ it('refuses recovery during signal dispatch and does not release the competing o
 });
 
 it('atomically coalesces legacy signals, preserves training work, and can be rerun after recovery', function (): void {
-    $firstMarket = recoveryMarket();
-    $secondMarket = recoveryMarket();
-    $inactiveMarket = recoveryMarket(false);
+    $firstMarket = signalQueueRecoveryMarket();
+    $secondMarket = signalQueueRecoveryMarket();
+    $inactiveMarket = signalQueueRecoveryMarket(false);
     $legacy = recoveryLegacySignal($firstMarket);
     $oldOwner = Cache::lock(UniqueLock::getKey($legacy), 1200);
     expect($oldOwner->get())->toBeTrue();
@@ -227,7 +227,7 @@ it('atomically coalesces legacy signals, preserves training work, and can be rer
 });
 
 it('preserves unrelated jobs appended after its snapshot', function (): void {
-    $legacyRaw = recoveryPayload(recoveryLegacySignal(recoveryMarket()));
+    $legacyRaw = recoveryPayload(recoveryLegacySignal(signalQueueRecoveryMarket()));
     $this->recoveryRedis->rpush('queues:intelligence', $legacyRaw);
     $appended = recoveryPayload(new BackfillMarketHistory((string) Str::uuid7(), (string) Str::uuid7()));
     $injected = false;
@@ -246,7 +246,7 @@ it('preserves unrelated jobs appended after its snapshot', function (): void {
 });
 
 it('refreshes nested split continuation timeouts without changing their history identity or order', function (): void {
-    $marketId = recoveryMarket();
+    $marketId = signalQueueRecoveryMarket();
     $token = (string) Str::uuid7();
     $historyId = recoveryHistory($marketId, $token);
     $first = new RebuildBackfilledIntelligence($historyId, $token, 'core', 1000, 2000, false, 3);
@@ -278,7 +278,7 @@ it('refreshes nested split continuation timeouts without changing their history 
 });
 
 it('aborts atomically when an unbacked signal appears and rolls back the queued lease update', function (): void {
-    $marketId = recoveryMarket();
+    $marketId = signalQueueRecoveryMarket();
     $legacy = recoveryLegacySignal($marketId);
     $raw = recoveryPayload($legacy);
     $this->recoveryRedis->rpush('queues:intelligence', $raw);
@@ -308,7 +308,7 @@ it('aborts atomically when an unbacked signal appears and rolls back the queued 
 });
 
 it('preserves an unrepresented durable owner and does not manufacture a replacement for it', function (): void {
-    $marketId = recoveryMarket();
+    $marketId = signalQueueRecoveryMarket();
     $job = new RecordMarketSignal($marketId);
     $unique = new UniqueLock(Cache::store());
     expect($unique->acquire($job))->toBeTrue();

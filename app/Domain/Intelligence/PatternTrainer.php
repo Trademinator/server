@@ -2,6 +2,7 @@
 
 namespace App\Domain\Intelligence;
 
+use Generator;
 use Rubix\ML\Classifiers\ClassificationTree;
 use Rubix\ML\Classifiers\KNearestNeighbors;
 use Rubix\ML\Datasets\Labeled;
@@ -12,42 +13,54 @@ final class PatternTrainer
 {
     public function __construct(private PatternCatalog $catalog, private ProbabilityCalibration $calibration) {}
 
-    public function train(array $rows, array $settings, float $deadline): array
+    public function train(iterable $rows, array $settings, float $deadline): array
     {
+        $rows = TrainingRows::from($rows);
         $models = $reports = [];
         foreach (PatternCatalog::TYPES as $type) {
-            $samples = [];
-            foreach ($rows as $row) {
-                foreach ($row['patterns'] as $candidate) {
-                    if ($candidate['type'] === $type) {
-                        $samples[] = ['vector' => $this->catalog->vector($row['vector'], $candidate),
-                            'label' => $candidate['label'], 'decision_at_ms' => $row['decision_at_ms'],
-                            'label_available_at_ms' => $candidate['label_available_at_ms']];
+            $samples = TrainingRows::from((function () use ($rows, $type): Generator {
+                foreach ($rows as $row) {
+                    foreach ($row['patterns'] as $candidate) {
+                        if ($candidate['type'] === $type) {
+                            yield ['vector' => $this->catalog->vector($row['vector'], $candidate),
+                                'label' => $candidate['label'], 'decision_at_ms' => $row['decision_at_ms'],
+                                'label_available_at_ms' => $candidate['label_available_at_ms']];
+                        }
                     }
                 }
-            }
+            })());
             $count = count($samples);
             if ($count < $settings['min_samples']) {
                 $reports[$type] = ['status' => 'insufficient_samples', 'samples' => $count];
+                unset($samples);
 
                 continue;
             }
             $calibrationStart = (int) floor($count * 0.6);
             $testStart = (int) floor($count * 0.8);
-            $train = array_values(array_filter(array_slice($samples, 0, $calibrationStart),
-                fn (array $row): bool => $row['label_available_at_ms'] < $samples[$calibrationStart]['decision_at_ms']));
-            $calibrate = array_values(array_filter(array_slice($samples, $calibrationStart, $testStart - $calibrationStart),
-                fn (array $row): bool => $row['label_available_at_ms'] < $samples[$testStart]['decision_at_ms']));
-            $test = array_slice($samples, $testStart);
+            $calibrationCutoff = $samples[$calibrationStart]['decision_at_ms'];
+            $testCutoff = $samples[$testStart]['decision_at_ms'];
+            $train = $samples->slice(0, $calibrationStart)->filter(
+                fn (array $row): bool => $row['label_available_at_ms'] < $calibrationCutoff
+            );
+            $calibrate = $samples->slice($calibrationStart, $testStart - $calibrationStart)->filter(
+                fn (array $row): bool => $row['label_available_at_ms'] < $testCutoff
+            );
+            $test = $samples->slice($testStart);
             $selectStart = (int) floor(count($calibrate) / 2);
-            $select = array_slice($calibrate, $selectStart);
-            $calibrate = array_values(array_filter(array_slice($calibrate, 0, $selectStart),
-                fn (array $row): bool => $row['label_available_at_ms'] < ($select[0]['decision_at_ms'] ?? 0)));
+            $select = $calibrate->slice($selectStart);
+            $selectionCutoff = $select[0]['decision_at_ms'] ?? 0;
+            $calibrate = $calibrate->slice(0, $selectStart)->filter(
+                fn (array $row): bool => $row['label_available_at_ms'] < $selectionCutoff
+            );
             unset($samples);
+            $trainLabels = $this->labelCounts($train);
+            $calibrationLabels = $this->labelCounts($calibrate);
             if (min(count($train), count($calibrate), count($select), count($test)) < $settings['min_block_rows']
-                || count(array_unique(array_column($train, 'label'))) < 2
-                || count(array_unique(array_column($calibrate, 'label'))) < 2) {
+                || count($trainLabels) < 2
+                || count($calibrationLabels) < 2) {
                 $reports[$type] = ['status' => 'insufficient_chronological_classes', 'samples' => $count];
+                unset($train, $calibrate, $select, $test);
 
                 continue;
             }
@@ -55,29 +68,29 @@ final class PatternTrainer
                 'random_forest' => new SequentialRandomForest(new ClassificationTree(10, 3), $settings['trees'], 0.8),
                 'weighted_knn' => new KNearestNeighbors(min($settings['k'], count($train)), true),
             ];
-            $baseRate = count(array_filter($train, fn (array $row): bool => $row['label'] === 'completed')) / count($train);
-            $baseline = $this->calibration->metrics(array_fill(0, count($test), $baseRate), array_column($test, 'label'));
+            $baseRate = ($trainLabels['completed'] ?? 0) / count($train);
+            $baseline = $this->calibration->metrics(array_fill(0, count($test), $baseRate), $this->column($test, 'label'));
             $candidates = [];
             foreach ($learners as $name => $learner) {
                 if (microtime(true) > $deadline) {
                     throw new RuntimeException('Pattern training time budget exceeded.');
                 }
-                $learner->train(new Labeled(array_column($train, 'vector'), array_column($train, 'label')));
+                $learner->train(new Labeled($this->column($train, 'vector'), $this->column($train, 'label')));
                 $raw = array_map(fn (array $p): float => $p['completed'] ?? 0.0,
-                    $learner->proba(new Unlabeled(array_column($calibrate, 'vector'))));
-                $mapping = $this->calibration->fit($raw, array_column($calibrate, 'label'));
+                    $learner->proba(new Unlabeled($this->column($calibrate, 'vector'))));
+                $mapping = $this->calibration->fit($raw, $this->column($calibrate, 'label'));
                 $rawSelect = array_map(fn (array $p): float => $p['completed'] ?? 0.0,
-                    $learner->proba(new Unlabeled(array_column($select, 'vector'))));
+                    $learner->proba(new Unlabeled($this->column($select, 'vector'))));
                 $selectionMetrics = $this->calibration->metrics(
-                    array_map(fn (float $p): float => $this->calibration->apply($p, $mapping), $rawSelect), array_column($select, 'label'));
+                    array_map(fn (float $p): float => $this->calibration->apply($p, $mapping), $rawSelect), $this->column($select, 'label'));
                 $rawTest = array_map(fn (array $p): float => $p['completed'] ?? 0.0,
-                    $learner->proba(new Unlabeled(array_column($test, 'vector'))));
+                    $learner->proba(new Unlabeled($this->column($test, 'vector'))));
                 $calibrated = array_map(fn (float $p): float => $this->calibration->apply($p, $mapping), $rawTest);
                 $candidates[$name] = ['algorithm' => $name, 'estimator' => $learner, 'calibration' => $mapping,
                     'selection_metrics' => $selectionMetrics,
-                    'metrics' => $this->calibration->metrics($calibrated, array_column($test, 'label')),
-                    'raw_metrics' => $this->calibration->metrics($rawTest, array_column($test, 'label')),
-                    'available_at_ms' => max(array_column($test, 'label_available_at_ms'))];
+                    'metrics' => $this->calibration->metrics($calibrated, $this->column($test, 'label')),
+                    'raw_metrics' => $this->calibration->metrics($rawTest, $this->column($test, 'label')),
+                    'available_at_ms' => $test->max('label_available_at_ms')];
                 unset($raw, $rawSelect, $rawTest, $calibrated);
             }
             uasort($candidates, fn (array $a, array $b): int => [$a['selection_metrics']['brier'], $a['selection_metrics']['log_loss'], $a['selection_metrics']['calibration_error']]
@@ -92,12 +105,12 @@ final class PatternTrainer
                 'selected' => $eligible ? $winner['algorithm'] : null,
                 'candidate_selected_before_test' => $winner['algorithm'],
                 'selection_rows' => count($select), 'selection_from_ms' => $select[0]['decision_at_ms'],
-                'selection_labels_available_by_ms' => max(array_column($select, 'label_available_at_ms')),
+                'selection_labels_available_by_ms' => $select->max('label_available_at_ms'),
                 'samples' => $count, 'train_rows' => count($train), 'calibration_rows' => count($calibrate),
                 'test_rows' => count($test),
-                'train_labels_available_by_ms' => max(array_column($train, 'label_available_at_ms')),
+                'train_labels_available_by_ms' => $train->max('label_available_at_ms'),
                 'calibration_from_ms' => $calibrate[0]['decision_at_ms'],
-                'calibration_labels_available_by_ms' => max(array_column($calibrate, 'label_available_at_ms')),
+                'calibration_labels_available_by_ms' => $calibrate->max('label_available_at_ms'),
                 'test_from_ms' => $test[0]['decision_at_ms'], 'prior_baseline' => $baseline,
                 'candidates' => array_map(function (array $candidate): array {
                     unset($candidate['estimator'], $candidate['calibration']);
@@ -105,9 +118,32 @@ final class PatternTrainer
                     return $candidate;
                 }, $candidates),
             ];
+            unset($train, $calibrate, $select, $test, $learners, $candidates, $learner, $winner, $mapping);
         }
 
         return ['models' => $models, 'report' => $reports, 'version' => PatternCatalog::VERSION];
+    }
+
+    /** @return array<string, int> */
+    private function labelCounts(iterable $rows): array
+    {
+        $counts = [];
+        foreach ($rows as $row) {
+            $counts[$row['label']] = ($counts[$row['label']] ?? 0) + 1;
+        }
+
+        return $counts;
+    }
+
+    /** @return list<mixed> */
+    private function column(iterable $rows, string $field): array
+    {
+        $values = [];
+        foreach ($rows as $row) {
+            $values[] = $row[$field];
+        }
+
+        return $values;
     }
 
     public function predict(array $bundle, array $vector, array $candidates, int $asOfMs): array
