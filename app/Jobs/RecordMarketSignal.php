@@ -16,11 +16,18 @@ final class RecordMarketSignal implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 900;
 
-    public int $uniqueFor = 1200;
+    public bool $failOnTimeout = true;
+
+    // Keep one pending recording until processing succeeds or fails terminally.
+    public int $uniqueFor = 0;
 
     public array $backoff = [60];
 
-    public function __construct(public string $marketId) {}
+    public function __construct(public string $marketId)
+    {
+        $this->onQueue((string) config('intelligence.signals.queue', 'signals'));
+        $this->onConnection(config('intelligence.signals.connection') ?: null);
+    }
 
     public function uniqueId(): string
     {

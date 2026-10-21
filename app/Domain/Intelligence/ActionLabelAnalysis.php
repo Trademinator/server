@@ -146,23 +146,36 @@ final class ActionLabelAnalysis
         // Write into the final maps, rather than copying two maps for every run.
         $actionCounts = ['buy' => 0, 'hold' => 0, 'sell' => 0];
         $previousPivot = null;
+        $pendingAvailability = [];
         $pivotCount = 0;
         $frequencies = [];
 
-        foreach ($labelled as $index => $ticker) {
+        // Label passes retain the original contiguous indices. Free each
+        // finalized candle before the two full-history output maps grow.
+        $count = count($labelled);
+        for ($index = 0; $index < $count; $index++) {
+            $ticker = $labelled[$index];
+            unset($labelled[$index]);
             $action = $ticker['action'] ?? null;
             $timestamp = $ticker['microtimestamp'] ?? null;
-            if (is_int($timestamp) && in_array($action, ['buy', 'hold', 'sell'], true)) {
+            $hasLabel = is_int($timestamp) && in_array($action, ['buy', 'hold', 'sell'], true);
+            if ($hasLabel) {
                 $actionLabels[$timestamp] = $action === 'hold' ? 'hodl' : $action;
                 $actionCounts[$action]++;
             }
             if (! is_int($timestamp) || ! in_array($action, ['buy', 'sell'], true)) {
+                if ($hasLabel && $previousPivot !== null) {
+                    $pendingAvailability[] = $timestamp;
+                }
+
                 continue;
             }
             $pivotCount++;
             $left = $previousPivot;
             $right = $previousPivot = ['index' => $index, 'timestamp' => $timestamp, 'action' => $action];
             if ($left === null) {
+                $pendingAvailability = [$timestamp];
+
                 continue;
             }
             if ($left['action'] === $right['action']) {
@@ -179,12 +192,10 @@ final class ActionLabelAnalysis
             // Retrospective Action labels inside this completed swing become
             // available only when the opposite pivot candle has closed.
             $availableAt = $this->timeframe->next($right['timestamp'], $period);
-            for ($j = $left['index']; $j < $right['index']; $j++) {
-                $labelTimestamp = $labelled[$j]['microtimestamp'] ?? null;
-                if (is_int($labelTimestamp) && isset($actionLabels[$labelTimestamp])) {
-                    $actionAvailability[$labelTimestamp] = $availableAt;
-                }
+            foreach ($pendingAvailability as $labelTimestamp) {
+                $actionAvailability[$labelTimestamp] = $availableAt;
             }
+            $pendingAvailability = [$timestamp];
         }
 
         return [

@@ -170,6 +170,48 @@ it('reports unavailable connections without claiming the backlog is empty or lea
         ->assertDontSee('No queued jobs')->assertDontSee('PRIVATE_PASSWORD');
 });
 
+it('shows a shared Redis signal queue once while preserving custom discovery and selected connections', function (array $selected, string $signalsStore, array $expected) {
+    config([
+        'queue.default' => 'training', 'operations.queue_backlog_connections' => $selected,
+        'intelligence.signals.connection' => 'realtime', 'intelligence.signals.queue' => 'market:signals',
+        'queue.connections' => [
+            'training' => ['driver' => 'redis', 'connection' => 'queue-store', 'queue' => 'intelligence'],
+            'realtime' => ['driver' => 'redis', 'connection' => $signalsStore, 'queue' => 'market:signals'],
+        ],
+    ]);
+    foreach ($selected as $name) {
+        $client = Mockery::mock();
+        $client->shouldReceive('getOptions')->andReturn((object) ['prefix' => 'tm:']);
+        $client->shouldReceive('executeRaw')->with(['SCAN', 0, 'MATCH', 'tm:queues:*', 'COUNT', 1000])
+            ->once()->andReturn(['0', ['tm:queues:intelligence', 'tm:queues:market:signals', 'tm:queues:custom:urgent:delayed']]);
+        foreach (['intelligence', 'market:signals', 'custom:urgent'] as $queueName) {
+            $client->shouldReceive('llen')->with('queues:'.$queueName)->once()->andReturn(0);
+            $client->shouldReceive('zcard')->with('queues:'.$queueName.':delayed')->once()->andReturn(2);
+            $client->shouldReceive('zcard')->with('queues:'.$queueName.':reserved')->once()->andReturn(0);
+        }
+        $factory = Mockery::mock(Factory::class);
+        $store = config('queue.connections.'.$name.'.connection');
+        $factory->shouldReceive('connection')->with($store)->andReturn(new PredisConnection($client));
+        $queue = new RedisQueue($factory, 'default', $store);
+        $queue->setContainer(app());
+        $queue->setConnectionName($name);
+        Queue::shouldReceive('connection')->with($name)->once()->andReturn($queue);
+    }
+
+    $snapshot = app(QueueBacklog::class)->snapshot();
+
+    expect($snapshot['errors'])->toBe([]);
+    expect(array_map(fn (array $row): string => $row['connection'].'/'.$row['queue'], $snapshot['rows']))->toBe($expected);
+})->with([
+    'shared store' => [['training', 'realtime'], 'queue-store', ['realtime/market:signals', 'training/custom:urgent', 'training/intelligence']],
+    'distinct stores' => [['training', 'realtime'], 'signals-store', [
+        'realtime/custom:urgent', 'realtime/intelligence', 'realtime/market:signals',
+        'training/custom:urgent', 'training/intelligence', 'training/market:signals',
+    ]],
+    'training connection only' => [['training'], 'queue-store', ['training/custom:urgent', 'training/intelligence', 'training/market:signals']],
+    'signal connection only' => [['realtime'], 'queue-store', ['realtime/custom:urgent', 'realtime/intelligence', 'realtime/market:signals']],
+]);
+
 it('inspects failover children once and explains connections without persistent jobs', function () {
     $database = config('queue.connections.database');
     config([

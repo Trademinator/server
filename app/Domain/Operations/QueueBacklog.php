@@ -30,9 +30,46 @@ final class QueueBacklog
         foreach (array_unique($names) as $name) {
             $this->inspectConnection($name, $configured, $visited, $snapshot);
         }
+        $snapshot['rows'] = $this->deduplicateSignalRedisRows($snapshot['rows'], $configured);
         usort($snapshot['rows'], fn (array $a, array $b): int => [$a['connection'], $a['queue']] <=> [$b['connection'], $b['queue']]);
 
         return $snapshot;
+    }
+
+    /** @return list<array> */
+    private function deduplicateSignalRedisRows(array $rows, array $configured): array
+    {
+        $signalsConnection = (string) config('intelligence.signals.connection');
+        $signalsConfig = $configured[$signalsConnection] ?? [];
+        if (($signalsConfig['driver'] ?? null) !== 'redis' || $signalsConnection === config('queue.default')) {
+            return $rows;
+        }
+        $signalsQueue = (string) config('intelligence.signals.queue', 'signals');
+        $redisConnection = $signalsConfig['connection'] ?? 'default';
+        $signalQueues = [];
+        $otherQueues = [];
+        foreach ($rows as $row) {
+            if ($row['driver'] !== 'redis' || ($configured[$row['connection']]['connection'] ?? 'default') !== $redisConnection) {
+                continue;
+            }
+            if ($row['connection'] === $signalsConnection) {
+                $signalQueues[$row['queue']] = true;
+            } else {
+                $otherQueues[$row['queue']] = true;
+            }
+        }
+
+        // Keep discoveries visible when only one alias was requested or could be read.
+        return array_values(array_filter($rows, function (array $row) use ($configured, $signalsConnection, $signalsQueue, $redisConnection, $signalQueues, $otherQueues): bool {
+            if ($row['driver'] !== 'redis' || ($configured[$row['connection']]['connection'] ?? 'default') !== $redisConnection) {
+                return true;
+            }
+            if ($row['connection'] === $signalsConnection) {
+                return $row['queue'] === $signalsQueue || ! isset($otherQueues[$row['queue']]);
+            }
+
+            return $row['queue'] !== $signalsQueue || ! isset($signalQueues[$signalsQueue]);
+        }));
     }
 
     private function inspectConnection(string $name, array $configured, array &$visited, array &$snapshot): void
@@ -132,7 +169,7 @@ final class QueueBacklog
 
         return array_values(array_unique(array_filter([
             $config['queue'] ?? 'default', config('features.queue'), config('intelligence.queue'),
-            config('history_backfill.queue'), config('archive.portable_queue'),
+            config('intelligence.signals.queue'), config('history_backfill.queue'), config('archive.portable_queue'),
         ], fn ($name): bool => is_string($name) && $name !== '')));
     }
 

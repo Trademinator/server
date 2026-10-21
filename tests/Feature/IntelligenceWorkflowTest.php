@@ -250,6 +250,21 @@ it('does not train a second model while the market lock is held', function () {
     }
 });
 
+it('checks the caller ownership guard before publishing and releases build locks after rejection', function () {
+    $this->travelTo('2024-01-01 04:10:00 UTC');
+    $manifest = IntelligenceFixtures::snapshot();
+
+    expect(fn () => app(MarketIntelligence::class)->build('kraken', 'BTC/USD', '1m', $manifest['dataset_id'],
+        beforePublish: fn () => throw new RuntimeException('The owning rebuild was superseded.')))
+        ->toThrow(RuntimeException::class, 'The owning rebuild was superseded.');
+
+    $this->assertDatabaseCount('intelligence_models', 0);
+    $this->assertDatabaseCount('intelligence_heads', 0);
+    $report = app(MarketIntelligence::class)->build('kraken', 'BTC/USD', '1m', $manifest['dataset_id']);
+    expect($report['model_id'])->not->toBeEmpty();
+    $this->assertDatabaseCount('intelligence_models', 1);
+});
+
 it('dispatches one intelligence job for a shared market and rejects synchronous dispatch', function () {
     $this->travelTo('2024-01-01 04:10:00 UTC');
     config(['queue.default' => 'database']);

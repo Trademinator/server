@@ -181,3 +181,63 @@ it('keeps earlier matured samples unchanged when later candles are appended', fu
     [, $after] = app(DatasetStore::class)->load($second['dataset_id']);
     expect(array_slice($after, 0, count($before)))->toBe($before);
 });
+
+it('preserves the candle sequence and label boundaries across feature pages without rescanning offsets', function () {
+    $this->travelTo('2024-01-02 00:00:00 UTC');
+    seedResearchHistory(540);
+    foreach (MarketFeature::query()->orderByDesc('microtimestamp')->get() as $feature) {
+        $feature->forceFill(['feature_id' => (string) Str::uuid7()])->save();
+    }
+    $pages = [];
+    DB::listen(function ($query) use (&$pages): void {
+        $sql = strtolower($query->sql);
+        if (str_starts_with($sql, 'select') && str_contains($sql, 'market_features') && str_contains($sql, 'limit 500')) {
+            $pages[] = $sql;
+        }
+    });
+
+    $manifest = buildResearchSnapshot();
+    [, $rows] = app(DatasetStore::class)->load($manifest['dataset_id']);
+
+    expect($manifest['rows'])->toBe(511);
+    expect($manifest['skipped']['missing_features'])->toBe(27);
+    expect($manifest['skipped']['immature'])->toBe(2);
+    expect(array_column($rows, 'microtimestamp'))->toBe(range(1704068820000, 1704099420000, 60000));
+    expect($rows[472]['decision_at_ms'])->toBe(1704097200000);
+    expect($rows[473]['decision_at_ms'])->toBe(1704097260000);
+    expect($rows[473]['entry_price'])->toBe('601');
+    expect($rows[473]['exit_price'])->toBe('602.5');
+    expect($pages)->toHaveCount(2);
+    foreach ($pages as $query) {
+        expect($query)->not->toContain(' offset ');
+    }
+});
+
+it('keeps its owned feature lock through the configured training timeout and releases it after publication', function () {
+    $this->travelTo('2024-01-02 00:00:00 UTC');
+    config(['intelligence.max_seconds' => 14400, 'intelligence.job_timeout' => 15000]);
+    seedResearchHistory();
+    $name = 'trademinator:features:'.hash('sha256', 'kraken|BTC/USD|1m');
+    $protectedDuringPublication = null;
+    DB::listen(function ($query) use ($name, &$protectedDuringPublication): void {
+        if (str_starts_with(strtolower(ltrim($query->sql)), 'insert') && str_contains($query->sql, 'research_datasets')) {
+            $this->travel(15000)->seconds();
+            $contender = Cache::lock($name, 60);
+            $protectedDuringPublication = ! $contender->get();
+            if (! $protectedDuringPublication) {
+                $contender->release();
+            }
+        }
+    });
+
+    $manifest = buildResearchSnapshot();
+
+    expect($manifest['rows'])->toBe(61);
+    expect($protectedDuringPublication)->toBeTrue();
+    $next = Cache::lock($name, 60);
+    try {
+        expect($next->get())->toBeTrue();
+    } finally {
+        $next->release();
+    }
+});

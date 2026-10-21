@@ -130,6 +130,47 @@ it('keeps label availability tied to the next opposite pivot and leaves the unfi
     ]);
 });
 
+it('preserves completed-swing availability through long HOLD spans and separate contiguous runs', function () {
+    $start = 1_700_000_000_000;
+    $history = [];
+    $expectedLabels = [];
+    $expectedAvailability = [];
+    foreach ([0, 20] as $offset) {
+        for ($index = 0; $index <= 18; $index++) {
+            $timestamp = $start + ($offset + $index) * 60_000;
+            $action = match ($index) {
+                2, 15 => 'buy',
+                8 => 'sell',
+                default => 'hodl',
+            };
+            $history[$timestamp] = [
+                'open' => $action === 'buy' ? '110' : ($action === 'sell' ? '100' : '105'),
+                'close' => $action === 'buy' ? '100' : ($action === 'sell' ? '110' : '105'),
+                'high' => $action === 'hodl' ? '105' : '111',
+                'low' => $action === 'hodl' ? '105' : '99', 'volume' => '1',
+            ];
+            if ($index > 0 && $index < 18) {
+                $expectedLabels[$timestamp] = $action;
+            }
+            if ($index >= 2 && $index < 8) {
+                $expectedAvailability[$timestamp] = $start + ($offset + 9) * 60_000;
+            } elseif ($index >= 8 && $index < 15) {
+                $expectedAvailability[$timestamp] = $start + ($offset + 16) * 60_000;
+            }
+        }
+    }
+
+    $analysis = actionAnalysisFor($history)->analyze('kraken', 'BTC/USD', '1m', $start + 38 * 60_000);
+
+    expect($analysis['_action_labels'])->toBe($expectedLabels);
+    expect($analysis['_action_available_at_ms'])->toBe($expectedAvailability);
+    expect($analysis)->toMatchArray([
+        'candles_examined' => 38, 'contiguous_runs' => 2, 'gaps' => 1,
+        'distance_frequencies' => [6 => 2, 7 => 2], 'distance_observations' => 4,
+        'action_counts' => ['buy' => 4, 'hold' => 28, 'sell' => 2], 'pivot_count' => 6,
+    ]);
+});
+
 it('reports no distances or labels when the requested history is empty', function () {
     $analysis = actionAnalysisFor([])->analyze('kraken', 'BTC/USD', '1m', 1_800_000_000_000);
 

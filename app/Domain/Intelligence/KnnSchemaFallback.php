@@ -5,8 +5,8 @@ namespace App\Domain\Intelligence;
 use App\Domain\Features\FeatureEngine;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\Research\FeatureSchema;
+use App\Domain\Research\WalkForward;
 use App\Models\MarketFeature;
-use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /** Choose a fixed KNN schema before freezing training data, never from validation scores. */
@@ -26,7 +26,7 @@ final class KnnSchemaFallback
         foreach (MarketFeature::query()->where('exchange', $exchange)->where('symbol', $symbol)
             ->where('period', $period)->where('version', FeatureEngine::VERSION)
             ->whereBetween('available_at_ms', [$from, $to])
-            ->orderBy('microtimestamp')->lazy(500) as $feature) {
+            ->lazyById(500, column: 'microtimestamp', alias: 'microtimestamp') as $feature) {
             if (microtime(true) > $deadline) {
                 throw new RuntimeException('KNN schema inspection exceeded training deadline.');
             }
@@ -66,7 +66,7 @@ final class KnnSchemaFallback
             $training = array_values(array_filter(array_slice($rows, 0, $split),
                 fn (array $row): bool => $row['label_available_at_ms'] < $cutoff));
             $evaluated = 0;
-            foreach ((new \App\Domain\Research\WalkForward)->folds(
+            foreach ((new WalkForward)->folds(
                 $training, $requirements['min_train_size'], $requirements['test_size'], $requirements['gap'], true, null
             ) as $fold) {
                 if (microtime(true) > $deadline) {

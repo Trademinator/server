@@ -7,6 +7,7 @@ use App\Domain\Operations\ActionLog;
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\FeatureSchema;
 use App\Domain\Research\SemanticLabels;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 use RuntimeException;
@@ -28,7 +29,7 @@ final class IntelligenceTrainer
     ) {}
 
     public function train(string $dataset, ?float $deadline = null, ?string $generation = null,
-        array $buildPerformance = [], array $schemaSelection = []): array
+        array $buildPerformance = [], array $schemaSelection = [], ?Closure $beforePublish = null): array
     {
         $buildPerformance['started_at'] ??= now()->toIso8601String();
         $buildPerformance['started_monotonic_ns'] ??= hrtime(true);
@@ -104,7 +105,7 @@ final class IntelligenceTrainer
         $publicationDeadline = OptionalGuidance::publicationDeadline($deadline);
         $lock = Cache::lock('trademinator:intelligence:'.ModelStore::marketKey(
             $manifest['exchange'], $manifest['symbol'], $manifest['period']
-        ), 1020);
+        ), TrainingRuntime::lockSeconds());
         if (! $lock->get()) {
             throw new RuntimeException('Intelligence training is already running for this market and period.');
         }
@@ -375,6 +376,10 @@ final class IntelligenceTrainer
             if (microtime(true) > $publicationDeadline) {
                 throw new RuntimeException('Intelligence training time budget exceeded before publication.');
             }
+            if (! $lock->isOwnedByCurrentProcess()) {
+                throw new RuntimeException('Intelligence training lock ownership was lost before publication.');
+            }
+            $beforePublish?->__invoke();
 
             return $this->models->save($artifact);
         } finally {

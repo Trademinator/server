@@ -8,6 +8,7 @@ use App\Domain\Intelligence\ActionLabelAnalysis;
 use App\Domain\Intelligence\ActionLabelReportStore;
 use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\PatternCatalog;
+use App\Domain\Intelligence\TrainingRuntime;
 use App\Domain\MarketData\CandleProvenance;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\Operations\ActionLog;
@@ -55,7 +56,8 @@ final class DatasetSnapshotBuilder
         // Share M2's lock: a snapshot must not capture a partially rebuilt feature series.
         $lockName = 'trademinator:features:'.hash('sha256', "$exchange|$symbol|$period");
         $borrowedLock = $featureLockOwner !== null;
-        $lock = $borrowedLock ? Cache::restoreLock($lockName, $featureLockOwner) : Cache::lock($lockName, 720);
+        $lock = $borrowedLock ? Cache::restoreLock($lockName, $featureLockOwner)
+            : Cache::lock($lockName, TrainingRuntime::lockSeconds());
         if ($borrowedLock) {
             // Never reacquire or release a parent's lock. A token alone is not
             // permission: it must still own the lock for this exact market.
@@ -128,7 +130,7 @@ final class DatasetSnapshotBuilder
                 $hash = hash_init('sha256');
                 $count = 0;
                 $firstDecision = $lastDecision = null;
-                foreach ($query->lazy(500) as $feature) {
+                foreach ($query->lazyById(500, column: 'microtimestamp', alias: 'microtimestamp') as $feature) {
                     $maxSeconds = config('research.dataset_max_seconds', 540);
                     if (microtime(true) - $started > $maxSeconds) {
                         throw new RuntimeException('Dataset build exceeded '.$maxSeconds.' seconds; use a smaller date range or increase RESEARCH_DATASET_MAX_SECONDS.');

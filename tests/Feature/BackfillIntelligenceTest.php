@@ -2,11 +2,14 @@
 
 use App\Domain\Features\FeatureBuilder;
 use App\Domain\Intelligence\BackfillIntelligence;
+use App\Domain\Intelligence\IntelligenceTrainer;
+use App\Domain\Intelligence\KnnSchemaFallback;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\MarketData\ExchangeMetadata;
 use App\Domain\MarketData\MarketHistoryBackfill;
 use App\Domain\Research\DatasetSnapshotBuilder;
+use App\Domain\Research\FeatureSchema;
 use App\Domain\Research\SemanticLabels;
 use App\Jobs\BackfillMarketHistory;
 use App\Jobs\RebuildBackfilledIntelligence;
@@ -27,9 +30,9 @@ use Illuminate\Support\Str;
 function backfillExpectedGeneration(string $id, int $revision): string
 {
     return hash('sha256', hash('sha256', 'history:'.$id.':'.$revision)
-        .'|'.\App\Domain\Research\FeatureSchema::VERSION
-        .'|'.\App\Domain\Intelligence\KnnSchemaFallback::VERSION
-        .'|'.\App\Domain\Intelligence\IntelligenceTrainer::VERSION
+        .'|'.FeatureSchema::VERSION
+        .'|'.KnnSchemaFallback::VERSION
+        .'|'.IntelligenceTrainer::VERSION
         .'|rubix:'.\Rubix\ML\VERSION);
 }
 
@@ -219,6 +222,7 @@ it('does not queue intelligence for an empty history window', function () {
 
 it('retains pending training while intelligence is disabled and recovers stale build leases', function () {
     $this->travelTo('2024-01-10 00:00:00 UTC');
+    config(['intelligence.max_seconds' => 14400, 'intelligence.job_timeout' => 15000]);
     backfillTrainingFeed();
     config(['intelligence.enabled' => false]);
     Bus::fake([BackfillMarketHistory::class, RebuildBackfilledIntelligence::class]);
@@ -228,9 +232,13 @@ it('retains pending training while intelligence is disabled and recovers stale b
     expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(1);
     $first = DB::table('market_history_backfills')->first();
     $stale = new RebuildBackfilledIntelligence($id, $first->build_lease_token);
-    $this->travel(16)->minutes();
+    expect(app(BackfillIntelligence::class)->renew($id, $first->build_lease_token))->toBeTrue();
+    $this->assertDatabaseHas('market_history_backfills', [
+        'history_id' => $id, 'build_lease_until' => '2024-01-10 04:11:00',
+    ]);
+    $this->travel(21)->minutes();
     expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(0);
-    $this->travel(5)->minutes();
+    $this->travel(4)->hours();
     expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(1);
 
     $stale->handle(app(BackfillIntelligence::class), app(FeatureBuilder::class), app(MarketIntelligence::class));
@@ -241,6 +249,114 @@ it('retains pending training while intelligence is disabled and recovers stale b
     $this->assertDatabaseHas('market_history_backfills', ['trained_revision' => 1, 'build_stage' => null]);
     $this->assertDatabaseCount('intelligence_models', 1);
     Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 3);
+});
+
+it('keeps one pending rebuild and its token while it waits longer than a day', function () {
+    $this->travelTo('2024-01-10 00:00:00 UTC');
+    backfillTrainingFeed();
+    Bus::fake([BackfillMarketHistory::class, RebuildBackfilledIntelligence::class]);
+    $id = importTrainingHistory();
+    $token = DB::table('market_history_backfills')->where('history_id', $id)->value('build_lease_token');
+
+    $this->travel(26)->hours();
+
+    expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(0);
+    $this->assertDatabaseHas('market_history_backfills', [
+        'history_id' => $id, 'build_lease_token' => $token, 'build_lease_until' => null,
+        'history_revision' => 1, 'trained_revision' => 0, 'build_stage' => 'features',
+    ]);
+    $this->assertDatabaseCount('market_features', 0);
+    Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 1);
+});
+
+it('releases a pending rebuild identity after terminal worker failure so dispatch can recover', function () {
+    $this->travelTo('2024-01-10 00:00:00 UTC');
+    backfillTrainingFeed();
+    Bus::fake([BackfillMarketHistory::class, RebuildBackfilledIntelligence::class]);
+    $id = importTrainingHistory();
+    $token = DB::table('market_history_backfills')->where('history_id', $id)->value('build_lease_token');
+    $job = new RebuildBackfilledIntelligence($id, $token);
+
+    $job->failed(new RuntimeException('Worker exhausted its retry allowance.'));
+
+    $this->assertDatabaseHas('market_history_backfills', [
+        'history_id' => $id, 'build_lease_token' => null, 'build_lease_until' => null,
+        'build_stage' => 'features', 'build_failures' => 1,
+        'build_error' => 'Worker exhausted its retry allowance.',
+    ]);
+    expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(0);
+    $this->travel(61)->seconds();
+    expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(1);
+    expect(DB::table('market_history_backfills')->where('history_id', $id)->value('build_lease_token'))
+        ->not->toBe($token);
+    Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 2);
+});
+
+it('does not let an obsolete failed job release another pending rebuild', function () {
+    $this->travelTo('2024-01-10 00:00:00 UTC');
+    backfillTrainingFeed();
+    Bus::fake([BackfillMarketHistory::class, RebuildBackfilledIntelligence::class]);
+    $id = importTrainingHistory();
+    $token = DB::table('market_history_backfills')->where('history_id', $id)->value('build_lease_token');
+    $obsolete = new RebuildBackfilledIntelligence($id, (string) Str::uuid7());
+
+    $obsolete->failed(new RuntimeException('An older attempt failed.'));
+
+    $this->assertDatabaseHas('market_history_backfills', [
+        'history_id' => $id, 'build_lease_token' => $token, 'build_lease_until' => null,
+        'build_stage' => 'features', 'build_failures' => 0, 'build_error' => null,
+    ]);
+    expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(0);
+    Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 1);
+});
+
+it('keeps a split feature continuation pending without expiring its identity', function () {
+    $this->travelTo('2024-01-10 00:00:00 UTC');
+    backfillTrainingFeed();
+    Bus::fake([BackfillMarketHistory::class, RebuildBackfilledIntelligence::class]);
+    $id = importTrainingHistory();
+    $state = DB::table('market_history_backfills')->where('history_id', $id)->first();
+    $child = new RebuildBackfilledIntelligence($id, $state->build_lease_token, 'core',
+        strtotime('2024-01-02 UTC') * 1000, strtotime('2024-01-03 UTC') * 1000, false, 1);
+
+    $child->handle(app(BackfillIntelligence::class), app(FeatureBuilder::class), app(MarketIntelligence::class));
+    $this->travel(30)->minutes();
+
+    expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(0);
+    $this->assertDatabaseHas('market_history_backfills', [
+        'history_id' => $id, 'build_stage' => 'features', 'build_lease_token' => $state->build_lease_token,
+        'build_lease_until' => null, 'build_failures' => 0,
+    ]);
+    $this->assertDatabaseCount('intelligence_models', 0);
+    Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 1);
+});
+
+it('does not publish a model after its backfill token is replaced during training', function () {
+    $this->travelTo('2024-01-10 00:00:00 UTC');
+    backfillTrainingFeed();
+    Bus::fake([BackfillMarketHistory::class, RebuildBackfilledIntelligence::class]);
+    $id = importTrainingHistory();
+    runBackfillTrainingStep($id);
+    $replacement = (string) Str::uuid7();
+    $replaced = false;
+    DB::listen(function ($query) use ($id, $replacement, &$replaced): void {
+        if (! $replaced && str_starts_with(strtolower(ltrim($query->sql)), 'insert')
+            && str_contains($query->sql, 'research_datasets')) {
+            $replaced = true;
+            DB::table('market_history_backfills')->where('history_id', $id)->update([
+                'build_lease_token' => $replacement, 'build_lease_until' => null,
+            ]);
+        }
+    });
+
+    runBackfillTrainingStep($id);
+
+    expect($replaced)->toBeTrue();
+    $this->assertDatabaseCount('intelligence_models', 0);
+    $this->assertDatabaseHas('market_history_backfills', [
+        'history_id' => $id, 'build_lease_token' => $replacement, 'build_lease_until' => null,
+        'build_stage' => 'knn', 'trained_revision' => 0, 'build_failures' => 0,
+    ]);
 });
 
 it('lends the feature lock through dataset creation and keeps it held until model publication completes', function () {

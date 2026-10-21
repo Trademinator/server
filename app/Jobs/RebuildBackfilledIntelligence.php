@@ -8,9 +8,11 @@ use App\Domain\Features\FeatureReplayTimeout;
 use App\Domain\Intelligence\BackfillIntelligence;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\Intelligence\TrainingRuntime;
 use App\Domain\MarketData\HistoryChanges;
 use App\Models\MarketFeed;
 use App\Repositories\TickerRepository;
+use Illuminate\Cache\Lock;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -25,7 +27,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
 
     public int $maxExceptions = 1;
 
-    public int $timeout = 2200;
+    public int $timeout;
 
     public bool $failOnTimeout = true;
 
@@ -41,6 +43,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
         public readonly ?int $featureRevision = null,
     ) {
         $this->schema = $schema ?? (string) config('intelligence.schema');
+        $this->timeout = TrainingRuntime::jobTimeout();
     }
 
     public function handle(BackfillIntelligence $builds, FeatureBuilder $features, MarketIntelligence $intelligence): void
@@ -59,7 +62,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
         $exchange = $feed->market->exchange->class;
         $symbol = $feed->market->symbol;
         $key = ModelStore::marketKey($exchange, $symbol, $state->period);
-        $lock = Cache::lock('trademinator:history-intelligence:'.$key, 1020);
+        $lock = Cache::lock('trademinator:history-intelligence:'.$key, TrainingRuntime::lockSeconds());
         if (! $lock->get()) {
             $this->release(60);
 
@@ -72,6 +75,10 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
             if ($state === null) {
                 return;
             }
+            if (! $builds->renew($this->historyId, $this->leaseToken)) {
+                return;
+            }
+            $this->assertOwnership($builds, $lock);
             $expectedRevision = $this->featureRevision
                 ?? ($state->build_stage === 'knn' ? (int) $state->build_revision : null);
             if ($expectedRevision !== null && $expectedRevision !== (int) $state->history_revision) {
@@ -106,6 +113,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
                     // Recursive state strictly before the changed range is safe.
                     // A normal older-history prepend has no earlier checkpoint and
                     // therefore still falls back to the required full replay.
+                    $this->assertOwnership($builds, $lock);
                     $checkpoints->deleteFrom($exchange, $symbol, $state->period, $startMs);
                     $builds->owned($this->historyId, $this->leaseToken)->update([
                         'build_performance' => json_encode([
@@ -121,7 +129,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
                         'updated_at' => now(),
                     ]);
                 }
-                $builds->renew($this->historyId, $this->leaseToken);
+                $this->assertOwnership($builds, $lock);
 
                 $checkpointBeforeMs = $this->featureCutoffMs === null
                     ? $startMs
@@ -131,9 +139,11 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
                 try {
                     $rows = $features->build($exchange, $symbol, $state->period, cutoffMs: $cutoffMs,
                         fromMs: $startMs, checkpointBeforeMs: $checkpointBeforeMs);
+                    $this->assertOwnership($builds, $lock);
                     $this->recordFeatureReplay($builds, $this->elapsedMs($featureStarted), $rows,
                         $checkpointUsed, $startMs, $cutoffMs);
                 } catch (FeatureReplayTimeout $timeout) {
+                    $this->assertOwnership($builds, $lock);
                     $this->recordFeatureReplay($builds, $this->elapsedMs($featureStarted), $timeout->rowsProcessed,
                         $checkpointUsed, $startMs, $timeout->throughMs ?? $cutoffMs);
                     $this->splitFeatureReplay($builds, $startMs, $cutoffMs, $timeout, $revision);
@@ -142,7 +152,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
                 }
 
                 if (! $this->featureFinal) {
-                    $builds->renew($this->historyId, $this->leaseToken);
+                    $builds->waiting($this->historyId, $this->leaseToken);
 
                     return;
                 }
@@ -151,9 +161,10 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
                     'build_stage' => 'knn', 'build_revision' => $revision, 'build_error' => null,
                 ]);
             } elseif ($state->build_stage === 'knn' && (int) $state->build_revision > 0) {
-                $featureLock = Cache::lock('trademinator:features:'.$key, 1020);
+                $featureLock = Cache::lock('trademinator:features:'.$key, TrainingRuntime::lockSeconds());
                 $featureLockAcquired = $featureLock->get();
                 if (! $featureLockAcquired) {
+                    $builds->waiting($this->historyId, $this->leaseToken);
                     $this->release(30);
 
                     return;
@@ -170,14 +181,22 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
                     return;
                 }
                 $revision = (int) $state->build_revision;
-                $builds->renew($this->historyId, $this->leaseToken);
+                $this->assertOwnership($builds, $lock, $featureLock);
                 $performance = is_string($state->build_performance)
                     ? json_decode($state->build_performance, true, flags: JSON_THROW_ON_ERROR)
                     : (array) ($state->build_performance ?? []);
                 $report = $intelligence->build($exchange, $symbol, $state->period,
                     schema: $state->recovery_schema ?? $this->schema ?? (string) config('intelligence.schema'),
                     generation: hash('sha256', 'history:'.$this->historyId.':'.$revision),
-                    buildPerformance: $performance, featureLockOwner: $featureLock->owner());
+                    buildPerformance: $performance, featureLockOwner: $featureLock->owner(),
+                    beforePublish: function () use ($builds, $lock, $featureLock, $revision): void {
+                        $this->assertOwnership($builds, $lock, $featureLock);
+                        if (! $builds->owned($this->historyId, $this->leaseToken)
+                            ->where('build_revision', $revision)->where('history_revision', $revision)->exists()) {
+                            throw new RuntimeException('Backfill history changed before model publication.');
+                        }
+                    });
+                $this->assertOwnership($builds, $lock, $featureLock);
                 $builds->release($this->historyId, $this->leaseToken, [
                     'trained_revision' => $revision, 'build_stage' => null, 'build_revision' => null,
                     'build_failures' => 0, 'build_error' => null, 'recovery_schema' => null, 'model_id' => $report['model_id'], 'last_trained_at' => now(),
@@ -195,6 +214,14 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
             }
             $lock->release();
         }
+    }
+
+    private function assertOwnership(BackfillIntelligence $builds, Lock $lock, ?Lock $featureLock = null): void
+    {
+        if (! $lock->isOwnedByCurrentProcess() || ($featureLock !== null && ! $featureLock->isOwnedByCurrentProcess())) {
+            throw new RuntimeException('Backfill intelligence lock ownership was lost.');
+        }
+        $builds->assertRunning($this->historyId, $this->leaseToken);
     }
 
     private function restartChangedHistory(BackfillIntelligence $builds, string $exchange, string $symbol, string $period): void
@@ -228,7 +255,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
         // Laravel deletes it and dispatches the first child. The second child waits
         // in the chain because recursive indicators cannot be calculated in parallel.
         $this->prependToChain([$first, $second]);
-        $builds->renew($this->historyId, $this->leaseToken);
+        $builds->waiting($this->historyId, $this->leaseToken);
     }
 
     private function firstCandleMs(string $exchange, string $symbol, string $period, int $cutoffMs): int

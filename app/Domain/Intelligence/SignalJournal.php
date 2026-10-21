@@ -159,7 +159,7 @@ final class SignalJournal
             'knn_abstention' => 'Neither Outcome nor Action KNN has enough supported evidence for a decision.',
             'no_model' => 'Training has not completed for this market yet.',
             'period_pending' => 'The collector is still selecting a reliable candle period.',
-            'awaiting_recording' => 'A trained model is available, but no current recorded signal exists. Check the scheduled signal recorder and intelligence queue.',
+            'awaiting_recording' => 'A trained model is available, but no current recorded signal exists. Check the scheduled signal recorder and signal queue.',
             'no_eligible_k' => 'Historical evidence has not passed the semantic validation requirements.',
             'holdout_failed' => 'The selected model did not pass the separate later evaluation period.',
             'stale_model' => 'The trained model is too old. A fresh training run is needed.',

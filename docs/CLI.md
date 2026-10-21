@@ -1,12 +1,14 @@
 # Trademinator CLI reference
 
-Canonical operator reference for all **44 `trademinator:*` commands**, the local `inspire` command, and the committed metadata utility. Common Laravel operating commands are listed separately; package-provided commands vary with installed dependencies, so `php artisan list` remains the complete runtime inventory.
+Canonical operator reference for all registered **`trademinator:*` commands**, the local `inspire` command, and the committed metadata utility. Common Laravel operating commands are listed separately; package-provided commands vary with installed dependencies, so `php artisan list` remains the complete runtime inventory.
 
-Command signatures, descriptions and behavior were checked against repository source at `c0ce12f87ec570783381fd7854f03905ae2bc5bd`. Update this file whenever a command or its parameters change. `tests/Feature/TrademinatorCliDocumentationTest.php` checks the registered project-command inventory, exact normalized signatures and descriptions.
+Command signatures, descriptions and behavior are checked against the current repository source. Update this file whenever a command or its parameters change. `tests/Feature/TrademinatorCliDocumentationTest.php` checks the registered project-command inventory, exact normalized signatures and descriptions.
 
 ## Getting started
 
 Run from the directory containing `artisan`, with the application's PHP, environment, database/cache access and Composer dependencies. Examples use illustrative markets; use an exchange, pair and selected period actually configured on your server. `DATASET_UUID`, `MODEL_UUID`, email addresses and private paths are placeholders, not working credentials or IDs.
+
+Composer requires `ext-pcntl`. Enable it in the PHP CLI configuration used by Composer and queue workers so hard job timeouts can be enforced.
 
 ```bash
 php artisan list
@@ -89,6 +91,7 @@ Each link contains the exact signature, parameter meanings, execution/side-effec
 | Models and signals | [`trademinator:dispatch-lead-lag`](#trademinatordispatch-lead-lag) |
 | Models and signals | [`trademinator:signal`](#trademinatorsignal) |
 | Models and signals | [`trademinator:dispatch-market-signals`](#trademinatordispatch-market-signals) |
+| Models and signals | [`trademinator:recover-signal-queue`](#trademinatorrecover-signal-queue) |
 | Models and signals | [`trademinator:model-info`](#trademinatormodel-info) |
 | Models and signals | [`trademinator:analyze-validation-gates`](#trademinatoranalyze-validation-gates) |
 | Human training | [`trademinator:human-candle-audit`](#trademinatorhuman-candle-audit) |
@@ -706,7 +709,7 @@ Signature: `trademinator:dispatch-market-intelligence {--force : Create a fresh 
 
 Description: Queue weekly KNN and pattern training once per subscribed market and selected period
 
-Queue training for all active subscribed feeds with selected periods on `INTELLIGENCE_QUEUE` (default `intelligence`). Requires enabled intelligence and a persistent queue. Uses the current weekly generation key; already completed generations are not a force-rebuild target. This command only dispatches: **`--timeout=2200` belongs on `queue:work`, not here**.
+Queue training for all active subscribed feeds with selected periods on `INTELLIGENCE_QUEUE` (default `intelligence`). Requires enabled intelligence and a persistent queue. Uses the current weekly generation key; already completed generations are not a force-rebuild target. This command only dispatches: **`--timeout=2400` belongs on `queue:work`, not here**. Use `--timeout=15000` for the four-hour profile in [CRONTABS.md](CRONTABS.md#m4-intelligence-workers).
 
 Parameters: none beyond standard Artisan options.
 
@@ -777,15 +780,43 @@ Signature: `trademinator:dispatch-market-signals`
 
 Description: Queue current signal recording once per actively subscribed market
 
-Queue shared-market signal recording on the intelligence queue for active subscribed feeds with selected periods. Requires dashboard signals and intelligence to be enabled and a persistent queue. Records observations; it does not send exchange orders or replace the training dispatcher.
+Queue shared-market signal recording on `INTELLIGENCE_SIGNALS_QUEUE` (default `signals`) for active subscribed feeds with selected periods. `INTELLIGENCE_SIGNALS_CONNECTION` defaults to `redis-signals` when `QUEUE_CONNECTION=redis`, otherwise to the application's default connection. Requires dashboard signals and intelligence to be enabled and the selected signal connection to be persistent. One pending job per market remains unique until successful completion or terminal failure, including while it waits behind other signal work. The dispatcher skips successfully while the shared dispatch/recovery guard is held. Records observations; it does not send exchange orders or replace the training dispatcher.
 
 Parameters: none beyond standard Artisan options.
 
 ```bash
 php artisan trademinator:dispatch-market-signals
+# Redis deployment: run a dedicated signal consumer using its own connection.
+php -d memory_limit=512M artisan queue:work redis-signals --queue=signals --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2
 ```
 
 Implementation: [`DispatchMarketSignals.php`](../app/Console/Commands/DispatchMarketSignals.php).
+
+## trademinator:recover-signal-queue
+
+Signature: `trademinator:recover-signal-queue {--apply : Apply the backed-up recovery while both local queue workers are stopped}`
+
+Description: Inspect or recover the legacy Redis signal backlog without discarding training work
+
+Without `--apply`, inspect the configured intelligence and signals queues and report the proposed recovery counts without changing queued work, cache locks or database state. The command examines waiting, delayed and reserved payloads. It requires distinct queue names, Redis for both queue connections and the default cache lock store, and the exact same non-cluster Redis connection for queues and cache locks. Redis serialization and compression must be disabled.
+
+`--apply` is for a **single worker host with both intelligence and signals workers stopped**. Stop those consumers and prevent their restart until recovery finishes; the command cannot verify workers on other hosts. It acquires the same local guards as the documented cron entries, `storage/framework/trademinator-intelligence-queue.lock` and `storage/framework/trademinator-signals-queue.lock`, and the shared signal-dispatch guard. Workers launched manually or under different lock paths must also be stopped. Apply the current code and configuration before recovery, using `config:clear` / `config:cache` rather than `optimize:clear` or `cache:clear`, which can erase pending-job uniqueness locks. This queue repair does not require a database migration or frontend asset rebuild.
+
+Before mutation, apply mode persists a private JSONL backup under `storage/app/private/signal-queue-recovery/` and prints its path. It coalesces legacy signal payloads into fresh unique jobs for eligible active markets, removes only superseded backfill jobs, refreshes retained training timeouts and requeues stopped training reservations. Current training work, unrelated queued jobs, candles, models and immutable signal history are preserved. Recovery queues observations; it does not execute predictions or reconstruct historical trade decisions.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `--apply` | Off; dry run | Back up and apply the validated recovery after both local consumers are stopped. |
+
+```bash
+php artisan trademinator:recover-signal-queue
+# After stopping both consumers on the single worker host and reviewing the dry run:
+php artisan trademinator:recover-signal-queue --apply
+```
+
+If inspection or ownership checks fail, review the message and rerun the dry run before applying. Redis and database updates are separate stores; after an interrupted or uncertain apply, retain the printed backup and rerun inspection to reconcile current state. Resume the separate intelligence and signals cron consumers only after recovery succeeds. See [CRONTABS.md](CRONTABS.md#m42-dashboard-recording-and-discovery) for their connection, timeout and lock paths.
+
+Implementation: [`RecoverSignalQueue.php`](../app/Console/Commands/RecoverSignalQueue.php).
 
 ## trademinator:model-info
 
@@ -1168,13 +1199,16 @@ php -d memory_limit=512M artisan queue:work --queue=features --stop-when-empty -
 # Older-history collection and missing-candle repair.
 php -d memory_limit=256M artisan queue:work --queue=history --stop-when-empty --max-time=50 --timeout=120 --memory=192 --tries=1
 
-# Model builds, shared signal recording, and backfill rebuild stages.
-php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2200 --memory=384 --tries=3
+# Model builds and backfill rebuild stages, using the default training budget.
+php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
+
+# Signal recording has a separate worker; this example selects its Redis connection.
+php -d memory_limit=512M artisan queue:work redis-signals --queue=signals --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2
 ```
 
-`FEATURES_QUEUE`, `HISTORY_BACKFILL_QUEUE` and `INTELLIGENCE_QUEUE` can override the names. A scheduler success or an empty database `jobs` table does not prove Redis/other backend queues are empty. Use the actual configured connection and owner monitoring.
+`FEATURES_QUEUE`, `HISTORY_BACKFILL_QUEUE`, `INTELLIGENCE_QUEUE` and `INTELLIGENCE_SIGNALS_QUEUE` can override the names. Match the signal worker's positional connection to `INTELLIGENCE_SIGNALS_CONNECTION`; `redis-signals` uses a separate reservation budget even though its storage is shared with the training queue. A scheduler success or an empty database `jobs` table does not prove Redis/other backend queues are empty. Use the actual configured connection and owner monitoring.
 
-Keep queue reservation/retry timing longer than the longest job timeout; the documented database/Redis configuration uses at least 1080 seconds for 900-second intelligence jobs. Configure SQS visibility separately when used. Multiple scheduler nodes need a shared lock-capable cache. Queued feature continuations require subsequent worker passes; increasing only `--timeout` does not remove internal replay limits.
+Keep queue reservation/retry timing longer than the longest job timeout on that connection. The default training profile is **1800 seconds** for `INTELLIGENCE_MAX_SECONDS`, **2400 seconds** for the job/worker timeout and **2700 seconds** for `retry_after`. The four-hour profile is **14400 / 15000 / 15300 seconds**; set the intelligence worker's `--timeout=15000` for that profile. The dedicated `redis-signals` connection uses **1200 seconds** for its **900-second** job timeout. Configure SQS visibility separately when used. Multiple scheduler nodes need a shared lock-capable cache. Queued feature continuations require subsequent worker passes; increasing only `--timeout` does not remove internal replay limits.
 
 ## Common workflows
 
@@ -1215,7 +1249,7 @@ php artisan trademinator:dispatch-market-features
 # Drain features and confirm catch-up before relying on new inputs.
 php -d memory_limit=512M artisan queue:work --queue=features --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=3
 php artisan trademinator:dispatch-market-intelligence
-php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2200 --memory=384 --tries=3
+php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
 ```
 
 A single bounded worker pass may not finish all continuations. The weekly dispatcher does not force already completed weekly generations to rebuild and has no `--schema` argument; queued builds use configured intelligence settings. Direct `knn-build --schema=full` is a one-market operation.
@@ -1235,7 +1269,7 @@ Fetching today's CoinGecko data cannot reconstruct yesterday's context. Do not a
 
 A finished build is not the same as a validated model. Read the reported status, validation evidence, freshness and abstention reasons. `INTELLIGENCE_MAX_MODEL_AGE_DAYS` is a history/expiry window, **not a mandatory waiting period**. An insufficient-human-label reason requires eligible submitted candle labels; collecting more automatic candles alone does not create them. Unsubmitted browser labels are not training rows.
 
-`optional budget exhausted` identifies an optional training-stage budget limit, not a missing-candle count. Gap repair, more labels and more execution time address different causes. Current intelligence jobs use a 2200-second timeout with a separate Human Action Training allowance; see [worker budgets and logging](CRONTABS.md#m4-intelligence-workers). Explicit command success does not override any validation gate.
+`optional budget exhausted` identifies an optional training-stage budget limit, not a missing-candle count. Gap repair, more labels and more execution time address different causes. Current intelligence jobs derive their timeout from the model budget plus auxiliary Human Training and cleanup time: 2400 seconds by default, or 15000 seconds for the four-hour profile. See [worker budgets and logging](CRONTABS.md#m4-intelligence-workers). Explicit command success does not override any validation gate.
 
 ### Where the KNN inputs are prepared
 
@@ -1247,9 +1281,10 @@ Run only the steps appropriate to your deployment; these are supporting Laravel/
 
 | Command | Purpose / parameter explanation | Example |
 | --- | --- | --- |
-| `composer install` | Install locked dependencies; `--no-dev` excludes development dependencies, `--prefer-dist` prefers distributions, `--optimize-autoloader` optimizes autoloading. | `composer install --no-dev --prefer-dist --optimize-autoloader` |
+| `composer install` | Install locked dependencies, including the required `ext-pcntl` platform check; `--no-dev` excludes development dependencies, `--prefer-dist` prefers distributions, `--optimize-autoloader` optimizes autoloading. | `composer install --no-dev --prefer-dist --optimize-autoloader` |
 | `migrate --force` | Apply pending migrations; `--force` bypasses Laravel's production confirmation, not a data-safety check. | `php artisan migrate --force` |
-| `optimize:clear` | Clear generated optimization caches; can also affect cached application data. | `php artisan optimize:clear` |
+| `optimize:clear` | Clear optimization and application caches, including pending-job uniqueness locks. Use targeted `config:clear` / `config:cache` during signal-queue rollout instead. | `php artisan optimize:clear` |
+| `config:clear` | Remove only cached configuration before rebuilding it; preserves queue uniqueness and recovery locks in application cache. | `php artisan config:clear` |
 | `config:cache` | Rebuild cached configuration after `.env` changes. | `php artisan config:cache` |
 | `view:cache` | Precompile Blade views. | `php artisan view:cache` |
 | `test --compact PATH` | Run the named test file with compact output; requires development/test dependencies and an isolated test configuration. | `php artisan test --compact tests/Feature/TrademinatorCliDocumentationTest.php` |
@@ -1292,7 +1327,7 @@ The automated documentation test checks command coverage, normalized signatures/
 
 ### Current Outcome + Action KNN contract
 
-trademinator:knn-build builds independently tuned Outcome and Action KNNs. H is the frequency-weighted mean spacing of opposite Action pivots. Outcome uses M=tanh(beta*sqrt(H)/V), V=ATR_t/Close_t, and hard boundaries -0.60/-0.20/0.20/0.60. K candidates begin at 4. Human source weight is min(0.60,0.60*sqrt(N_H/750)). Decision matrix v3 allows Action BUY with Neutral/Bull/Super Bull, keeps the Bear/Super Bear BUY veto, and preserves previous SELL rules. The default build budget is INTELLIGENCE_MAX_SECONDS=1800; intelligence workers use --timeout=2200.
+trademinator:knn-build builds independently tuned Outcome and Action KNNs. H is the frequency-weighted mean spacing of opposite Action pivots. Outcome uses M=tanh(beta*sqrt(H)/V), V=ATR_t/Close_t, and hard boundaries -0.60/-0.20/0.20/0.60. K candidates begin at 4. Human source weight is min(0.60,0.60*sqrt(N_H/750)). Decision matrix v3 allows Action BUY with Neutral/Bull/Super Bull, keeps the Bear/Super Bear BUY veto, and preserves previous SELL rules. The default build budget is INTELLIGENCE_MAX_SECONDS=1800; intelligence workers use --timeout=2400 with retry_after >= 2700. The four-hour profile uses 14400, 15000 and 15300 seconds respectively.
 
 ### Degraded KNN availability
 

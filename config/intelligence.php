@@ -1,9 +1,16 @@
 <?php
 
+$automaticSeconds = max(60, (int) env('INTELLIGENCE_MAX_SECONDS', 1800));
+
 return [
     'enabled' => env('INTELLIGENCE_ENABLED', true),
     'path' => storage_path('app/private/intelligence'),
     'queue' => env('INTELLIGENCE_QUEUE', 'intelligence'),
+    'job_timeout' => max($automaticSeconds + 600, (int) env('INTELLIGENCE_JOB_TIMEOUT', 0)),
+    'signals' => [
+        'queue' => env('INTELLIGENCE_SIGNALS_QUEUE', 'signals'),
+        'connection' => env('INTELLIGENCE_SIGNALS_CONNECTION', env('QUEUE_CONNECTION', 'database') === 'redis' ? 'redis-signals' : null),
+    ],
     'tournament' => ['queue' => env('INTELLIGENCE_TOURNAMENT_QUEUE', 'tournament')],
     'schema' => env('INTELLIGENCE_SCHEMA', 'core'),
     // Previous full-context fallback is retired: CoinGecko never enters Core/Technical KNN.
@@ -15,7 +22,7 @@ return [
     // Statistical minimum for H; intentionally not environment-configurable.
     'min_horizon_distance_observations' => 30,
     // Automatic dataset/model deadline; human training adds its own allowance.
-    'max_seconds' => max(60, (int) env('INTELLIGENCE_MAX_SECONDS', 1800)),
+    'max_seconds' => $automaticSeconds,
     // Both the training history window and the published model's maximum age.
     'max_model_age_days' => (int) env('INTELLIGENCE_MAX_MODEL_AGE_DAYS', 14),
     'max_signal_age_periods' => (int) env('INTELLIGENCE_MAX_SIGNAL_AGE_PERIODS', 2),

@@ -53,7 +53,7 @@ The Server collects canonical exchange candles, computes features, trains and va
 | Web | Dashboard, account/owner administration and human-training interfaces. |
 | API | Existing authenticated, versioned Client API and its request/reporting operations. |
 | Scheduler | Dispatch shared scheduled work with cluster-wide overlap and election locks. |
-| Worker | Drain only its configured queues; initially `default`, `history`, `intelligence` and `archive`, with independent worker capacity and resource budgets. |
+| Worker | Drain only its configured queues; initially `default`, `history`, `intelligence`, `signals` and `archive`, with independent worker capacity and resource budgets. |
 
 One machine may combine all roles; additional machines may combine any supported subset. These are deployment roles, separate from user/owner authorization roles.
 
@@ -61,7 +61,7 @@ One machine may combine all roles; additional machines may combine any supported
 2. **Stable public endpoints:** retain `server.trademinator.com` for the current combined application. A future `api.trademinator.com` may initially reach the same deployment and later a dedicated API pool without changing API contracts. `console.trademinator.com` is optional for a future separate web interface. API-only nodes expose the intended API and health routes, with existing authentication, subscription checks, revocation, throttling and response expiry; owner/web routes remain unavailable there. Define host routing, generated URLs, session-cookie scope and a compatibility period for existing Clients before moving an endpoint.
 3. **Shared state and durable files:** use the same authoritative database, persistent queue backend, shared sessions where required, and shared atomic-lock-capable cache with consistent namespaces. Preserve the encryption key wherever existing encrypted state is consumed. Models, research datasets, cold archives and portable import/export staging must be accessible to every role that needs them through durable shared storage; the database alone is insufficient. Preserve checksums and atomic publication. Rebuild local configuration/runtime metadata per node and grant only the required storage and secret access.
 4. **Coordinated background work:** retain the cron-driven worker model in [CRONTABS.md](CRONTABS.md), including finite runs, memory budgets and retry reservations longer than job timeouts. Multiple scheduler/worker nodes must preserve database leases, unique generation keys, idempotent writes and shared locks. Keep node-local CCXT metadata refresh distinct from shared scheduler dispatch. Enforce applicable exchange/provider rate budgets across the worker pool; adding hosts must not accidentally multiply requests against a shared quota.
-5. **Independent capacity:** isolate CPU-heavy training/backfill/archive work from web/API capacity and measure queue delay separately from request latency. Review the current shared intelligence queue before promising timely signal recording under training load. An API request must not synchronously rebuild history or train a model. Unavailable dependencies, missing artifacts and stale evidence retain explicit unavailable/abstention behavior; loss of shared coordination must not silently fall back to independent local locks.
+5. **Independent capacity:** isolate CPU-heavy training/backfill/archive work from web/API capacity and measure queue delay separately from request latency. Keep the dedicated signals consumer independent of training and measure its delay under training load before promising timely recording. An API request must not synchronously rebuild history or train a model. Unavailable dependencies, missing artifacts and stale evidence retain explicit unavailable/abstention behavior; loss of shared coordination must not silently fall back to independent local locks.
 6. **Deployment and operations:** document role-specific environment examples, crons, storage mounts, permissions, health/readiness checks and node/queue observability. Coordinate migrations once per release, compatible code/job/artifact versions, worker draining and rollback. Include the desktop-to-server cutover: stop old dispatchers, finish active work, pause writes, complete the final file sync, verify dependencies/artifacts, then enable the new roles. A host move alone must not require model retraining.
 7. **Acceptance evidence:** verify equivalent API authorization and results on combined and API-only nodes, unavailable routes/workloads on disabled roles, duplicate-safe scheduling with two nodes, worker failure/redelivery, and readable checksum-verified artifacts across nodes. Confirm adding a worker preserves rate limits and show request latency/queue-delay measurements. Update [CLI.md](CLI.md) and [CRONTABS.md](CRONTABS.md) alongside implementation changes.
 
@@ -79,7 +79,7 @@ One machine may combine all roles; additional machines may combine any supported
 - Human Outcome Training and Human Action Training never overwrite algorithmic labels. For either KNN, W_H = min(0.60, 0.60 * sqrt(N_H / 750)); W_A = 1 - W_H. If one source abstains, the supported source receives 100% effective weight.
 - Final matrix: SELL with SUPER BEAR/BEAR/NEUTRAL => SELL; SELL with BULL/SUPER BULL => HOLD. HOLD => HOLD. BUY with SUPER BEAR/BEAR/NEUTRAL => HOLD; BUY with BULL/SUPER BULL => BUY.
 - Existing old-version models and frozen semantic datasets must be rebuilt; they are never silently reinterpreted.
-- INTELLIGENCE_MAX_SECONDS defaults to 1800 seconds. Intelligence workers use --timeout=2200.
+- `INTELLIGENCE_MAX_SECONDS` defaults to 1800 seconds. Intelligence jobs and workers use a 2400-second timeout with `retry_after >= 2700`. The four-hour profile uses 14400 seconds for model work, 15000 for the job/worker timeout and 15300 for reservation. Composer requires `ext-pcntl` so CLI workers can enforce hard timeouts.
 
 ## M4.2 acceptance and implementation
 
@@ -150,12 +150,14 @@ composer install --no-dev --optimize-autoloader
 npm ci
 npm run build
 php artisan migrate --force
-php artisan optimize:clear
+php artisan config:clear
 php artisan config:cache
 php artisan schedule:list
 ```
 
-Use the existing persistent queue, shared atomic-lock-capable cache and cron-driven `intelligence` worker. Signal recording runs every minute; inference can be delayed by queue load and does not reconstruct missed historical decisions. The first journal entry is created when the recorder first runs, not on page load. Retained observations consume storage and need normal backup/capacity planning; this release does not silently prune history.
+Use the existing persistent queue and shared atomic-lock-capable cache, with separate cron-driven `intelligence` and `signals` workers. Signal recording runs every minute on `INTELLIGENCE_SIGNALS_QUEUE` (default `signals`); Redis deployments use the `redis-signals` connection with a 900-second recorder timeout and 1200-second reservation. Its per-market unique lock persists while a job waits and until processing succeeds or fails terminally. Inference can still be delayed by signal-queue load and does not reconstruct missed historical decisions. The first journal entry is created when the recorder first runs, not on page load. Retained observations consume storage and need normal backup/capacity planning; this release does not silently prune history.
+
+Refresh only configuration with `config:clear` / `config:cache` during rollout. `optimize:clear` also clears application cache and can erase pending-job uniqueness locks. A legacy mixed backlog must use the [targeted signal recovery](CLI.md#trademinatorrecover-signal-queue), with a dry run, stopped intelligence/signals consumers on a single worker host and a private backup before applying; current training work and immutable signal history are preserved.
 
 `DASHBOARD_SIGNALS_ENABLED` and `DASHBOARD_DISCOVERY_ENABLED` default to `true`. Signal recording also respects `INTELLIGENCE_ENABLED`. CoinGecko discovery respects `COINGECKO_ENABLED` and requires `COINGECKO_API_KEY`; its hourly refresh is separate from subscription-driven context collection. Discovery consumes at most 15 HTTP requests per default refresh (global, up to 100 coin summaries, at most 12 symbol checks and categories), shared across all users; account plan limits still apply. It uses a shared lock and the scheduler runs it in the background. Cached source data expires within two hours, including category timestamps. If a refresh fails, still-fresh cache remains usable; expired context cannot influence suggestions.
 

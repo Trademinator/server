@@ -18,9 +18,12 @@ require dirname(__DIR__, 2).'/vendor/autoload.php';
 
 $count = filter_var($argv[1] ?? '527041', FILTER_VALIDATE_INT);
 $pattern = $argv[2] ?? 'alternating';
-if ($count === false || $count < 3 || $count > 600000 || ! in_array($pattern, ['alternating', 'mixed', 'flat'], true)) {
-    throw new InvalidArgumentException('Expected 3..600000 rows and alternating, mixed or flat.');
+$retainedMiB = filter_var($argv[3] ?? '0', FILTER_VALIDATE_INT);
+if ($count === false || $count < 3 || $count > 600000 || ! in_array($pattern, ['alternating', 'mixed', 'flat'], true)
+    || $retainedMiB === false || $retainedMiB < 0 || $retainedMiB > 256) {
+    throw new InvalidArgumentException('Expected 3..600000 rows, alternating, mixed or flat, and 0..256 retained MiB.');
 }
+$retained = str_repeat('x', $retainedMiB * 1024 * 1024);
 $container = new Container;
 Container::setInstance($container);
 $container->instance('config', new Repository([
@@ -60,6 +63,7 @@ foreach ($result['_action_labels'] as $timestamp => $action) {
 }
 echo json_encode([
     'rows' => $count, 'pattern' => $pattern, 'memory_limit' => ini_get('memory_limit'),
+    'retained_bytes' => strlen($retained),
     'peak_bytes' => memory_get_peak_usage(true),
     'elapsed_seconds' => round((hrtime(true) - $started) / 1e9, 3),
     'actions_sha256' => hash_final($digest),

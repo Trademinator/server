@@ -20,6 +20,8 @@ Run this as the account authorized to read `/etc/GeoIP.conf` and replace the con
 
 Replace `/path/to/trader-server` and `/usr/bin/php` with the deployment's actual paths.
 
+All cron examples in this document use a **user crontab** (`crontab -e`), with no username field. In `/etc/crontab` or `/etc/cron.d/*`, insert the application account (for example, `apache`) between the five schedule fields and the command. Run workers as the account that owns the application's writable storage.
+
 ```cron
 # Laravel scheduler. This triggers all schedules defined in routes/console.php.
 * * * * * cd /path/to/trader-server && /usr/bin/php artisan schedule:run >> storage/logs/scheduler-cron.log 2>&1
@@ -29,7 +31,7 @@ Replace `/path/to/trader-server` and `/usr/bin/php` with the deployment's actual
 * * * * * cd /path/to/trader-server && /usr/bin/flock -n storage/framework/trademinator-queue.lock /usr/bin/php -d memory_limit=512M artisan queue:work --queue=default --stop-when-empty --max-time=50 --memory=384 --timeout=600 --tries=5 >> storage/logs/queue-cron.log 2>&1
 ```
 
-Those two entries cover collection and M2 features. M4 training also requires the intelligence queue worker below. Historical backfill uses the additional history worker below. Do **not** add separate cron lines for each `trademinator:*` scheduled command; Laravel's scheduler owns those cadences.
+Those two entries cover collection and M2 features. M4 training also requires the intelligence queue worker below, and signal recording requires its own signals worker. Historical backfill uses the additional history worker below. Do **not** add separate cron lines for each `trademinator:*` scheduled command; Laravel's scheduler owns those cadences.
 
 ## Commands currently triggered by the Laravel scheduler
 
@@ -37,7 +39,7 @@ Those two entries cover collection and M2 features. M4 training also requires th
 | --- | --- | --- |
 | `trademinator:dispatch-market-feeds` | Every minute | Queue due shared market feeds that have active subscribers. |
 | `trademinator:backfill-ohlcv` | Every minute | Queue bounded older-history passes and recover pending feature/KNN rebuilds after successful imports. |
-| `trademinator:dispatch-market-signals` | Every minute | Queue current immutable Server observations once per actively subscribed shared market on the intelligence queue. |
+| `trademinator:dispatch-market-signals` | Every minute | Queue current immutable Server observations once per actively subscribed shared market on the dedicated signals queue. |
 | `trademinator:refresh-market-discovery` | Hourly at minute 10, application timezone | Refresh optional, bounded CoinGecko discovery/context in the background; never subscribe or trade. |
 | `trademinator:prune-access-statistics` | Daily at 02:40, application timezone | Apply configured retention to access aggregates and daily visitor hashes. |
 | `trademinator:prune-portable-archives` | Daily at 04:40, application timezone | Delete expired multipart import/export staging files and database transfer metadata; permanent archives and hot candles are unaffected. |
@@ -53,7 +55,9 @@ The weekly intelligence build is also the canonical scheduled Action auto-label 
 
 ## Queue and cache requirements
 
-Use a persistent `QUEUE_CONNECTION` (`database` or shared Redis). `sync` and `null` are not suitable for the shared market-feed dispatcher. Set the queue connection's `retry_after` to at least **1080 seconds**, which is longer than the **600-second** job timeout above.
+Use a persistent `QUEUE_CONNECTION` (`database` or shared Redis). `sync` and `null` are not suitable for the shared market-feed dispatcher. A connection consumed by training must reserve jobs for at least the training timeout plus **300 seconds**: **2700 seconds** with the default training budget, or **15300 seconds** with the four-hour profile below. The separate `redis-signals` connection reserves jobs for **1200 seconds**, above its recorder's **900-second** timeout.
+
+Composer requires `ext-pcntl`. Install and enable PCNTL for the same PHP CLI binary used by cron and Composer; Laravel's hard worker timeouts depend on it. A CLI worker with a different PHP configuration must also load the extension.
 
 Use a shared atomic-lock-capable cache store such as Redis when multiple application nodes run the scheduler. `onOneServer`, `withoutOverlapping`, database leases, and per-market locks protect shared work from duplicate execution. The every-minute market-feed dispatcher uses a five-minute scheduler overlap expiry to suppress redundant dispatcher runs; its atomic 15-minute database feed lease remains the correctness boundary if that scheduler lock expires. The R3 exchange refresh runs on **every node** because each node owns its installed CCXT files and runtime snapshot; the command uses its own local file lock and a shared cache lock for database inserts. It is offline and does not update the CCXT package or approve changed adapters. Composer install/update also rebuilds local metadata without database access. No additional system cron entry is needed.
 
@@ -69,22 +73,32 @@ Candle workers install only the requested instrument into CCXT's market indexes,
 | --- | --- |
 | `default` | Live ingestion uses a 90-period window; period selection uses the recent 250-candle sample plus boundary allowance. Explicit queued synchronization processes one configured page per job and preserves its queue/connection on continuation. Feature replay streams 500 source candles at a time and writes batches of 100, retaining only indicator state and a 30-day close-price buffer. |
 | `history` | At most five 90-candle requests per pass, with transactional progress checkpoints and the existing 45-second work budget. |
-| `intelligence` | Feature replay uses the same streaming path. Training and retained KNN knowledge use every eligible example within `INTELLIGENCE_MAX_MODEL_AGE_DAYS` of the build cutoff; there is no row-count cap. Longer windows increase model memory and fitting time; application and worker time budgets still apply. Human-review snapshots and their chart payloads are read 25 at a time. Signal recording loads one model and its recent feature window. |
+| `intelligence` | Feature replay uses the same streaming path. Training and retained KNN knowledge use every eligible example within `INTELLIGENCE_MAX_MODEL_AGE_DAYS` of the build cutoff; there is no row-count cap. Longer windows increase model memory and fitting time; application and worker time budgets still apply. Human-review snapshots and their chart payloads are read 25 at a time. |
+| `signals` | One pending recorder per actively subscribed market loads its model and recent feature window, then processes up to six new completed source candles. Its worker runs independently of training. |
 
-After deploying these changes, update **all three** queue cron commands. Inspect `php artisan queue:failed` and the corresponding worker log if a job fails. Keep ingestion batches bounded and size the intelligence age window and worker resources together. These budgets are not a benchmark of every exchange adapter or a guarantee about production RSS.
+After deploying these changes, update the configured queue cron commands and add the dedicated signals worker. Inspect `php artisan queue:failed` and the corresponding worker log if a job fails. Keep ingestion batches bounded and size the intelligence age window and worker resources together. These budgets are not a benchmark of every exchange adapter or a guarantee about production RSS.
 
 ## Deployment checks
 
 After changing application or environment configuration:
 
 ```bash
-php artisan optimize:clear
+php artisan config:clear
 php artisan config:cache
 php artisan schedule:list
 php artisan queue:failed
 ```
 
-Because the documented queue worker is not persistent, `php artisan queue:restart` is not required for the cron-driven worker model.
+Use targeted `config:clear` / `config:cache` during this rollout. `optimize:clear` also clears application cache and can erase the uniqueness and recovery locks that protect pending jobs; `cache:clear` has the same lock risk. New cron workers load the refreshed code and configuration, while a worker already running retains its loaded version until it exits. Stop both intelligence and signals workers before applying the [targeted legacy backlog recovery](CLI.md#trademinatorrecover-signal-queue).
+
+The prepared single-host helper, `scripts/repair-signal-pipeline.sh`, is pinned to `/var/www/server.trademinator.com`, the `apache` runtime account, `/etc/cron.d/trademinator`, PHP 8.5 and the reviewed baseline commit. Run it from a root shell with the tested patch; it does not invoke `sudo`. Its default mode performs checks only:
+
+```bash
+bash scripts/repair-signal-pipeline.sh --patch /absolute/tested.patch
+bash scripts/repair-signal-pipeline.sh --patch /absolute/tested.patch --apply
+```
+
+Apply mode privately backs up affected files, environment and cron, pauses this installation's cron, stops its known application workers/dispatchers, installs the repair and configuration, and runs recovery inspection followed by apply. Cron resumes only after success. A failure after mutation begins leaves cron paused and prints the backup path; inspect that state before resuming work. Use the manual procedure for deployments outside the helper's pinned configuration.
 
 ## M3 research commands
 
@@ -99,10 +113,10 @@ M4 adds a dedicated CPU-heavy queue. Keep the scheduler on one or multiple sched
 
 ```cron
 # Add on each chosen intelligence worker, alongside or instead of that node's default-queue worker.
-* * * * * cd /path/to/trader-server && /usr/bin/flock -n /tmp/trademinator-intelligence-queue.lock /usr/bin/php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2200 --memory=384 --tries=3 >> storage/logs/intelligence-cron.log 2>&1
+* * * * * cd /path/to/trader-server && /usr/bin/flock -n storage/framework/trademinator-intelligence-queue.lock /usr/bin/php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3 >> storage/logs/intelligence-cron.log 2>&1
 ```
 
-The `/tmp` lock is local to the worker host; use a distinct lock filename for separate installations. Multiple worker hosts may drain the shared queue. `INTELLIGENCE_QUEUE` defaults to `intelligence`; if changed, change the worker's `--queue` to match. Database/Redis `retry_after` must be at least 1080 seconds, greater than the 900-second training job timeout. The queue configuration enforces this minimum, including when an older `.env` still specifies 720; larger configured values are preserved. Worker PHP needs the same Composer extensions as the application. Memory needs depend on schema/history; 512 MiB is a starting limit, not a production benchmark.
+The `flock` is local to the worker host. Keep the documented `storage/framework/trademinator-intelligence-queue.lock` path: the legacy recovery command uses that same guard, together with `storage/framework/trademinator-signals-queue.lock`, to refuse recovery while a local worker is active. Normal operation supports multiple worker hosts; the targeted recovery procedure requires both queue consumers to be stopped on a single worker host. `INTELLIGENCE_QUEUE` defaults to `intelligence`; if changed, change the worker's `--queue` to match. Worker PHP needs the same Composer extensions as the application, including PCNTL. Memory needs depend on schema/history; 512 MiB is a starting limit, not a production benchmark.
 
 Weekly dispatch runs Monday at 04:00 in the application timezone using shared scheduler locks. Per-market uniqueness/build locks and the database's unique weekly generation key also protect redelivery after a worker crash. Retries use 300/900-second backoff. Completed generations include abstaining models; failed input/history builds remain visible in normal failed-job reporting. Training snapshots/models are retained for audit and need ordinary backup/storage capacity planning.
 
@@ -112,21 +126,31 @@ Set `INTELLIGENCE_ENABLED=false` to disable weekly dispatch. To populate initial
 
 ```bash
 php artisan trademinator:dispatch-market-intelligence
-php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2200 --memory=384 --tries=3
+php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
 php artisan queue:failed
 php artisan schedule:list
 ```
 
-Human Training keeps a separate **300-second** cooperative allowance plus a 10-second publication reserve. Outcome/Action model work uses INTELLIGENCE_MAX_SECONDS, which defaults to **1800 seconds**. Intelligence jobs use a **2200-second** timeout. Training locks, recovery leases and queue reservations must exceed the maximum job duration; for database/Redis/Beanstalkd use retry_after >= 2400, and configure SQS visibility timeout above 2200 seconds.
+Human Training keeps a separate **300-second** cooperative allowance plus a **10-second** publication reserve. Outcome/Action model work uses `INTELLIGENCE_MAX_SECONDS`. The hard job timeout includes at least another **600 seconds** for auxiliary work and cleanup; `INTELLIGENCE_JOB_TIMEOUT` can raise it further. Training locks and running leases follow that derived timeout. Database/Redis/Beanstalkd queue configuration enforces `retry_after >= job timeout + 300`, while preserving larger configured values. Configure SQS visibility to satisfy the same reservation margin separately.
 
-After deploying this change, refresh cached configuration and restart workers:
+| Training profile | `INTELLIGENCE_MAX_SECONDS` | Job timeout / worker `--timeout` | Training `retry_after` minimum |
+| --- | --- | --- | --- |
+| Default | 1800 | 2400 | 2700 |
+| Four-hour model budget | 14400 | 15000 | 15300 |
 
-```bash
-php artisan config:cache
-php artisan queue:restart
+For the four-hour Redis deployment, use these environment values and change the intelligence cron above to `--timeout=15000`:
+
+```dotenv
+QUEUE_CONNECTION=redis
+INTELLIGENCE_MAX_SECONDS=14400
+INTELLIGENCE_JOB_TIMEOUT=15000
+REDIS_QUEUE_RETRY_AFTER=15300
+INTELLIGENCE_SIGNALS_QUEUE=signals
+INTELLIGENCE_SIGNALS_CONNECTION=redis-signals
+REDIS_SIGNALS_RETRY_AFTER=1200
 ```
 
-Change the intelligence worker's `--timeout` to `900` as above. Already queued payloads retain their original timeout; a newly dispatched job or direct `trademinator:knn-build` uses the new allowance. Existing published models are unchanged until rebuilt. Do not delete pending jobs to change their timeout.
+Refresh configuration with `config:clear` followed by `config:cache`. Already queued payloads retain their serialized timeout; the targeted recovery command refreshes retained training payloads while preserving their work. Newly dispatched jobs use the current budget. Existing published models remain unchanged until rebuilt. Keep the signals worker at **900 seconds**, independently of the training profile.
 
 With `ACTION_SYSLOG_ENABLED=true`, watch the existing structured action log:
 
@@ -149,13 +173,13 @@ php artisan config:cache
 php artisan schedule:list
 ```
 
-`HISTORY_BACKFILL_ENABLED` defaults to `true`; `HISTORY_BACKFILL_QUEUE` defaults to `history`. Keep the existing scheduler, default-queue and intelligence-queue crons. Add this entry on the chosen history worker machine(s), using the same source, database and shared cache:
+`HISTORY_BACKFILL_ENABLED` defaults to `true`; `HISTORY_BACKFILL_QUEUE` defaults to `history`. Keep the existing scheduler, default-queue, intelligence-queue and signals-queue crons. Add this entry on the chosen history worker machine(s), using the same source, database and shared cache:
 
 ```cron
 * * * * * cd /path/to/trader-server && /usr/bin/flock -n storage/framework/trademinator-history-queue.lock /usr/bin/php -d memory_limit=256M artisan queue:work --queue=history --stop-when-empty --max-time=50 --timeout=120 --memory=192 --tries=1 >> storage/logs/history-cron.log 2>&1
 ```
 
-Change `--queue` to match `HISTORY_BACKFILL_QUEUE` if customized. `--max-time=50` stops between jobs; a job already running may finish later, bounded by its 120-second timeout. `flock` prevents overlap on the same host. Multiple worker machines can drain the queue: atomic database leases select one job per market/period, shared market locks coordinate with live collection, a shared exchange lock serializes history workers for that exchange, and page upserts/checkpoints are transactional. CCXT's rate limiter remains enabled. The existing `retry_after >= 2400` setting is already greater than the history timeout. The job allows additional 30-second releases while another collector holds a lock; actual request failures use the saved retry schedule described in [CLI.md](CLI.md#trademinatorbackfill-ohlcv). There is no permanent worker daemon.
+Change `--queue` to match `HISTORY_BACKFILL_QUEUE` if customized. `--max-time=50` stops between jobs; a job already running may finish later, bounded by its 120-second timeout. `flock` prevents overlap on the same host. Multiple worker machines can drain the queue: atomic database leases select one job per market/period, shared market locks coordinate with live collection, a shared exchange lock serializes history workers for that exchange, and page upserts/checkpoints are transactional. CCXT's rate limiter remains enabled. The default shared connection's `retry_after >= 2700` setting is already greater than the history timeout. The job allows additional 30-second releases while another collector holds a lock; actual request failures use the saved retry schedule described in [CLI.md](CLI.md#trademinatorbackfill-ohlcv). There is no permanent worker daemon.
 
 A pass makes at most five 90-candle OHLCV requests, starts no new call after 45 seconds, and waits at least one minute before the next pass. A full 24-hour window of one-minute candles therefore normally needs four passes when all pages are full; one-hour candles normally need one pass for the same day. This is throughput, not a guaranteed ETA: exchange limits, sparse trading, queues and errors affect timing. Longer candle periods fetch at least one whole candle per logical window.
 
@@ -170,26 +194,35 @@ php artisan queue:failed
 Expected request failures and pauses are recorded in `--status` and application logs; they need not appear in `queue:failed`. A hard worker failure can also appear there. Three empty/out-of-range windows pause automatic probing. Network/rate-limit errors back off without marking history exhausted. Repeated non-network errors pause for review. The status includes the cursor and reason; see [the command reference](CLI.md#trademinatorbackfill-ohlcv) for targeted resume and immediate feature/model rebuilding.
 
 
-Successful backfill windows also queue **M2 feature rebuild → fresh KNN/pattern build** on `INTELLIGENCE_QUEUE`. Keep the existing M4 intelligence cron running; no extra training cron is necessary and there is no wait until Monday. Both stages run on the intelligence worker, each with a 2200-second job timeout; feature replay keeps its existing 540-second cooperative limit. Preserve that worker's 512 MiB PHP ceiling and 384 MiB worker recycle threshold, shared private research/model storage and `retry_after >= 2400`. The weekly schedule remains available alongside these history-triggered builds.
+Successful backfill windows also queue **M2 feature rebuild → fresh KNN/pattern build** on `INTELLIGENCE_QUEUE`. Keep the existing M4 intelligence cron running; no extra training cron is necessary and there is no wait until Monday. Both stages run on the intelligence worker with the derived training timeout: **2400 seconds** by default or **15000 seconds** for the four-hour profile. Feature replay keeps its existing 540-second cooperative limit. Preserve that worker's 512 MiB PHP ceiling and 384 MiB worker recycle threshold, shared private research/model storage and the corresponding `retry_after` minimum of **2700** or **15300 seconds**. The weekly schedule remains available alongside these history-triggered builds.
 
 Rebuilds combine pending imports per market, retain imports that arrive during training for a follow-up build, and retry after errors without deleting candles. The history worker shares M2's feature lock while inserting older rows so feature replay and dataset snapshots cannot observe history changing under an offset-based scan. `trademinator:backfill-ohlcv --status` reports both collection progress and `build_stage`, pending/trained history revisions, the most recent model ID and any `build_error`. `INTELLIGENCE_ENABLED=false` pauses these automatic rebuilds as well as weekly dispatch; pending history revisions remain available when re-enabled.
 
 
 ## M4.1 daily cross-exchange reevaluation
 
-Keep the existing scheduler and `intelligence` worker above. No extra system cron entry or permanent daemon is required. At 03:45 daily, `trademinator:dispatch-lead-lag` queues integrated model rebuilds for active feeds with the same spot symbol and selected period on at least two exchanges. Each job relearns empirical timing and rebuilds the downstream KNN/pattern model under a 1800-second Outcome/Action training budget plus a separate 300-second human-training allowance and 10-second publication reserve, a 2200-second job timeout, 512 MiB PHP ceiling and 384 MiB worker recycle threshold and retry_after >= 2400. Per-day/version generations are idempotent; failed work uses the existing retries and `queue:failed`. This adds CPU/storage work proportional to the number of eligible shared feeds, not the number of users.
+Keep the existing scheduler and `intelligence` worker above. No extra system cron entry or permanent daemon is required. At 03:45 daily, `trademinator:dispatch-lead-lag` queues integrated model rebuilds for active feeds with the same spot symbol and selected period on at least two exchanges. Each job relearns empirical timing and rebuilds the downstream KNN/pattern model under the configured Outcome/Action training budget plus a separate 300-second human-training allowance and 10-second publication reserve. The default profile uses an 1800-second training budget, 2400-second job timeout and `retry_after >= 2700`; the four-hour profile uses 14400, 15000 and 15300 seconds respectively. Keep the 512 MiB PHP ceiling and 384 MiB worker recycle threshold. Per-day/version generations are idempotent; failed work uses the existing retries and `queue:failed`. This adds CPU/storage work proportional to the number of eligible shared feeds, not the number of users.
 
 Migrate before running the updated scheduler, refresh exchange metadata to seed unambiguous timezone priors, and set explicit IANA overrides where needed. `LEAD_LAG_ENABLED` and `LEAD_LAG_DAILY_REFRESH` default true; the second controls only this extra dispatcher. Both also respect `INTELLIGENCE_ENABLED`. Weekly Monday training and successful-backfill rebuilds continue and include lead/lag when enabled. Existing M4 models need one rebuild because the pattern validation protocol changed; versioned generation keys allow upgrade redispatch even within the same week. See [M4.1 upgrade and evidence contract](CLI.md#m41-cross-exchange-leadlag-and-m4-completion).
 
 ## M4.2 dashboard recording and discovery
 
-Apply the dashboard migration and rebuild frontend assets before serving the new dashboard or running its schedules. Keep the existing scheduler and intelligence worker cron entries; no additional system cron or permanent daemon is needed. `trademinator:dispatch-market-signals` runs every minute and queues inference on `INTELLIGENCE_QUEUE`. Recorder jobs allow 120 seconds, two attempts and a 60-second retry delay. Existing training worker memory and `retry_after >= 2400` cover them. Training backlog can delay recording; the UI retains actual source/recording times and never invents decisions for missed intervals.
+Apply the dashboard migration and rebuild frontend assets before serving the new dashboard or running its schedules. Keep the existing scheduler and intelligence worker, and add a **separate signals worker cron**. `trademinator:dispatch-market-signals` runs every minute and queues inference on `INTELLIGENCE_SIGNALS_QUEUE` (default `signals`). When `QUEUE_CONNECTION=redis`, the signal connection defaults to `redis-signals`; its separate reservation timeout prevents the four-hour training budget from delaying signal redelivery after a worker crash.
+
+```cron
+# Redis deployment: the positional redis-signals connection is required for its 1200-second reservation.
+* * * * * cd /path/to/trader-server && /usr/bin/flock -n storage/framework/trademinator-signals-queue.lock /usr/bin/php -d memory_limit=512M artisan queue:work redis-signals --queue=signals --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2 >> storage/logs/signals-cron.log 2>&1
+```
+
+Match `--queue` and the positional connection to `INTELLIGENCE_SIGNALS_QUEUE` and `INTELLIGENCE_SIGNALS_CONNECTION` when customized. For another persistent backend, select its connection explicitly and keep the signals worker separate. Preserve the documented `storage/framework/trademinator-signals-queue.lock` path for recovery compatibility. The `redis-signals` connection uses the same Redis storage as the training connection, with `REDIS_SIGNALS_RETRY_AFTER=1200`; its queue name and worker are distinct.
+
+Recorder jobs allow **900 seconds**, up to two attempts and a 60-second retry delay for retryable failures. A hard timeout fails the job terminally. One pending unique job per market remains locked throughout queue waiting and execution; success or terminal failure releases it for the next scheduled dispatch. The dispatcher also shares a guard with [legacy backlog recovery](CLI.md#trademinatorrecover-signal-queue) and skips safely while recovery holds it. The UI retains actual source/recording times and never invents decisions for missed intervals.
 
 `DASHBOARD_SIGNALS_ENABLED=false` pauses dispatch and queued recorders; `INTELLIGENCE_ENABLED=false` also pauses them. Jobs recheck active subscribers and use the current selected period. Recording is shared per market, not per user. Historical journal rows remain when a user unsubscribes, but dashboard access requires their active subscription. A Server signal and a subscription never send an order; actual Client execution is Unknown until M5 reporting exists.
 
 `trademinator:refresh-market-discovery` runs hourly at minute 10 in the scheduler background and holds a shared cache lock for up to 15 minutes. It does not use a queue worker. `DASHBOARD_DISCOVERY_ENABLED`, `COINGECKO_ENABLED` and `COINGECKO_API_KEY` control optional discovery. A default refresh makes at most 15 CoinGecko HTTP requests across all users, with the existing client timeouts; review your provider quota. Failure keeps previously cached data only while its source timestamps remain within two hours. Discovery creates no feeds, subscriptions or canonical training snapshots. The existing hourly `collect-market-context` schedule remains unchanged.
 
-After deployment, check `php artisan schedule:list`, the intelligence worker log, `php artisan queue:failed` and the dashboard's latest recorded/source times. The scheduler's timetable is not a worker heartbeat. For an immediate observation, use the dispatch/drain examples in [CLI.md](CLI.md#trademinatordispatch-market-signals). The [M plan](M-PLAN.md) documents the user-facing acceptance contract.
+After deployment, check `php artisan schedule:list`, the signals and intelligence worker logs, `php artisan queue:failed` and the dashboard's latest recorded/source times. The scheduler's timetable is not a worker heartbeat. For an immediate observation, use the dispatch/drain examples in [CLI.md](CLI.md#trademinatordispatch-market-signals). The [M plan](M-PLAN.md) documents the user-facing acceptance contract.
 
 ## M4.3 archive export and verification
 
@@ -201,23 +234,26 @@ No daemon is required. Keep the existing once-per-minute `schedule:run` cron and
 
 ## Candle-level Server decision charts (October 2026)
 
-No new queue or system cron is introduced. The existing \`features\` queue now checks
-for new candles every minute; the existing \`intelligence\` queue continues to drain
-\`trademinator:dispatch-market-signals\` jobs every minute. Each recorder processes
+The existing `features` queue checks for new candles every minute; the dedicated
+`signals` worker above drains `trademinator:dispatch-market-signals` jobs independently
+of training. Each recorder processes
 up to six new completed source candles per run, records the original model and
 raw Action/Outcome KNN verdicts, and never backdates its recording time.
 If the model was not yet published at a source candle's close, the job records
 an abstention rather than inventing a historical trading action. Signals remain
 immutable. Supported repeated BUY/SELL signals are stored per candle even when
-\`is_change=false\`; \`is_change\` is only for the notification timeline.
+`is_change=false`; `is_change` is only for the notification timeline.
 
-Worker settings: \`RecordMarketSignal\` now allows 900 seconds with a 1200-second
-unique-lock safety period. Keep the existing \`intelligence\` worker's timeout
->= 900s and the existing \`retry_after\` >= 2400s. The shared Redis/Laravel cache
+Worker settings: `RecordMarketSignal` allows 900 seconds. Its unique lock has no
+waiting-time expiry and is released on success or terminal failure. Keep the
+dedicated `redis-signals` worker at `--timeout=900` and its `retry_after` at least
+1200 seconds. The shared Redis/Laravel cache
 keeps exchange OHLCV windows for 45 seconds when recent or 10 minutes when historical.
 User-specific Human Training labels and Client activity are never cached in that
 shared key. No chart endpoint performs live inference.
 
-Deploy: \`php artisan migrate --force\`, rebuild Vite assets with
-\`npm run build\`, and verify \`php artisan schedule:list\`, the \`features\`
-worker and the \`intelligence\` worker.
+Deploy: `php artisan migrate --force`, rebuild Vite assets with
+`npm run build`, refresh configuration with `config:clear` / `config:cache`, and verify
+`php artisan schedule:list`, the `features` worker, the `intelligence` worker and
+the dedicated `signals` worker. Follow the targeted recovery procedure for a legacy
+mixed queue before restarting its intelligence and signals consumers.

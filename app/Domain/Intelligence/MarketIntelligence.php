@@ -11,6 +11,7 @@ use App\Domain\Research\FeatureSchema;
 use App\Domain\Research\SemanticLabels;
 use App\Models\MarketFeature;
 use App\Repositories\TickerRepository;
+use Closure;
 use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 use RuntimeException;
@@ -35,7 +36,8 @@ final class MarketIntelligence
 
     public function build(string $exchange, string $symbol, string $period, ?string $dataset = null,
         string $schema = 'core', ?int $fromMs = null, ?int $toMs = null, ?int $asOfMs = null,
-        ?string $generation = null, array $buildPerformance = [], ?string $featureLockOwner = null, ?string $contextFallback = null): array
+        ?string $generation = null, array $buildPerformance = [], ?string $featureLockOwner = null, ?string $contextFallback = null,
+        ?Closure $beforePublish = null): array
     {
         if ($contextFallback !== null && ! in_array($contextFallback, ['none', 'technical'], true)) {
             throw new InvalidArgumentException('Deprecated context fallback must be none or technical.');
@@ -61,7 +63,7 @@ final class MarketIntelligence
         $buildPerformance['started_monotonic_ns'] = hrtime(true);
         $buildPerformance['stages'] ??= [];
         $deadline = microtime(true) + config('intelligence.max_seconds');
-        $lock = Cache::lock('trademinator:intelligence-build:'.ModelStore::marketKey($exchange, $symbol, $period), 1020);
+        $lock = Cache::lock('trademinator:intelligence-build:'.ModelStore::marketKey($exchange, $symbol, $period), TrainingRuntime::lockSeconds());
         if (! $lock->get()) {
             throw new RuntimeException('A knowledge build is already running for this market and period.');
         }
@@ -120,7 +122,13 @@ final class MarketIntelligence
             $buildPerformance['stages']['dataset_ms'] = (int) ($buildPerformance['stages']['dataset_ms'] ?? 0)
                 + (int) round((hrtime(true) - $datasetStarted) / 1_000_000);
 
-            return $this->trainer->train($dataset, $deadline, $generation, $buildPerformance, $schemaSelection);
+            return $this->trainer->train($dataset, $deadline, $generation, $buildPerformance, $schemaSelection,
+                beforePublish: function () use ($lock, $beforePublish): void {
+                    if (! $lock->isOwnedByCurrentProcess()) {
+                        throw new RuntimeException('Knowledge build lock ownership was lost before publication.');
+                    }
+                    $beforePublish?->__invoke();
+                });
         } finally {
             $lock->release();
         }

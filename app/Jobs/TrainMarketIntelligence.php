@@ -7,6 +7,7 @@ use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\KnnSchemaFallback;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\Intelligence\TrainingRuntime;
 use App\Domain\Operations\ActionLog;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -22,9 +23,9 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
-    public int $timeout = 2200;
+    public int $timeout;
 
-    public int $uniqueFor = 86400;
+    public int $uniqueFor = 0;
 
     public array $backoff = [300, 900];
 
@@ -33,6 +34,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
     public function __construct(public string $exchange, public string $symbol, public string $period, public string $week, ?string $schema = null)
     {
         $this->schema = $schema ?? (string) config('intelligence.schema');
+        $this->timeout = TrainingRuntime::jobTimeout();
     }
 
     public function uniqueId(): string
@@ -50,7 +52,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
     public function handle(MarketIntelligence $intelligence): void
     {
         $key = 'trademinator:intelligence-week:'.$this->uniqueId();
-        $lock = Cache::lock($key.':lock', 1020);
+        $lock = Cache::lock($key.':lock', TrainingRuntime::lockSeconds());
         if (! $lock->get()) {
             throw new RuntimeException('Weekly intelligence work is already running.');
         }
@@ -66,7 +68,12 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
             try {
                 $intelligence->build($this->exchange, $this->symbol, $this->period,
                     schema: $this->schema ?? (string) config('intelligence.schema'),
-                    generation: hash('sha256', $this->uniqueId()));
+                    generation: hash('sha256', $this->uniqueId()),
+                    beforePublish: function () use ($lock): void {
+                        if (! $lock->isOwnedByCurrentProcess()) {
+                            throw new RuntimeException('Weekly intelligence lock ownership was lost before publication.');
+                        }
+                    });
             } catch (IntelligenceNotReady $notReady) {
                 $selection = $notReady->diagnostics;
                 app(ActionLog::class)->write('intelligence.training.skipped', [

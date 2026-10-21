@@ -13,6 +13,7 @@
         "php": "^8.4 || ^8.5",
         "ext-bcmath": "*",
         "ext-intl": "*",
+        "ext-pcntl": "*",
         "ccxt/ccxt": "^4.5",
         "codeat3/blade-phosphor-icons": "^2.4",
         "jason-guru/laravel-make-repository": "^1.0",

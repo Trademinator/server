@@ -7,6 +7,7 @@ use App\Jobs\RebuildBackfilledIntelligence;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 final class BackfillIntelligence
@@ -27,7 +28,9 @@ final class BackfillIntelligence
             $query = DB::table('market_history_backfills')->where('market_id', $feed->market_id)
                 ->where('period', $feed->selected_period)->whereColumn('history_revision', '>', 'trained_revision')
                 ->where(fn ($query) => $query->whereNull('build_next_attempt_at')->orWhere('build_next_attempt_at', '<=', now()))
-                ->where(fn ($query) => $query->whereNull('build_lease_until')->orWhere('build_lease_until', '<=', now()));
+                ->where(fn ($query) => $query->whereNull('build_lease_token')
+                    ->orWhere(fn ($query) => $query->whereNotNull('build_lease_until')
+                        ->where('build_lease_until', '<=', now())));
             $row = $query->first();
             if ($row === null) {
                 continue;
@@ -38,7 +41,8 @@ final class BackfillIntelligence
                 ->where('trained_revision', $row->trained_revision)->where('build_stage', $row->build_stage)->update([
                     'build_stage' => $stage,
                     'build_revision' => $stage === 'features' ? $row->history_revision : $row->build_revision,
-                    'build_lease_token' => $token, 'build_lease_until' => now()->addMinutes(20), 'updated_at' => now(),
+                    // Waiting work retains its token until a worker starts its bounded lease.
+                    'build_lease_token' => $token, 'build_lease_until' => null, 'updated_at' => now(),
                 ]);
             if (! $claimed) {
                 continue;
@@ -66,12 +70,29 @@ final class BackfillIntelligence
 
     public function renew(string $id, string $token): bool
     {
+        return $this->owned($id, $token)
+            ->where(fn ($query) => $query->whereNull('build_lease_until')->orWhere('build_lease_until', '>', now()))
+            ->update([
+                'build_lease_until' => now()->addSeconds(TrainingRuntime::lockSeconds()),
+                'build_next_attempt_at' => null,
+                'build_error' => null,
+                'updated_at' => now(),
+            ]) > 0;
+    }
+
+    /** Keep the existing token while a released attempt or chained child waits. */
+    public function waiting(string $id, string $token): bool
+    {
         return $this->owned($id, $token)->update([
-            'build_lease_until' => now()->addMinutes(20),
-            'build_next_attempt_at' => null,
-            'build_error' => null,
-            'updated_at' => now(),
+            'build_lease_until' => null, 'updated_at' => now(),
         ]) > 0;
+    }
+
+    public function assertRunning(string $id, string $token): void
+    {
+        if (! $this->owned($id, $token)->where('build_lease_until', '>', now())->exists()) {
+            throw new RuntimeException('Backfill intelligence lease ownership was lost.');
+        }
     }
 
     public function release(string $id, string $token, array $changes = [], int $delay = 0): void
