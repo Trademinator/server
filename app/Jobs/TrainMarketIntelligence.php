@@ -60,6 +60,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
             throw new RuntimeException('Weekly intelligence work is already running.');
         }
         try {
+            TrainingRuntime::registerLock($lock);
             if (Cache::has($key)) {
                 return;
             }
@@ -77,6 +78,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
                 BuildOwnerDatasetSnapshot::dispatch($this->exchange, $this->symbol, $this->period, true)
                     ->onQueue((string) config('intelligence.queue'));
                 Cache::put($key, true, now()->addDays(14));
+
                 return;
             }
             try {
@@ -85,6 +87,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
                     schema: $this->schema ?? (string) config('intelligence.schema'),
                     generation: hash('sha256', $this->uniqueId()),
                     beforePublish: function () use ($lock): void {
+                        TrainingRuntime::heartbeat(true);
                         if (! $lock->isOwnedByCurrentProcess()) {
                             throw new RuntimeException('Weekly intelligence lock ownership was lost before publication.');
                         }
@@ -114,8 +117,8 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
                         (int) ($trained['trained_as_of_ms'] ?? now()->getTimestampMs()));
                 } else {
                     $journal->markSatisfied(
-                    $this->exchange, $this->symbol, $this->period, 'ai',
-                    (int) ($trained['trained_as_of_ms'] ?? now()->getTimestampMs())
+                        $this->exchange, $this->symbol, $this->period, 'ai',
+                        (int) ($trained['trained_as_of_ms'] ?? now()->getTimestampMs())
                     );
                 }
             } else {
@@ -124,6 +127,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
             }
             Cache::put($key, true, now()->addDays(14));
         } finally {
+            TrainingRuntime::unregisterLock($lock);
             $lock->release();
         }
     }

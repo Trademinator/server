@@ -23,7 +23,7 @@ final class OptionalGuidance
     }
 
     public static function compare(string $mode, string $version, float $deadline, Closure $compare,
-        ?HumanTrainingProgress $progress = null): array
+        ?HumanTrainingProgress $progress = null, ?float $budgetSeconds = null): array
     {
         $skipped = fn (string $reason): array => ['bundle' => [
             'version' => $version, 'status' => $reason, 'optional' => true,
@@ -35,7 +35,7 @@ final class OptionalGuidance
             return $skipped('disabled');
         }
         $reserve = self::reserveSeconds();
-        $budget = self::budgetSeconds();
+        $budget = $budgetSeconds ?? self::budgetSeconds();
         $auxiliaryDeadline = min($deadline - $reserve, microtime(true) + $budget);
         $progress?->start($auxiliaryDeadline, $budget);
         if ($auxiliaryDeadline <= microtime(true)) {

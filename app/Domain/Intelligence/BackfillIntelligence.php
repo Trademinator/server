@@ -68,16 +68,28 @@ final class BackfillIntelligence
         return DB::table('market_history_backfills')->where('history_id', $id)->where('build_lease_token', $token);
     }
 
-    public function renew(string $id, string $token): bool
+    public function renew(string $id, string $token, bool $allowWaiting = true): bool
     {
-        return $this->owned($id, $token)
-            ->where(fn ($query) => $query->whereNull('build_lease_until')->orWhere('build_lease_until', '>', now()))
-            ->update([
-                'build_lease_until' => now()->addSeconds(TrainingRuntime::lockSeconds()),
-                'build_next_attempt_at' => null,
-                'build_error' => null,
-                'updated_at' => now(),
-            ]) > 0;
+        $now = now();
+        $until = $now->copy()->addSeconds(TrainingRuntime::lockSeconds());
+        $owned = $this->owned($id, $token)->where(function ($query) use ($now, $allowWaiting): void {
+            $query->where('build_lease_until', '>', $now);
+            if ($allowWaiting) {
+                $query->orWhereNull('build_lease_until');
+            }
+        });
+        if ((clone $owned)->update([
+            'build_lease_until' => $until,
+            'build_next_attempt_at' => null,
+            'build_error' => null,
+            'updated_at' => $now,
+        ]) > 0) {
+            return true;
+        }
+
+        // MySQL may report zero changed rows when two checkpoints renew in the
+        // same second. A current locking read still has to prove ownership.
+        return $owned->where('build_lease_until', '>=', $until)->lockForUpdate()->first(['history_id']) !== null;
     }
 
     /** Keep the existing token while a released attempt or chained child waits. */

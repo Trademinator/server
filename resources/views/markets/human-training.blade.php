@@ -7,19 +7,6 @@
         @if(session('status'))<p class="guide-notice" role="status">{{ session('status') }}</p>@endif
         @if($errors->any())<div class="guide-notice guide-error" role="alert"><ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
         <p><a class="guide-button" href="{{ route('human-training.evaluations.index') }}">Explore historical model evaluations</a></p>
-        <section class="guide-panel">
-            <h2>Label from OHLCV — no Features needed</h2>
-            <p>Record Human Action or Human Outcome opinions directly from closed candles. Technical feature vectors are attached only later during model learning.</p>
-            <div class="guide-grid">
-                @foreach ($availableMarkets as $market)
-                    @if ($market['period'] !== '')
-                        <a class="guide-button" href="{{ route('human-training.ohlcv.show', $market['market_id']) }}">
-                            {{ $market['exchange'] }} {{ $market['pair'] }} ({{ $market['period'] }})
-                        </a>
-                    @endif
-                @endforeach
-            </div>
-        </section>
         <div class="guide-grid">
             <section class="guide-panel">
                 <p class="review-eyebrow">Existing workflow</p>

@@ -3,6 +3,9 @@
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
+// Declare the namespace clock before PHP caches any fallback microtime calls.
+require_once __DIR__.'/Support/IntelligenceClock.php';
+
 /*
 |--------------------------------------------------------------------------
 | Test Case

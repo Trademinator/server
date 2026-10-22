@@ -1,12 +1,14 @@
 <?php
 
-$automaticSeconds = max(60, (int) env('INTELLIGENCE_MAX_SECONDS', 1800));
+use App\Domain\Intelligence\TrainingRuntime;
 
-return [
+$algorithmSeconds = max(60, (int) env('INTELLIGENCE_MAX_SECONDS', 1800));
+
+$settings = [
     'enabled' => env('INTELLIGENCE_ENABLED', true),
     'path' => storage_path('app/private/intelligence'),
     'queue' => env('INTELLIGENCE_QUEUE', 'intelligence'),
-    'job_timeout' => max($automaticSeconds + 600, (int) env('INTELLIGENCE_JOB_TIMEOUT', 0)),
+    'job_timeout' => (int) env('INTELLIGENCE_JOB_TIMEOUT', 0),
     'signals' => [
         'queue' => env('INTELLIGENCE_SIGNALS_QUEUE', 'signals'),
         'connection' => env('INTELLIGENCE_SIGNALS_CONNECTION', env('QUEUE_CONNECTION', 'database') === 'redis' ? 'redis-signals' : null),
@@ -21,8 +23,8 @@ return [
     'lookback' => 20,
     // Statistical minimum for H; intentionally not environment-configurable.
     'min_horizon_distance_observations' => 30,
-    // Automatic dataset/model deadline; human training adds its own allowance.
-    'max_seconds' => $automaticSeconds,
+    // Fresh allowance for one algorithm/parameter run, not the whole pipeline.
+    'max_seconds' => $algorithmSeconds,
     // Both the training history window and the published model's maximum age.
     'max_model_age_days' => (int) env('INTELLIGENCE_MAX_MODEL_AGE_DAYS', 14),
     'knowledge_warning_minutes' => max(1, (int) env('INTELLIGENCE_KNOWLEDGE_WARNING_MINUTES', 30)),
@@ -76,3 +78,12 @@ return [
         'k' => 9,
     ],
 ];
+
+$settings['job_timeout'] = TrainingRuntime::limits(
+    $settings,
+    require __DIR__.'/lead_lag.php',
+    require __DIR__.'/human_training.php',
+    require __DIR__.'/research.php',
+)['job_timeout'];
+
+return $settings;

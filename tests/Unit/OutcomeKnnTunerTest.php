@@ -30,6 +30,65 @@ function outcomeValidationSettings(): array
     ];
 }
 
+function outcomeTuningRows(int $count = 80): array
+{
+    $rows = [];
+    for ($i = 0; $i < $count; $i++) {
+        $rows[] = ['vector' => [($i % 5) / 4], 'label' => SemanticLabels::OUTCOMES[$i % 5],
+            'decision_at_ms' => $i * 1000, 'label_available_at_ms' => ($i + 1) * 1000];
+    }
+
+    return $rows;
+}
+
+it('preserves Outcome selection when independent K voting exceeds one candidates allowance in total', function () {
+    $settings = array_replace(outcomeValidationSettings(), ['min_train_size' => 10]);
+    $knn = new WeightedKnn(1.0, 1.0, 0.5);
+    $rows = outcomeTuningRows();
+    $expected = (new OutcomeKnnTuner($knn, new OutcomeKnn($settings)))
+        ->tunePrepared($rows, $settings, microtime(true) + 10);
+    $time = 0.0;
+    $clock = static function () use (&$time): float {
+        return $time++;
+    };
+
+    $result = (new OutcomeKnnTuner($knn, new OutcomeKnn($settings), $clock))
+        ->tunePrepared($rows, $settings, 10000.0, candidateSeconds: 250.0);
+
+    expect($time)->toBeGreaterThan(250.0);
+    expect($result)->toBe($expected);
+});
+
+it('rejects Outcome tuning when one K accumulates too much time across folds', function () {
+    $settings = array_replace(outcomeValidationSettings(), ['min_train_size' => 10]);
+    $knn = new WeightedKnn(1.0, 1.0, 0.5);
+    $rows = outcomeTuningRows();
+    $time = 0.0;
+    $clock = static function () use (&$time): float {
+        return $time++;
+    };
+
+    expect(fn () => (new OutcomeKnnTuner($knn, new OutcomeKnn($settings), $clock))
+        ->tunePrepared($rows, $settings, 10000.0, candidateSeconds: 150.0))
+        ->toThrow(RuntimeException::class, 'Outcome K tuning time budget exceeded.');
+});
+
+it('rejects an Outcome evaluation that overruns on its final row', function (string $mode) {
+    $times = [0.0, 0.0, 2.0];
+    $clock = static function () use (&$times): float {
+        return array_shift($times) ?? 2.0;
+    };
+    $knn = new WeightedKnn(1.0, 1.0, 0.5);
+    $rows = outcomeTuningRows(6);
+    $settings = outcomeValidationSettings();
+    $tuner = new OutcomeKnnTuner($knn, new OutcomeKnn($settings), $clock);
+    $evaluate = fn (): array => $mode === 'walk_forward'
+        ? $tuner->evaluateWalkForwardPrepared($rows, $settings, 4, 1.0)
+        : $tuner->evaluatePrepared(array_slice($rows, 0, 4), [$rows[5]], 4, $settings, 1.0);
+
+    expect($evaluate)->toThrow(RuntimeException::class, 'time budget exceeded');
+})->with(['walk_forward', 'holdout']);
+
 it('excludes Outcome abstentions from the confusion matrix and scores them only through coverage', function () {
     $settings = outcomeValidationSettings();
     $training = [

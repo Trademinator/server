@@ -45,12 +45,15 @@ final class CoinGeckoInsight
         if (! in_array($schema, ['enhanced', 'full'], true)) {
             return ['bundle' => [...$bundle, 'status' => 'profile_without_context']];
         }
-        if (microtime(true) >= $deadline) {
+        if ($this->budgetExpired($deadline)) {
             return ['bundle' => [...$bundle, 'status' => 'optional_budget_exhausted']];
         }
 
         $unique = [];
         foreach ($rows as $row) {
+            if ($this->budgetExpired($deadline)) {
+                return ['bundle' => [...$bundle, 'status' => 'optional_budget_exhausted']];
+            }
             $id = $row['context_snapshot_id'] ?? null;
             if (! is_string($id) || $id === ''
                 || ! in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)) {
@@ -62,6 +65,9 @@ final class CoinGeckoInsight
         }
         $unique = array_values($unique);
         usort($unique, fn (array $a, array $b): int => $a['decision_at_ms'] <=> $b['decision_at_ms']);
+        if ($this->budgetExpired($deadline)) {
+            return ['bundle' => [...$bundle, 'status' => 'optional_budget_exhausted']];
+        }
         $bundle['snapshots'] = count($unique);
         $minimum = max(40, (int) config('intelligence.coingecko_insight.min_snapshots', 192));
         if (count($unique) < $minimum) {
@@ -100,14 +106,20 @@ final class CoinGeckoInsight
         $trees = max(4, min(64, (int) config('intelligence.coingecko_insight.trees', 24)));
         $depth = max(2, min(12, (int) config('intelligence.coingecko_insight.depth', 6)));
         $forest = new RandomForest(new ClassificationTree($depth, 8), $trees, 0.35, false);
+        if ($this->budgetExpired($deadline)) {
+            return ['bundle' => [...$bundle, 'status' => 'optional_budget_exhausted']];
+        }
         $forest->train(new Labeled($samples, $labels));
 
-        if (microtime(true) > $deadline) {
+        if ($this->budgetExpired($deadline)) {
             return ['bundle' => [...$bundle, 'status' => 'optional_budget_exhausted']];
         }
         $predictions = $forest->predict(new Unlabeled(array_map(
             fn (array $row): array => $this->vector($row['context_features'], $keys), $holdout
         )));
+        if ($this->budgetExpired($deadline)) {
+            return ['bundle' => [...$bundle, 'status' => 'optional_budget_exhausted']];
+        }
         $actuals = array_column($holdout, 'label');
         $majority = array_count_values($labels);
         arsort($majority);
@@ -131,7 +143,18 @@ final class CoinGeckoInsight
             'trees' => $trees, 'depth' => $depth,
         ];
 
+        if ($this->budgetExpired($deadline)) {
+            return ['bundle' => [...$bundle, 'status' => 'optional_budget_exhausted', 'influence' => false]];
+        }
+
         return ['bundle' => $bundle, 'estimator' => $eligibleForInfluence ? $forest : null];
+    }
+
+    private function budgetExpired(float $deadline): bool
+    {
+        TrainingRuntime::heartbeat();
+
+        return microtime(true) >= $deadline;
     }
 
     /** @param array<string, mixed> $bundle */

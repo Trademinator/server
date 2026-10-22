@@ -5,6 +5,7 @@ namespace App\Domain\Intelligence;
 use App\Domain\Features\FeatureEngine;
 use App\Domain\Operations\ActionLog;
 use App\Domain\Research\FeatureSchema;
+use Closure;
 use Composer\InstalledVersions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -129,7 +130,8 @@ final class ModelStore
         return $forest;
     }
 
-    public function save(array $artifact): array
+    /** Recheck the optional guard inside the transaction before publication can commit. */
+    public function save(array $artifact, ?Closure $beforeCommit = null): array
     {
         if (! FeatureSchema::modelCompatible($artifact)) {
             throw new InvalidArgumentException('Cannot publish model with obsolete feature schema.');
@@ -205,7 +207,8 @@ final class ModelStore
                 || ! chmod($path.'.tmp', 0600) || ! rename($path.'.tmp', $path)) {
                 throw new RuntimeException('Cannot publish intelligence model.');
             }
-            DB::transaction(function () use ($id, $artifact, $bytes, $report): void {
+            DB::transaction(function () use ($id, $artifact, $bytes, $report, $beforeCommit): void {
+                $beforeCommit?->__invoke();
                 $key = self::marketKey($artifact['exchange'], $artifact['symbol'], $artifact['period']);
                 DB::table('intelligence_models')->insert([
                     'model_id' => $id, 'dataset_id' => $artifact['dataset_id'], 'market_key' => $key,
@@ -214,10 +217,14 @@ final class ModelStore
                 ]);
                 $head = DB::table('intelligence_heads')->where('market_key', $key)->first();
                 $previous = $head === null ? null : $this->report($head->model_id);
-                if (ModelPromotionPolicy::mayPromote($artifact, $previous)) {
+                $promote = ModelPromotionPolicy::mayPromote($artifact, $previous);
+                if ($promote) {
                     // Validate all persisted sidecars and checksums before atomically
                     // moving the active head, never just the in-memory artifact.
                     $this->verify($id);
+                }
+                $beforeCommit?->__invoke();
+                if ($promote) {
                     DB::table('intelligence_heads')->upsert([
                         'market_key' => $key, 'model_id' => $id, 'updated_at' => now(),
                     ], ['market_key'], ['model_id', 'updated_at']);

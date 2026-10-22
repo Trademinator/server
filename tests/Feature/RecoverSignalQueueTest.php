@@ -39,6 +39,7 @@ beforeEach(function (): void {
         'intelligence.queue' => 'intelligence', 'intelligence.signals.queue' => 'signals',
         'intelligence.signals.connection' => 'recovery-signals',
     ]);
+    config(['queue.connections.recovery-training.retry_after' => TrainingRuntime::retryAfter()]);
     $this->recoveryRedis = app('redis')->connection('recovery');
 });
 
@@ -189,7 +190,8 @@ it('atomically coalesces legacy signals, preserves training work, and can be rer
     $originalTraining = json_decode($trainingRaw, true, flags: JSON_THROW_ON_ERROR);
     expect($refreshed['uuid'])->toBe($originalTraining['uuid'])->and($refreshed['id'])->toBe($originalTraining['id']);
     expect($refreshed['attempts'])->toBe(2)->and($refreshed['operator_metadata'])->toBe(['retain' => true]);
-    expect($refreshed['timeout'])->toBe(15000)->and(unserialize($refreshed['data']['command'])->timeout)->toBe(15000);
+    expect($refreshed['timeout'])->toBe(TrainingRuntime::jobTimeout())
+        ->and(unserialize($refreshed['data']['command'])->timeout)->toBe(TrainingRuntime::jobTimeout());
     expect(json_decode($ready[3], true)['data']['commandName'])->toBe(RebuildBackfilledIntelligence::class);
     expect(json_decode($ready[4], true)['attempts'])->toBe(1);
     expect($this->recoveryRedis->zrange('queues:intelligence:delayed', 0, -1))->toBe([$historical]);

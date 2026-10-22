@@ -32,6 +32,8 @@ final class IntelligenceTrainer
     public function train(string $dataset, ?float $deadline = null, ?string $generation = null,
         array $buildPerformance = [], array $schemaSelection = [], ?Closure $beforePublish = null): array
     {
+        $deadline ??= microtime(true) + TrainingRuntime::jobTimeout();
+        $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
         $buildPerformance['started_at'] ??= now()->toIso8601String();
         $buildPerformance['started_monotonic_ns'] ??= hrtime(true);
         $buildPerformance['stages'] ??= [];
@@ -58,7 +60,9 @@ final class IntelligenceTrainer
         $window = KnowledgeWindow::metadata($manifest['as_of_ms']);
         $snapshotRows = count($datasetRows);
         $ageExcluded = 0;
-        $rows = TrainingRows::from($this->projectRows($datasetRows, $manifest, $window['from_ms'], $ageExcluded));
+        $rows = TrainingRows::from($this->projectRows($datasetRows, $manifest, $window['from_ms'], $ageExcluded,
+            $preparationDeadline));
+        $this->checkDeadline($preparationDeadline, 'Intelligence row preparation');
         if (count($rows) === 0) {
             throw new InvalidArgumentException('No eligible history within INTELLIGENCE_MAX_MODEL_AGE_DAYS.');
         }
@@ -66,8 +70,6 @@ final class IntelligenceTrainer
         $rowAudit = ['input_rows' => count($rows), 'unique_rows' => count($rows), 'duplicates' => 0];
         $settings = config('intelligence.knn');
         $settings['outcome'] = config('intelligence.outcome');
-        $deadline ??= microtime(true) + config('intelligence.max_seconds');
-        $publicationDeadline = OptionalGuidance::publicationDeadline($deadline);
         $lock = Cache::lock('trademinator:intelligence:'.ModelStore::marketKey(
             $manifest['exchange'], $manifest['symbol'], $manifest['period']
         ), TrainingRuntime::lockSeconds());
@@ -76,14 +78,20 @@ final class IntelligenceTrainer
         }
 
         try {
+            TrainingRuntime::registerLock($lock);
             $patternSettings = config('intelligence.patterns');
             $sourceRows = count($rows);
             $patternBundle = ['models' => [], 'report' => [], 'version' => PatternCatalog::VERSION];
 
             $stageStarted = hrtime(true);
             if ($patternSettings['enabled']) {
+                $patternPreparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
                 $outcomePatternRows = $rows->filter(
-                    fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
+                    function (array $row) use ($patternPreparationDeadline): bool {
+                        $this->checkDeadline($patternPreparationDeadline, 'Pattern source preparation');
+
+                        return in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true);
+                    }
                 );
                 $patternRows = $outcomePatternRows->slice(0, (int) floor(count($outcomePatternRows) * 0.4))
                     ->map(static function (array $row) use ($datasetRows): array {
@@ -91,6 +99,7 @@ final class IntelligenceTrainer
 
                         return $row;
                     });
+                $this->checkDeadline($patternPreparationDeadline, 'Pattern source preparation');
                 if (count($patternRows) > 0) {
                     $patternBundle = $this->patterns->train($patternRows, $patternSettings, $deadline);
                 }
@@ -109,19 +118,22 @@ final class IntelligenceTrainer
             $technicalRows = $rows;
             unset($rows);
 
+            $featurePreparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
             $patternTreeSpools = [];
             foreach ($patternBundle['models'] as &$patternModel) {
+                $this->checkDeadline($featurePreparationDeadline, 'Intelligence feature preparation');
                 $estimator = $patternModel['estimator'] ?? null;
                 if ($estimator instanceof SequentialRandomForest) {
                     $patternTreeSpools[] = ['estimator' => $estimator, 'spools' => $estimator->spillTrees()];
                 }
+                $this->checkDeadline($featurePreparationDeadline, 'Intelligence feature preparation');
             }
             unset($patternModel, $estimator);
 
             $leadLagSeries = $leadLag['series'];
             unset($leadLag['series']);
             $technicalLeadLagExcluded = $this->applyLeadLag(
-                $technicalRows, $leadLagBundle, $leadLagSeries
+                $technicalRows, $leadLagBundle, $leadLagSeries, $featurePreparationDeadline
             );
             $stackedRows = null;
             unset($leadLagSeries, $leadLag);
@@ -129,7 +141,9 @@ final class IntelligenceTrainer
             $knn = new WeightedKnn(
                 $settings['max_distance'], $settings['min_effective_neighbors'], $settings['min_confidence']
             );
-            $knn->validatePreparedRows($technicalRows);
+            $knn->validatePreparedRows($this->checkedRows(
+                $technicalRows, $featurePreparationDeadline, 'Intelligence feature preparation'
+            ));
 
             $stageStarted = hrtime(true);
             $actionFallbackRows = $technicalRows;
@@ -153,7 +167,7 @@ final class IntelligenceTrainer
 
             $stageStarted = hrtime(true);
             $humanOutcome = ($manifest['outcome_available'] ?? true)
-                ? $this->humanOutcome->train($manifest, $settings, $publicationDeadline)
+                ? $this->humanOutcome->train($manifest, $settings, TrainingRuntime::algorithmDeadline($deadline))
                 : ['bundle' => [
                     'version' => HumanGuidance::VERSION,
                     'status' => 'outcome_horizon_unavailable',
@@ -165,18 +179,19 @@ final class IntelligenceTrainer
             $stageStarted = hrtime(true);
             $progress = new HumanTrainingProgress(app(ActionLog::class), $manifest);
             $humanAction = OptionalGuidance::compare(
-                'candle', HumanCandleKnn::VERSION, $publicationDeadline,
+                'candle', HumanCandleKnn::VERSION, $deadline,
                 fn (float $auxiliaryDeadline): array => $this->candleKnn->train(
                     $manifest, $settings, $auxiliaryDeadline, $progress
                 ),
-                $progress
+                $progress,
+                budgetSeconds: 5 * TrainingRuntime::algorithmSeconds()
             );
             $humanAction['bundle']['mode'] = 'human_action_knn';
 
             // Optional CoinGecko evidence is trained independently. Do not let
             // missing/stale context or forest errors suppress Core publication.
             $insightStarted = hrtime(true);
-            $insightDeadline = min($publicationDeadline - 5.0, microtime(true) + 30.0);
+            $insightDeadline = TrainingRuntime::algorithmDeadline($deadline);
             try {
                 $contextRows = $rows->map(static function (array $row) use ($datasetRows): array {
                     $source = $datasetRows->at($row['_dataset_position']);
@@ -198,6 +213,7 @@ final class IntelligenceTrainer
             } finally {
                 unset($contextRows, $datasetRows);
             }
+            TrainingRuntime::heartbeat(true);
             $buildPerformance['stages']['coingecko_insight_ms'] = $this->elapsedMs($insightStarted);
             $buildPerformance['stages']['candle_guidance_ms'] = $this->elapsedMs($stageStarted);
 
@@ -212,7 +228,11 @@ final class IntelligenceTrainer
             $actionReady = $actionAlgorithmicReady || $actionHumanReady;
             $ready = $outcomeReady && $actionReady;
 
-            $availableAt = $rows->max('label_available_at_ms');
+            $finalizationDeadline = TrainingRuntime::algorithmDeadline($deadline);
+            $availableAt = 0;
+            foreach ($this->checkedRows($rows, $finalizationDeadline, 'Intelligence model finalization') as $row) {
+                $availableAt = max($availableAt, $row['label_available_at_ms']);
+            }
             foreach ([$humanOutcome['bundle'], $humanAction['bundle']] as $humanBundle) {
                 if (($humanBundle['influence'] ?? false) && isset($humanBundle['available_at_ms'])) {
                     $availableAt = max($availableAt, (int) $humanBundle['available_at_ms']);
@@ -220,22 +240,15 @@ final class IntelligenceTrainer
             }
 
             foreach ($patternTreeSpools as &$spilledForest) {
+                $this->checkDeadline($finalizationDeadline, 'Intelligence model finalization');
                 $spilledForest['estimator']->restoreTrees($spilledForest['spools']);
                 $spilledForest['spools'] = [];
+                $this->checkDeadline($finalizationDeadline, 'Intelligence model finalization');
             }
             unset($spilledForest);
 
-            $knowledge = $rows->map(static function (array $row): array {
-                return [
-                    'decision_at_ms' => $row['decision_at_ms'],
-                    'label_available_at_ms' => $row['label_available_at_ms'],
-                    'vector' => $row['vector'],
-                    'label' => $row['label'],
-                    'action_label' => $row['action_label'],
-                    'action_label_available_at_ms' => $row['action_label_available_at_ms'] ?? null,
-                    'feature_weights' => $row['feature_weights'] ?? [],
-                ];
-            });
+            $knowledgeRows = count($rows);
+            $knowledge = $this->projectKnowledgeRows($rows, $finalizationDeadline);
             unset($rows);
 
             $artifact = [
@@ -322,7 +335,7 @@ final class IntelligenceTrainer
                     'deduplication' => $rowAudit,
                     'schema' => $manifest['schema'],
                     'source_rows' => $sourceRows,
-                    'usable_rows' => count($knowledge),
+                    'usable_rows' => $knowledgeRows,
                     'action_rows' => $action['samples'],
                     'lead_lag_excluded_rows' => $leadLagExcluded,
                     'skipped' => $manifest['skipped'] ?? [],
@@ -339,34 +352,42 @@ final class IntelligenceTrainer
                 'holdout_training_labels_available_by_ms' => $outcome['holdout_training_labels_available_by_ms'],
                 'action_selection' => $action['selection'],
                 'action_holdout' => $action['holdout'],
-                'knowledge_rows' => count($knowledge),
+                'knowledge_rows' => $knowledgeRows,
                 'knowledge' => $knowledge,
                 'build_performance' => $buildPerformance,
             ];
 
-            if (microtime(true) > $publicationDeadline) {
-                throw new RuntimeException('Intelligence training time budget exceeded before publication.');
-            }
-            if (! $lock->isOwnedByCurrentProcess()) {
-                throw new RuntimeException('Intelligence training lock ownership was lost before publication.');
-            }
+            $publicationGuard = function () use ($finalizationDeadline, $deadline, $lock): void {
+                TrainingRuntime::heartbeat(true);
+                if (! $lock->isOwnedByCurrentProcess()) {
+                    throw new RuntimeException('Intelligence training lock ownership was lost before publication.');
+                }
+                $this->checkDeadline($finalizationDeadline, 'Intelligence model finalization');
+                if (microtime(true) > $deadline) {
+                    throw new RuntimeException('Intelligence build exceeded its aggregate job timeout before publication.');
+                }
+            };
+            $publicationGuard();
             $beforePublish?->__invoke();
 
-            return $this->models->save($artifact);
+            return $this->models->save($artifact, beforeCommit: $publicationGuard);
         } finally {
             if (isset($patternTreeSpools)) {
                 foreach ($patternTreeSpools as $spilledForest) {
                     $spilledForest['estimator']->closeSpools($spilledForest['spools']);
                 }
             }
+            TrainingRuntime::unregisterLock($lock);
             $lock->release();
         }
     }
 
     /** @return Generator<int, array<string, mixed>> */
-    private function projectRows(iterable $datasetRows, array $manifest, int $fromMs, int &$ageExcluded): Generator
+    private function projectRows(iterable $datasetRows, array $manifest, int $fromMs, int &$ageExcluded,
+        float $deadline): Generator
     {
         foreach ($datasetRows as $position => $row) {
+            $this->checkDeadline($deadline, 'Intelligence row preparation');
             if ($row['decision_at_ms'] < $fromMs) {
                 $ageExcluded++;
 
@@ -402,9 +423,39 @@ final class IntelligenceTrainer
         }
     }
 
+    /** @return Generator<int, array<string, mixed>> */
+    private function projectKnowledgeRows(TrainingRows $rows, float $deadline): Generator
+    {
+        foreach ($this->checkedRows($rows, $deadline, 'Intelligence model finalization') as $row) {
+            yield [
+                'decision_at_ms' => $row['decision_at_ms'],
+                'label_available_at_ms' => $row['label_available_at_ms'],
+                'vector' => $row['vector'],
+                'label' => $row['label'],
+                'action_label' => $row['action_label'],
+                'action_label_available_at_ms' => $row['action_label_available_at_ms'] ?? null,
+                'feature_weights' => $row['feature_weights'] ?? [],
+            ];
+        }
+    }
+
+    /**
+     * @param  iterable<array<string, mixed>>  $rows
+     * @return Generator<int, array<string, mixed>>
+     */
+    private function checkedRows(iterable $rows, float $deadline, string $stage): Generator
+    {
+        foreach ($rows as $row) {
+            $this->checkDeadline($deadline, $stage);
+            yield $row;
+        }
+        $this->checkDeadline($deadline, $stage);
+    }
+
     private function trainOutcome(TrainingRows $technicalRows, ?TrainingRows $stackedRows, array $candidatePatternKeys,
         ?int $patternKnownAt, array $settings, WeightedKnn $knn, float $deadline): array
     {
+        $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
         $technicalRows = $technicalRows->filter(
             fn (array $row): bool => in_array($row['label'] ?? null, SemanticLabels::OUTCOMES, true)
         );
@@ -414,6 +465,7 @@ final class IntelligenceTrainer
             );
         }
         [$baseTraining, $baseTest, $cutoff] = $this->splitRows($technicalRows);
+        $this->checkDeadline($preparationDeadline, 'Outcome row preparation');
         $defaultAblation = [
             'version' => AutomaticPatternAblation::VERSION,
             'selection_basis' => 'same_k_same_walk_forward_rows_final_holdout_untouched',
@@ -428,7 +480,8 @@ final class IntelligenceTrainer
         }
 
         $tuner = new OutcomeKnnTuner($knn, new OutcomeKnn($settings));
-        $selection = $tuner->tunePrepared($baseTraining, $settings, $deadline);
+        $selection = $tuner->tunePrepared($baseTraining, $settings, $deadline,
+            candidateSeconds: TrainingRuntime::algorithmSeconds());
         $rows = $technicalRows;
         $training = $baseTraining;
         $test = $baseTest;
@@ -449,10 +502,10 @@ final class IntelligenceTrainer
             if (count($commonBaseTraining) >= $settings['min_train_size']
                 && count($stackedTraining) === count($commonBaseTraining)) {
                 $technicalComparison = $tuner->evaluateWalkForwardPrepared(
-                    $commonBaseTraining, $settings, $comparisonK, $deadline
+                    $commonBaseTraining, $settings, $comparisonK, TrainingRuntime::algorithmDeadline($deadline)
                 );
                 $stackedComparison = $tuner->evaluateWalkForwardPrepared(
-                    $stackedTraining, $settings, $comparisonK, $deadline
+                    $stackedTraining, $settings, $comparisonK, TrainingRuntime::algorithmDeadline($deadline)
                 );
                 $patternAblation = $this->patternAblation->chooseAtK(
                     $technicalComparison['report'], $stackedComparison['report'],
@@ -479,7 +532,8 @@ final class IntelligenceTrainer
 
         $holdout = $selection['k'] === null || count($test) === 0
             ? ['eligible' => false, 'reason' => 'no_eligible_k']
-            : $tuner->evaluatePrepared($training, $test, $selection['k'], $settings, $deadline);
+            : $tuner->evaluatePrepared($training, $test, $selection['k'], $settings,
+                TrainingRuntime::algorithmDeadline($deadline));
         $reason = $selection['k'] === null ? 'no_eligible_k'
             : (($holdout['eligible'] ?? false) ? 'validated' : 'holdout_failed');
 
@@ -498,6 +552,7 @@ final class IntelligenceTrainer
 
     private function trainAction(TrainingRows $rows, array $settings, WeightedKnn $knn, float $deadline): array
     {
+        $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
         $actionRows = $rows->filter(static function (array $row): bool {
             if (! in_array($row['action_label'] ?? null, ['buy', 'hodl', 'sell'], true)) {
                 return false;
@@ -518,6 +573,7 @@ final class IntelligenceTrainer
             return $row;
         });
         $count = count($actionRows);
+        $this->checkDeadline($preparationDeadline, 'Action row preparation');
         if ($count < $settings['min_train_size'] + $settings['test_size']) {
             return $this->emptyTraining('insufficient_action_history', 0, 0, $count);
         }
@@ -529,15 +585,18 @@ final class IntelligenceTrainer
             fn (array $row): bool => $row['label_available_at_ms'] < $cutoff
         );
         unset($actionRows);
+        $this->checkDeadline($preparationDeadline, 'Action row preparation');
         if (count($training) < $settings['min_train_size']) {
             return $this->emptyTraining('insufficient_action_history', count($training), count($test), $count);
         }
 
         $tuner = new KnnTuner($knn);
-        $selection = $tuner->tunePrepared($training, $settings, $deadline);
+        $selection = $tuner->tunePrepared($training, $settings, $deadline,
+            candidateSeconds: TrainingRuntime::algorithmSeconds());
         $holdout = $selection['k'] === null
             ? ['eligible' => false, 'reason' => 'no_eligible_k']
-            : $tuner->evaluatePrepared($training, $test, $selection['k'], $settings, $deadline);
+            : $tuner->evaluatePrepared($training, $test, $selection['k'], $settings,
+                TrainingRuntime::algorithmDeadline($deadline));
         $reason = $selection['k'] === null ? ($selection['reason'] ?? 'no_eligible_k')
             : match ($holdout['validation_status']) {
                 'validated' => 'validated',
@@ -581,7 +640,7 @@ final class IntelligenceTrainer
      * DatasetStore guarantees strictly increasing decision timestamps, so
      * all pre-validation rows form a prefix of the array.
      */
-    private function applyLeadLag(TrainingRows &$rows, array $bundle, array $series): int
+    private function applyLeadLag(TrainingRows &$rows, array $bundle, array $series, float $deadline): int
     {
         if ($bundle['keys'] === []) {
             return 0;
@@ -590,11 +649,12 @@ final class IntelligenceTrainer
         $excluded = 0;
         $count = count($rows);
         while ($excluded < $count && $rows[$excluded]['decision_at_ms'] <= $bundle['available_at_ms']) {
+            $this->checkDeadline($deadline, 'Intelligence feature preparation');
             $excluded++;
         }
         $sourceRows = $rows->slice($excluded);
-        $rows = TrainingRows::from((function () use ($sourceRows, $bundle, $series): Generator {
-            foreach ($sourceRows as $row) {
+        $rows = TrainingRows::from((function () use ($sourceRows, $bundle, $series, $deadline): Generator {
+            foreach ($this->checkedRows($sourceRows, $deadline, 'Intelligence feature preparation') as $row) {
                 $evidence = $this->leadLag->features($bundle, $series, $row['decision_at_ms']);
                 $row['feature_weights'] = array_fill(0, count($row['vector']), 1.0);
                 foreach ($evidence['weights'] as $weight) {
@@ -635,5 +695,13 @@ final class IntelligenceTrainer
     private function elapsedMs(int $startedNs): int
     {
         return (int) round((hrtime(true) - $startedNs) / 1_000_000);
+    }
+
+    private function checkDeadline(float $deadline, string $stage): void
+    {
+        TrainingRuntime::heartbeat();
+        if (microtime(true) > $deadline) {
+            throw new RuntimeException($stage.' time budget exceeded.');
+        }
     }
 }

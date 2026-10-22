@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Features\FeatureBuilder;
+use App\Domain\Intelligence\TrainingRuntime;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\Research\DatasetSnapshotBuilder;
 use App\Domain\Research\DatasetStore;
@@ -213,7 +214,7 @@ it('preserves the candle sequence and label boundaries across feature pages with
     }
 });
 
-it('keeps its owned feature lock through the configured training timeout and releases it after publication', function () {
+it('keeps its owned feature lock for a complete algorithm allowance and releases it after publication', function () {
     $this->travelTo('2024-01-02 00:00:00 UTC');
     config(['intelligence.max_seconds' => 14400, 'intelligence.job_timeout' => 15000]);
     seedResearchHistory();
@@ -221,7 +222,7 @@ it('keeps its owned feature lock through the configured training timeout and rel
     $protectedDuringPublication = null;
     DB::listen(function ($query) use ($name, &$protectedDuringPublication): void {
         if (str_starts_with(strtolower(ltrim($query->sql)), 'insert') && str_contains($query->sql, 'research_datasets')) {
-            $this->travel(15000)->seconds();
+            $this->travel(14400)->seconds();
             $contender = Cache::lock($name, 60);
             $protectedDuringPublication = ! $contender->get();
             if (! $protectedDuringPublication) {
@@ -240,4 +241,69 @@ it('keeps its owned feature lock through the configured training timeout and rel
     } finally {
         $next->release();
     }
+});
+
+it('renews a borrowed feature lock without releasing or unregistering the parent lease', function () {
+    seedResearchHistory();
+    $name = 'trademinator:features:'.hash('sha256', 'kraken|BTC/USD|1m');
+    $parent = Cache::lock($name, TrainingRuntime::lockSeconds());
+    expect($parent->get())->toBeTrue();
+    TrainingRuntime::registerLock($parent);
+
+    try {
+        $manifest = app(DatasetSnapshotBuilder::class)->build('kraken', 'BTC/USD', '1m', new LabelDefinition(2),
+            featureLockOwner: $parent->owner());
+        expect($manifest['rows'])->toBe(61);
+        expect($parent->isOwnedByCurrentProcess())->toBeTrue();
+        $this->travel(TrainingRuntime::lockSeconds() - 60)->seconds();
+        TrainingRuntime::heartbeat(true);
+        $this->travel(120)->seconds();
+        expect(Cache::lock($name, 60)->get())->toBeFalse();
+    } finally {
+        TrainingRuntime::unregisterLock($parent);
+        $parent->release();
+    }
+    $successor = Cache::lock($name, 60);
+    expect($successor->get())->toBeTrue();
+    $successor->release();
+});
+
+it('rejects an expired borrowed lock before creating a dataset and never reacquires it', function () {
+    seedResearchHistory();
+    $name = 'trademinator:features:'.hash('sha256', 'kraken|BTC/USD|1m');
+    $parent = Cache::lock($name, 1);
+    expect($parent->get())->toBeTrue();
+    $this->travel(2)->seconds();
+
+    expect(fn () => app(DatasetSnapshotBuilder::class)->build('kraken', 'BTC/USD', '1m', new LabelDefinition(2),
+        featureLockOwner: $parent->owner()))->toThrow(RuntimeException::class, 'ownership was lost');
+    $this->assertDatabaseCount('research_datasets', 0);
+    $successor = Cache::lock($name, 60);
+    expect($successor->get())->toBeTrue();
+    $successor->release();
+});
+
+it('aborts dataset publication after a borrowed lock is replaced and preserves the new owner', function () {
+    seedResearchHistory();
+    $name = 'trademinator:features:'.hash('sha256', 'kraken|BTC/USD|1m');
+    $parent = Cache::lock($name, TrainingRuntime::lockSeconds());
+    expect($parent->get())->toBeTrue();
+    $successor = null;
+    DB::listen(function ($query) use ($name, &$successor): void {
+        if ($successor === null && str_starts_with(strtolower(ltrim($query->sql)), 'select')
+            && str_contains($query->sql, 'market_features')) {
+            $this->travel(TrainingRuntime::lockSeconds() + 1)->seconds();
+            $successor = Cache::lock($name, 60);
+            expect($successor->get())->toBeTrue();
+        }
+    });
+
+    expect(fn () => app(DatasetSnapshotBuilder::class)->build('kraken', 'BTC/USD', '1m', new LabelDefinition(2),
+        featureLockOwner: $parent->owner()))->toThrow(RuntimeException::class, 'ownership was lost');
+    $this->assertDatabaseCount('research_datasets', 0);
+    expect($successor)->not->toBeNull();
+    expect($parent->release())->toBeFalse();
+    expect($successor->isOwnedByCurrentProcess())->toBeTrue();
+    $successor->release();
+    TrainingRuntime::heartbeat(true);
 });

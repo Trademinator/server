@@ -54,6 +54,7 @@
                 @foreach(array_slice($snapshot['series'], -10) as $candle)<tr><th><x-display-time :value="$candle['time']" unit="seconds" precision="minutes" /></th>@foreach(['open', 'high', 'low', 'close', 'volume'] as $field)<td>{{ $candle[$field] }}</td>@endforeach</tr>@endforeach
             </tbody></table></div></details>
         </section>
+        @if(collect($snapshot['features'] ?? [])->contains(fn ($value) => is_numeric($value) && is_finite((float) $value)))
         <section class="guide-panel"><h2>Indicators and context</h2>
             <p class="guide-help">Frozen features from the selected dataset. Missing context is not filled with current information.</p>
             <dl class="human-training-indicators">
@@ -62,6 +63,7 @@
                 @endforeach
             </dl>
         </section>
+        @endif
         <section class="guide-panel"><h2>Your Outcome assessment</h2>
             @if($review->submitted_at)
                 <p><strong>{{ ucwords(str_replace('_', ' ', $review->label)) }}</strong> · {{ $review->confidence === null ? 'Confidence not supplied' : $review->confidence.'% self-rated confidence' }}</p>

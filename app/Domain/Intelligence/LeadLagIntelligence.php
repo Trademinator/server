@@ -5,6 +5,7 @@ namespace App\Domain\Intelligence;
 use App\Models\Exchange;
 use App\Models\MarketFeed;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 final class LeadLagIntelligence
 {
@@ -40,20 +41,30 @@ final class LeadLagIntelligence
             return compact('bundle', 'series');
         }
         // All auxiliary model selection/evaluation ends before downstream KNN decisions.
+        $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
+        $this->assertWithinDeadline($preparationDeadline);
         $cutoff = $rows[(int) floor(count($rows) * 0.4)]['decision_at_ms'] - 1;
         $from = max(KnowledgeWindow::fromMs($manifest['as_of_ms']), $cutoff - $settings['max_bars'] * $step);
         $follower = $this->series->load($manifest['exchange'], $manifest['symbol'], $manifest['period'], $from, $cutoff);
+        $this->assertWithinDeadline($preparationDeadline);
         $peers = MarketFeed::query()->with('market.exchange')->whereNotNull('selected_period')
             ->whereHas('market', fn ($q) => $q->where('symbol', $manifest['symbol'])
                 ->whereHas('exchange', fn ($e) => $e->where('class', '!=', $manifest['exchange']))
                 ->whereHas('subscriptions', fn ($s) => $s->where('active', true)))
             ->get()->sortBy(fn ($feed) => $feed->market->exchange->class)->unique(fn ($feed) => $feed->market->exchange->class);
+        $maximumPeers = max(0, (int) $settings['max_peers']);
         $bundle['status'] = 'no_matching_peer';
-        $bundle['peers_omitted_by_cap'] = max(0, $peers->count() - $settings['max_peers']);
+        $bundle['peers_omitted_by_cap'] = max(0, $peers->count() - $maximumPeers);
         $bundle['follower'] = ['exchange' => $manifest['exchange'], 'symbol' => $manifest['symbol'], 'period' => $manifest['period']];
         $followerExchange = Exchange::query()->where('class', $manifest['exchange'])->first();
         $bundle['follower_context'] = $followerExchange === null ? null : $this->timezones->context($followerExchange);
-        foreach ($peers->take($settings['max_peers']) as $feed) {
+        $this->assertWithinDeadline($preparationDeadline);
+        $peerIndex = 0;
+        foreach ($peers->take($maximumPeers) as $feed) {
+            if ($peerIndex++ > 0) {
+                $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
+            }
+            $this->assertWithinDeadline($preparationDeadline);
             $exchange = $feed->market->exchange;
             if ($feed->selected_period !== $manifest['period']) {
                 $bundle['report'][$exchange->class] = ['status' => 'different_selected_period', 'period' => $feed->selected_period,
@@ -63,8 +74,10 @@ final class LeadLagIntelligence
             }
             $context = $this->timezones->context($exchange);
             $leader = $this->series->load($exchange->class, $manifest['symbol'], $manifest['period'], $from, $cutoff);
+            $sourceHash = hash('sha256', json_encode([$leader, $follower], JSON_THROW_ON_ERROR));
+            $this->assertWithinDeadline($preparationDeadline);
             $trained = $this->trainer->train($leader, $follower, $step, $context, $settings, $deadline);
-            $trained['report']['source_sha256'] = hash('sha256', json_encode([$leader, $follower], JSON_THROW_ON_ERROR));
+            $trained['report']['source_sha256'] = $sourceHash;
             $trained['report']['as_of_ms'] = $cutoff;
             $bundle['report'][$exchange->class] = $trained['report'];
             if ($trained['model'] !== null) {
@@ -72,15 +85,28 @@ final class LeadLagIntelligence
                 $bundle['models'][$exchange->class] = $model;
                 $bundle['keys'][] = 'lead_lag.'.$exchange->class.'.direction';
                 $bundle['available_at_ms'] = max($bundle['available_at_ms'], $model['available_at_ms']);
+                $evidenceDeadline = TrainingRuntime::algorithmDeadline($deadline);
+                $this->assertWithinDeadline($evidenceDeadline);
                 $series[$exchange->class] = $this->series->load($exchange->class, $manifest['symbol'], $manifest['period'],
                     $model['available_at_ms'], $manifest['as_of_ms']);
+                $this->assertWithinDeadline($evidenceDeadline);
             }
         }
         if ($bundle['report'] !== []) {
             $bundle['status'] = $bundle['models'] === [] ? 'no_validated_relationship' : 'validated';
         }
+        $this->assertWithinDeadline($deadline);
 
         return compact('bundle', 'series');
+    }
+
+    private function assertWithinDeadline(float $deadline): void
+    {
+        TrainingRuntime::heartbeat();
+
+        if (microtime(true) > $deadline) {
+            throw new RuntimeException('Lead/lag preparation time budget exceeded.');
+        }
     }
 
     public function features(array $bundle, array $series, int $atMs): array

@@ -69,7 +69,9 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
             return;
         }
         $featureLockAcquired = false;
+        $leaseKey = 'backfill:'.$this->historyId.':'.$this->leaseToken;
         try {
+            TrainingRuntime::registerLock($lock);
             // Refresh after taking the lock: a repair may have completed while queued.
             $state = $builds->owned($this->historyId, $this->leaseToken)->first();
             if ($state === null) {
@@ -78,6 +80,8 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
             if (! $builds->renew($this->historyId, $this->leaseToken)) {
                 return;
             }
+            TrainingRuntime::registerLease($leaseKey,
+                fn (): bool => $builds->renew($this->historyId, $this->leaseToken, allowWaiting: false));
             $this->assertOwnership($builds, $lock);
             $expectedRevision = $this->featureRevision
                 ?? ($state->build_stage === 'knn' ? (int) $state->build_revision : null);
@@ -169,6 +173,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
 
                     return;
                 }
+                TrainingRuntime::registerLock($featureLock);
                 // A repair/import may finish between the first revision check
                 // and acquiring this lock. Do not snapshot stale feature state.
                 $state = $builds->owned($this->historyId, $this->leaseToken)->first();
@@ -204,20 +209,25 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
             } else {
                 throw new RuntimeException('Invalid backfill intelligence checkpoint.');
             }
+            TrainingRuntime::unregisterLease($leaseKey);
             $builds->dispatchDue($exchange, $symbol, $state->period);
         } catch (Throwable $error) {
             $builds->failure($this->historyId, $this->leaseToken, $error);
             report($error);
         } finally {
+            TrainingRuntime::unregisterLease($leaseKey);
             if ($featureLockAcquired) {
+                TrainingRuntime::unregisterLock($featureLock);
                 $featureLock->release();
             }
+            TrainingRuntime::unregisterLock($lock);
             $lock->release();
         }
     }
 
     private function assertOwnership(BackfillIntelligence $builds, Lock $lock, ?Lock $featureLock = null): void
     {
+        TrainingRuntime::heartbeat(true);
         if (! $lock->isOwnedByCurrentProcess() || ($featureLock !== null && ! $featureLock->isOwnedByCurrentProcess())) {
             throw new RuntimeException('Backfill intelligence lock ownership was lost.');
         }
@@ -230,6 +240,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
             'build_stage' => 'features', 'build_revision' => null,
             'build_performance' => null, 'build_error' => null,
         ]);
+        TrainingRuntime::unregisterLease('backfill:'.$this->historyId.':'.$this->leaseToken);
         $builds->dispatchDue($exchange, $symbol, $period);
     }
 

@@ -15,11 +15,14 @@ final class PatternTrainer
 
     public function train(iterable $rows, array $settings, float $deadline): array
     {
-        $rows = TrainingRows::from($rows);
         $models = $reports = [];
         foreach (PatternCatalog::TYPES as $type) {
-            $samples = TrainingRows::from((function () use ($rows, $type): Generator {
+            $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
+            $this->assertWithinDeadline($preparationDeadline);
+            $rows = TrainingRows::from($rows);
+            $samples = TrainingRows::from((function () use ($rows, $type, $preparationDeadline): Generator {
                 foreach ($rows as $row) {
+                    $this->assertWithinDeadline($preparationDeadline);
                     foreach ($row['patterns'] as $candidate) {
                         if ($candidate['type'] === $type) {
                             yield ['vector' => $this->catalog->vector($row['vector'], $candidate),
@@ -29,6 +32,7 @@ final class PatternTrainer
                     }
                 }
             })());
+            $this->assertWithinDeadline($preparationDeadline);
             $count = count($samples);
             if ($count < $settings['min_samples']) {
                 $reports[$type] = ['status' => 'insufficient_samples', 'samples' => $count];
@@ -54,8 +58,8 @@ final class PatternTrainer
                 fn (array $row): bool => $row['label_available_at_ms'] < $selectionCutoff
             );
             unset($samples);
-            $trainLabels = $this->labelCounts($train);
-            $calibrationLabels = $this->labelCounts($calibrate);
+            $trainLabels = $this->labelCounts($train, $preparationDeadline);
+            $calibrationLabels = $this->labelCounts($calibrate, $preparationDeadline);
             if (min(count($train), count($calibrate), count($select), count($test)) < $settings['min_block_rows']
                 || count($trainLabels) < 2
                 || count($calibrationLabels) < 2) {
@@ -69,28 +73,35 @@ final class PatternTrainer
                 'weighted_knn' => new KNearestNeighbors(min($settings['k'], count($train)), true),
             ];
             $baseRate = ($trainLabels['completed'] ?? 0) / count($train);
-            $baseline = $this->calibration->metrics(array_fill(0, count($test), $baseRate), $this->column($test, 'label'));
+            $baseline = $this->calibration->metrics(array_fill(0, count($test), $baseRate), $this->column($test, 'label', $preparationDeadline));
+            $this->assertWithinDeadline($preparationDeadline);
             $candidates = [];
             foreach ($learners as $name => $learner) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('Pattern training time budget exceeded.');
-                }
-                $learner->train(new Labeled($this->column($train, 'vector'), $this->column($train, 'label')));
+                $runDeadline = TrainingRuntime::algorithmDeadline($deadline);
+                $this->assertWithinDeadline($runDeadline);
+                $learner->train(new Labeled($this->column($train, 'vector', $runDeadline), $this->column($train, 'label', $runDeadline)));
+                $this->assertWithinDeadline($runDeadline);
                 $raw = array_map(fn (array $p): float => $p['completed'] ?? 0.0,
-                    $learner->proba(new Unlabeled($this->column($calibrate, 'vector'))));
-                $mapping = $this->calibration->fit($raw, $this->column($calibrate, 'label'));
+                    $learner->proba(new Unlabeled($this->column($calibrate, 'vector', $runDeadline))));
+                $this->assertWithinDeadline($runDeadline);
+                $mapping = $this->calibration->fit($raw, $this->column($calibrate, 'label', $runDeadline));
+                $this->assertWithinDeadline($runDeadline);
                 $rawSelect = array_map(fn (array $p): float => $p['completed'] ?? 0.0,
-                    $learner->proba(new Unlabeled($this->column($select, 'vector'))));
+                    $learner->proba(new Unlabeled($this->column($select, 'vector', $runDeadline))));
+                $this->assertWithinDeadline($runDeadline);
                 $selectionMetrics = $this->calibration->metrics(
-                    array_map(fn (float $p): float => $this->calibration->apply($p, $mapping), $rawSelect), $this->column($select, 'label'));
+                    array_map(fn (float $p): float => $this->calibration->apply($p, $mapping), $rawSelect), $this->column($select, 'label', $runDeadline));
+                $this->assertWithinDeadline($runDeadline);
                 $rawTest = array_map(fn (array $p): float => $p['completed'] ?? 0.0,
-                    $learner->proba(new Unlabeled($this->column($test, 'vector'))));
+                    $learner->proba(new Unlabeled($this->column($test, 'vector', $runDeadline))));
+                $this->assertWithinDeadline($runDeadline);
                 $calibrated = array_map(fn (float $p): float => $this->calibration->apply($p, $mapping), $rawTest);
                 $candidates[$name] = ['algorithm' => $name, 'estimator' => $learner, 'calibration' => $mapping,
                     'selection_metrics' => $selectionMetrics,
-                    'metrics' => $this->calibration->metrics($calibrated, $this->column($test, 'label')),
-                    'raw_metrics' => $this->calibration->metrics($rawTest, $this->column($test, 'label')),
+                    'metrics' => $this->calibration->metrics($calibrated, $this->column($test, 'label', $runDeadline)),
+                    'raw_metrics' => $this->calibration->metrics($rawTest, $this->column($test, 'label', $runDeadline)),
                     'available_at_ms' => $test->max('label_available_at_ms')];
+                $this->assertWithinDeadline($runDeadline);
                 unset($raw, $rawSelect, $rawTest, $calibrated);
             }
             uasort($candidates, fn (array $a, array $b): int => [$a['selection_metrics']['brier'], $a['selection_metrics']['log_loss'], $a['selection_metrics']['calibration_error']]
@@ -118,30 +129,46 @@ final class PatternTrainer
                     return $candidate;
                 }, $candidates),
             ];
+            $this->assertWithinDeadline($runDeadline);
             unset($train, $calibrate, $select, $test, $learners, $candidates, $learner, $winner, $mapping);
         }
+
+        $this->assertWithinDeadline($deadline);
 
         return ['models' => $models, 'report' => $reports, 'version' => PatternCatalog::VERSION];
     }
 
+    private function assertWithinDeadline(float $deadline): void
+    {
+        TrainingRuntime::heartbeat();
+
+        if (microtime(true) > $deadline) {
+            throw new RuntimeException('Pattern training time budget exceeded.');
+        }
+    }
+
     /** @return array<string, int> */
-    private function labelCounts(iterable $rows): array
+    private function labelCounts(iterable $rows, float $deadline): array
     {
         $counts = [];
         foreach ($rows as $row) {
+            $this->assertWithinDeadline($deadline);
             $counts[$row['label']] = ($counts[$row['label']] ?? 0) + 1;
         }
+        $this->assertWithinDeadline($deadline);
 
         return $counts;
     }
 
     /** @return list<mixed> */
-    private function column(iterable $rows, string $field): array
+    private function column(iterable $rows, string $field, float $deadline): array
     {
         $values = [];
         foreach ($rows as $row) {
+            $this->assertWithinDeadline($deadline);
             $values[] = $row[$field];
         }
+        $this->assertWithinDeadline($deadline);
 
         return $values;
     }

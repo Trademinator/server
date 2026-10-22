@@ -3,26 +3,38 @@
 namespace App\Domain\Intelligence;
 
 use App\Domain\Research\WalkForward;
+use Closure;
 use InvalidArgumentException;
-use RuntimeException;
 
 final class KnnTuner
 {
-    public function __construct(private WeightedKnn $knn) {}
+    private const TUNING_TIMEOUT = 'K tuning time budget exceeded; reduce INTELLIGENCE_MAX_MODEL_AGE_DAYS or increase the build time budget.';
 
-    public function tune(array $rows, array $settings, float $deadline): array
+    public function __construct(private WeightedKnn $knn, private ?Closure $clock = null) {}
+
+    public function tune(array $rows, array $settings, float $deadline, ?float $candidateSeconds = null): array
     {
+        $budget = new KnnCandidateBudget($deadline, $candidateSeconds, self::TUNING_TIMEOUT, $this->clock);
         $rows = $this->knn->prepareRows($rows);
+        $budget->checkpointShared();
 
-        return $this->tunePrepared($rows, $settings, $deadline);
+        return $this->tuneRows($rows, $settings, $budget);
     }
 
-    public function tunePrepared(array|TrainingRows $rows, array $settings, float $deadline): array
+    public function tunePrepared(array|TrainingRows $rows, array $settings, float $deadline, ?float $candidateSeconds = null): array
+    {
+        return $this->tuneRows($rows, $settings,
+            new KnnCandidateBudget($deadline, $candidateSeconds, self::TUNING_TIMEOUT, $this->clock));
+    }
+
+    private function tuneRows(array|TrainingRows $rows, array $settings, KnnCandidateBudget $budget): array
     {
         $trainSize = $settings['min_train_size'];
         $minimum = max(1, (int) floor($this->knn->minEffective) + 1);
         $maximum = min($settings['k_cap'], $trainSize, count($rows));
         if ($maximum < $minimum) {
+            $budget->checkpointShared();
+
             return ['k' => null, 'k_min' => $minimum, 'k_max' => $maximum, 'folds' => [], 'candidates' => [],
                 'selection' => 'semantic_precision_then_confidence_coverage_stability',
                 'reason' => 'no_k_can_satisfy_effective_neighbor_floor'];
@@ -37,8 +49,10 @@ final class KnnTuner
         // The first walk-forward fold has exactly min_train_size rows, so K cannot
         // exceed that size even when later expanding folds contain much more history.
         $accumulators = [];
+        $budget->checkpointShared();
         foreach (range($minimum, $maximum) as $k) {
             $accumulators[$k] = $this->newAccumulator($k);
+            $budget->checkpointCandidate($k);
         }
 
         $folds = [];
@@ -48,13 +62,13 @@ final class KnnTuner
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
             foreach ($fold['test'] as $row) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('K tuning time budget exceeded; reduce INTELLIGENCE_MAX_MODEL_AGE_DAYS or increase the build time budget.');
-                }
+                $budget->checkpointShared();
                 $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $maximum,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
+                $budget->checkpointShared();
                 foreach ($accumulators as $k => &$accumulator) {
                     $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), $fold['fold']);
+                    $budget->checkpointCandidate($k);
                 }
                 unset($accumulator);
             }
@@ -62,8 +76,10 @@ final class KnnTuner
         }
 
         $allReports = [];
+        $budget->checkpointShared();
         foreach ($accumulators as $k => $accumulator) {
             $allReports[$k] = $this->finishAccumulator($accumulator, $settings);
+            $budget->checkpointCandidate($k);
         }
         $initialReports = array_intersect_key($allReports, array_flip($initialCandidates));
         $best = $this->best($initialReports);
@@ -80,13 +96,17 @@ final class KnnTuner
         $reason = $winner !== null ? 'validated'
             : (count($insufficient) === count($reports) ? 'insufficient_directional_evidence' : 'no_eligible_k');
 
-        return ['k' => $winner, 'k_min' => $minimum, 'k_max' => $maximum, 'folds' => $folds,
+        $result = ['k' => $winner, 'k_min' => $minimum, 'k_max' => $maximum, 'folds' => $folds,
             'candidates' => array_values($reports), 'selection' => 'wilson_lower_then_semantic_precision_confidence_stability',
             'reason' => $reason];
+        $budget->checkpointShared();
+
+        return $result;
     }
 
     public function evaluateWalkForwardPrepared(array|TrainingRows $rows, array $settings, int $k, float $deadline): array
     {
+        $budget = new KnnCandidateBudget($deadline, null, self::TUNING_TIMEOUT, $this->clock);
         $rows = TrainingRows::from($rows);
         $accumulator = $this->newAccumulator($k);
         $folds = [];
@@ -96,17 +116,19 @@ final class KnnTuner
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
             foreach ($fold['test'] as $row) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('K tuning time budget exceeded; reduce INTELLIGENCE_MAX_MODEL_AGE_DAYS or increase the build time budget.');
-                }
+                $budget->checkpointShared();
                 $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $k,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), $fold['fold']);
+                $budget->checkpointShared();
             }
             unset($training);
         }
 
-        return ['report' => $this->finishAccumulator($accumulator, $settings), 'folds' => $folds];
+        $result = ['report' => $this->finishAccumulator($accumulator, $settings), 'folds' => $folds];
+        $budget->checkpointShared();
+
+        return $result;
     }
 
     public function evaluate(array $training, array $test, int $k, array $settings, float $deadline): array
@@ -119,11 +141,10 @@ final class KnnTuner
 
     public function evaluatePrepared(array|TrainingRows $training, array|TrainingRows $test, int $k, array $settings, float $deadline): array
     {
+        $budget = new KnnCandidateBudget($deadline, null, 'KNN evaluation time budget exceeded.', $this->clock);
         $accumulator = $this->newAccumulator($k);
         foreach ($test as $row) {
-            if (microtime(true) > $deadline) {
-                throw new RuntimeException('KNN evaluation time budget exceeded.');
-            }
+            $budget->checkpointShared();
             $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $k,
                 $row['decision_at_ms'], $row['feature_weights'] ?? []);
             $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), 1);
@@ -138,11 +159,15 @@ final class KnnTuner
             if (count($accumulator['trace']) > 180) {
                 array_shift($accumulator['trace']);
             }
+            $budget->checkpointShared();
         }
 
         unset($accumulator['last_prediction']);
 
-        return $this->finishAccumulator($accumulator, $settings);
+        $result = $this->finishAccumulator($accumulator, $settings);
+        $budget->checkpointShared();
+
+        return $result;
     }
 
     private function newAccumulator(int $k): array

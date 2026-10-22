@@ -8,6 +8,7 @@ use App\Domain\Research\FeatureSchema;
 use App\Models\HumanTrainingSnapshot;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
@@ -22,6 +23,7 @@ final class HumanCandleKnn
 
     public function train(array $manifest, array $settings, float $deadline, ?HumanTrainingProgress $progress = null): array
     {
+        $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
         $keys = array_values(array_intersect($manifest['keys'], FeatureEngine::KEYS));
         $settings = array_replace($settings, config('human_training.candle_validation', []));
         $bundle = ['version' => self::VERSION, 'mode' => 'independent_knn', 'status' => 'insufficient_candle_labels',
@@ -35,8 +37,8 @@ final class HumanCandleKnn
         }
         $progress?->stage('loading_annotations');
         $diagnostics = [];
-        $rows = $this->opinions($manifest, $keys, $bundle['annotation_cutoff_ms'], $deadline, $progress, $diagnostics);
-        $this->deadline($deadline);
+        $rows = $this->opinions($manifest, $keys, $bundle['annotation_cutoff_ms'], $preparationDeadline, $progress, $diagnostics);
+        $this->deadline($preparationDeadline);
         $progress?->stage('annotations_loaded', ['eligible_rows' => count($rows)]);
         $bundle = [...$bundle, 'samples' => count($rows), 'class_counts' => $this->counts($rows),
             'sampling' => 'all_eligible_distinct_candles',
@@ -55,6 +57,7 @@ final class HumanCandleKnn
         $tuning = array_slice($rows, $tuningStart, $holdoutStart - $tuningStart);
         $holdout = array_slice($rows, $holdoutStart);
         $training = $this->purge(array_slice($rows, 0, $tuningStart), $tuning[0]['decision_at_ms']);
+        $this->deadline($preparationDeadline);
         if ($training === []) {
             return ['bundle' => [...$bundle, 'status' => 'insufficient_history']];
         }
@@ -64,9 +67,10 @@ final class HumanCandleKnn
         }
         $selected = null;
         foreach (['natural' => null, 'target_priors' => config('human_training.candle_target_weights')] as $policy => $target) {
+            $runDeadline = TrainingRuntime::algorithmDeadline($deadline);
             $progress?->stage('tuning_'.$policy, ['processed' => 0, 'total' => count($tuning), 'knowledge_rows' => count($training)]);
             $weights = ClassPriorWeights::fit($this->counts($training), $target);
-            $score = $this->evaluate($knn, $training, $tuning, $k, $weights, $settings, $deadline, $progress);
+            $score = $this->evaluate($knn, $training, $tuning, $k, $weights, $settings, $runDeadline, $progress);
             $bundle['weight_candidates'][$policy] = ['class_weights' => $weights, 'tuning' => $score];
             if ($score['eligible'] && ($selected === null || $this->rank($score) > $this->rank($selected['tuning']))) {
                 $selected = ['policy' => $policy, 'target' => $target, 'tuning' => $score];
@@ -85,10 +89,11 @@ final class HumanCandleKnn
                 ? 'insufficient_directional_evidence' : 'tuning_failed']];
         }
         // Fix the policy before touching the final holdout; never try a runner-up afterward.
+        $holdoutDeadline = TrainingRuntime::algorithmDeadline($deadline);
         $training = $this->purge(array_slice($rows, 0, $holdoutStart), $holdout[0]['decision_at_ms']);
         $progress?->stage('holdout', ['processed' => 0, 'total' => count($holdout), 'knowledge_rows' => count($training)]);
         $weights = ClassPriorWeights::fit($this->counts($training), $selected['target']);
-        $score = $this->evaluate($knn, $training, $holdout, $k, $weights, $settings, $deadline, $progress);
+        $score = $this->evaluate($knn, $training, $holdout, $k, $weights, $settings, $holdoutDeadline, $progress);
         $bundle = [...$bundle, 'weight_policy' => $selected['policy'], 'tuning' => $selected['tuning'],
             'holdout' => $score, 'holdout_passed' => $score['eligible'],
             'holdout_training_labels_available_by_ms' => max(array_column($training, 'label_available_at_ms')),
@@ -101,14 +106,16 @@ final class HumanCandleKnn
             return ['bundle' => $bundle];
         }
         // Publication retains all eligible annotations, including the evaluated period.
+        $finalizationDeadline = TrainingRuntime::algorithmDeadline($deadline);
         $progress?->stage('finalizing', ['knowledge_rows' => count($rows)]);
-        $this->deadline($deadline);
+        $this->deadline($finalizationDeadline);
         $classWeights = ClassPriorWeights::fit($this->counts($rows), $selected['target']);
         $updatedBy = max(array_column($rows, 'updated_at_ms'));
         $availableAt = max($updatedBy, max(array_column($rows, 'label_available_at_ms')));
         $trainingThrough = max(array_column($rows, 'decision_at_ms'));
         unset($training, $tuning, $holdout);
         foreach ($rows as &$row) {
+            $this->deadline($finalizationDeadline);
             $row = [
                 'decision_at_ms' => $row['decision_at_ms'], 'label_available_at_ms' => $row['label_available_at_ms'],
                 'vector' => $row['vector'], 'label' => $row['label'], 'provenance' => $row['provenance'],
@@ -117,6 +124,7 @@ final class HumanCandleKnn
         unset($row);
         $knowledge = $rows;
         unset($rows);
+        $this->deadline($finalizationDeadline);
 
         return ['bundle' => [...$bundle,
             'class_weights' => $classWeights,
@@ -266,7 +274,7 @@ final class HumanCandleKnn
                     ->whereIn('trainer_id', $trainers)->whereIn('action', CandleTraining::ACTIONS)
                     ->where('updated_at', '<=', $cutoff)->orderBy('trainer_id')])
                 ->get()->keyBy('snapshot_id');
-            $batch = new \Illuminate\Database\Eloquent\Collection;
+            $batch = new Collection;
             foreach ($batchIds as $snapshotId) {
                 $snapshot = $loaded->get($snapshotId);
                 if ($snapshot === null) {
@@ -446,6 +454,7 @@ final class HumanCandleKnn
         $score['directional_annotation_agreement'] = $score['semantic_precision'];
         $score['opposite_annotation_rate'] = $score['contradiction_rate'];
         unset($score['semantic_precision'], $score['contradiction_rate']);
+        $this->deadline($deadline);
 
         return $score;
     }
@@ -483,6 +492,7 @@ final class HumanCandleKnn
 
     private function deadline(float $deadline): void
     {
+        TrainingRuntime::heartbeat();
         if (microtime(true) > $deadline) {
             throw new RuntimeException('Candle guidance training time budget exceeded.');
         }

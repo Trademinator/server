@@ -43,6 +43,7 @@ final class HumanGuidance
         }
 
         $rows = $this->opinions($manifest, $bundle['annotation_cutoff_ms'], $deadline);
+        $this->checkDeadline($deadline);
         $bundle['samples'] = count($rows);
         $bundle['class_counts'] = array_fill_keys(SemanticLabels::OUTCOMES, 0);
         foreach ($rows as $row) {
@@ -60,6 +61,7 @@ final class HumanGuidance
         $k = min(max(1, (int) config('human_training.k')), count($rows));
         $availableAt = max(array_column($rows, 'updated_at_ms'));
         foreach ($rows as &$row) {
+            $this->checkDeadline($deadline);
             $row = [
                 'decision_at_ms' => $row['decision_at_ms'],
                 'label_available_at_ms' => $row['label_available_at_ms'],
@@ -69,6 +71,7 @@ final class HumanGuidance
             ];
         }
         unset($row);
+        $this->checkDeadline($deadline);
 
         return ['bundle' => [...$bundle,
             'status' => 'validated',
@@ -108,6 +111,14 @@ final class HumanGuidance
         return (new OutcomeKnn($settings))->vote($nearest, $bundle['k']);
     }
 
+    private function checkDeadline(float $deadline): void
+    {
+        TrainingRuntime::heartbeat();
+        if (microtime(true) > $deadline) {
+            throw new RuntimeException('Human Outcome Training time budget exceeded.');
+        }
+    }
+
     private function opinions(array $manifest, int $annotationCutoff, float $deadline): array
     {
         $trainerIds = array_map('strtolower', array_filter([...User::ownerIds(), ...config('human_training.trainer_uuids')]));
@@ -140,13 +151,13 @@ final class HumanGuidance
 
         $opinions = [];
         foreach ($snapshots->chunk(25) as $batch) {
-            if (microtime(true) > $deadline) {
-                throw new RuntimeException('Human Outcome Training time budget exceeded.');
-            }
+            $this->checkDeadline($deadline);
             $byTime = [];
             foreach ($batch as $snapshot) {
                 $row = $rawRows->findDecision((int) $snapshot->decision_at_ms);
-                if ($row !== null) $byTime[(int) $snapshot->decision_at_ms] = $row;
+                if ($row !== null) {
+                    $byTime[(int) $snapshot->decision_at_ms] = $row;
+                }
             }
             $compatible = $this->snapshots->compatibleSnapshotIds($manifest, $batch, $byTime);
             foreach ($batch as $snapshot) {

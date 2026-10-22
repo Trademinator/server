@@ -82,7 +82,8 @@ it('publishes independent Human Action knowledge and applies the dynamic source 
         fn (array $record): bool => str_starts_with($record['event'], 'intelligence.human_training.')));
     expect(array_column($records, 'stage'))->toContain('loading_annotations', 'loading_dataset', 'validating_snapshots',
         'tuning_natural', 'tuning_target_priors', 'holdout', 'finalizing');
-    expect($records[0])->toMatchArray(['event' => 'intelligence.human_training.started', 'budget_seconds' => 300]);
+    expect($records[0])->toMatchArray(['event' => 'intelligence.human_training.started',
+        'budget_seconds' => 5 * config('intelligence.max_seconds')]);
     expect($records[array_key_last($records)])->toMatchArray(['event' => 'intelligence.human_training.completed',
         'reason' => 'validated', 'knowledge_rows' => 240]);
     $artifact = app(ModelStore::class)->current('kraken', 'BTC/USD', '1m');

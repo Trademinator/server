@@ -27,9 +27,7 @@ final class KnnSchemaFallback
             ->where('period', $period)->where('version', FeatureEngine::VERSION)
             ->whereBetween('available_at_ms', [$from, $to])
             ->lazyById(500, column: 'microtimestamp', alias: 'microtimestamp') as $feature) {
-            if (microtime(true) > $deadline) {
-                throw new RuntimeException('KNN schema inspection exceeded training deadline.');
-            }
+            $this->checkDeadline($deadline);
             $payload = $feature->payload;
             $decision = $this->timeframe->next($feature->microtimestamp, $period);
             if (($payload['version'] ?? null) !== FeatureEngine::VERSION
@@ -69,9 +67,7 @@ final class KnnSchemaFallback
             foreach ((new WalkForward)->folds(
                 $training, $requirements['min_train_size'], $requirements['test_size'], $requirements['gap'], true, null
             ) as $fold) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('KNN schema inspection exceeded training deadline.');
-                }
+                $this->checkDeadline($deadline);
                 $evaluated += count($fold['test']);
                 if ($evaluated >= $requirements['min_validation_rows']) {
                     break;
@@ -86,6 +82,8 @@ final class KnnSchemaFallback
         $selected = $potential['technical']['sufficient'] ? 'technical'
             : ($potential['core']['sufficient'] ? 'core' : null);
 
+        $this->checkDeadline($deadline);
+
         return ['version' => self::VERSION, 'requested_schema' => 'technical',
             'effective_schema' => $selected, 'fallback_policy' => 'core',
             'reason' => $selected === 'technical' ? 'technical_history_sufficient'
@@ -95,5 +93,13 @@ final class KnnSchemaFallback
             'validation_performed' => false, 'feature_rows' => $total,
             'complete_feature_rows' => $counts, 'missing_by_key' => $missing,
             'potential_history' => $potential, 'window' => ['from_ms' => $from, 'to_ms' => $to, 'as_of_ms' => $asOf]];
+    }
+
+    private function checkDeadline(float $deadline): void
+    {
+        TrainingRuntime::heartbeat();
+        if (microtime(true) > $deadline) {
+            throw new RuntimeException('KNN schema inspection exceeded training deadline.');
+        }
     }
 }

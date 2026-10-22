@@ -92,6 +92,51 @@ it('refuses an expired compute budget without selecting a partial winner', funct
         ->toThrow(RuntimeException::class, 'time budget');
 });
 
+it('preserves Action selection when independent K voting exceeds one candidates allowance in total', function () {
+    $settings = array_replace(tuningSettings(), ['min_train_size' => 10]);
+    $knn = new WeightedKnn;
+    $rows = $knn->prepareRows(tuningRows(80));
+    $expected = (new KnnTuner($knn))->tunePrepared($rows, $settings, microtime(true) + 10);
+    $time = 0.0;
+    $clock = static function () use (&$time): float {
+        return $time++;
+    };
+
+    $result = (new KnnTuner($knn, $clock))->tunePrepared($rows, $settings, 10000.0, candidateSeconds: 250.0);
+
+    expect($time)->toBeGreaterThan(250.0);
+    expect($result)->toBe($expected);
+});
+
+it('rejects Action tuning when one K accumulates too much time across folds', function () {
+    $settings = array_replace(tuningSettings(), ['min_train_size' => 10]);
+    $knn = new WeightedKnn;
+    $rows = $knn->prepareRows(tuningRows(80));
+    $time = 0.0;
+    $clock = static function () use (&$time): float {
+        return $time++;
+    };
+
+    expect(fn () => (new KnnTuner($knn, $clock))->tunePrepared($rows, $settings, 10000.0, candidateSeconds: 150.0))
+        ->toThrow(RuntimeException::class, 'K tuning time budget exceeded');
+});
+
+it('rejects an Action evaluation that overruns on its final row', function (string $mode) {
+    $times = [0.0, 0.0, 2.0];
+    $clock = static function () use (&$times): float {
+        return array_shift($times) ?? 2.0;
+    };
+    $knn = new WeightedKnn;
+    $rows = $knn->prepareRows(tuningRows(8));
+    $settings = array_replace(tuningSettings(), ['min_train_size' => 4]);
+    $tuner = new KnnTuner($knn, $clock);
+    $evaluate = fn (): array => $mode === 'walk_forward'
+        ? $tuner->evaluateWalkForwardPrepared($rows, $settings, 4, 1.0)
+        : $tuner->evaluatePrepared(array_slice($rows, 0, 4), [$rows[7]], 4, $settings, 1.0);
+
+    expect($evaluate)->toThrow(RuntimeException::class, 'time budget exceeded');
+})->with(['walk_forward', 'holdout']);
+
 it('preserves Action tuning and holdout reports through filtered views with projected label endpoints', function () {
     $knn = new WeightedKnn;
     $source = $knn->prepareRows(tuningRows());

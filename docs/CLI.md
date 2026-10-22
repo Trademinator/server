@@ -639,6 +639,8 @@ Build/validate intelligence for one market immediately from existing data. Creat
 
 `--dataset` cannot be combined with any date option or a non-default schema. It requires a compatible semantic dataset for the same market, not a fee-aware M3 research dataset. There is no `--all`, `--queue`, `--force` or `--timeout` option on this command. Use the dispatcher for scheduled bulk training; its weekly-generation behavior is not a forced rebuild of all completed models.
 
+`INTELLIGENCE_MAX_SECONDS` grants each algorithm and parameter run its own time allowance, including each K candidate across all tuning folds. Shared neighbor computation counts toward every candidate, while another K's scoring time does not. Holdouts, ablations, pattern learners, lead/lag runs, and Human Training policies get fresh allowances. A value of `86400` therefore permits 24 hours per run, and the complete build can run longer. Dataset construction has its separate research limit. See [training and queue budgets](CRONTABS.md#m4-intelligence-workers) for the calculated whole-build guard and renewable locks.
+
 | Parameter | Default / requirement | Explanation |
 | --- | --- | --- |
 | `exchange` | Required | Configured CCXT exchange ID, for example `bitso` or `kraken`; not an exchange UUID. |
@@ -709,7 +711,7 @@ Signature: `trademinator:dispatch-market-intelligence {--force : Create a fresh 
 
 Description: Queue weekly KNN and pattern training once per subscribed market and selected period
 
-Queue training for all active subscribed feeds with selected periods on `INTELLIGENCE_QUEUE` (default `intelligence`). Requires enabled intelligence and a persistent queue. Uses the current weekly generation key; already completed generations are not a force-rebuild target. This command only dispatches: **`--timeout=2400` belongs on `queue:work`, not here**. Use `--timeout=15000` for the four-hour profile in [CRONTABS.md](CRONTABS.md#m4-intelligence-workers).
+Queue training for all active subscribed feeds with selected periods on `INTELLIGENCE_QUEUE` (default `intelligence`). Requires enabled intelligence and a persistent queue. Uses the current weekly generation key; already completed generations are not a force-rebuild target. This command only dispatches: **`--timeout` belongs on `queue:work`, not here**. Training jobs carry a timeout calculated from all enabled algorithm and parameter runs; it takes precedence over the worker's timeout fallback. See [training and queue budgets](CRONTABS.md#m4-intelligence-workers).
 
 Parameters: none beyond standard Artisan options.
 
@@ -1199,7 +1201,7 @@ php -d memory_limit=512M artisan queue:work --queue=features --stop-when-empty -
 # Older-history collection and missing-candle repair.
 php -d memory_limit=256M artisan queue:work --queue=history --stop-when-empty --max-time=50 --timeout=120 --memory=192 --tries=1
 
-# Model builds and backfill rebuild stages, using the default training budget.
+# Model builds and backfill rebuild stages; each job carries its calculated timeout.
 php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
 
 # Signal recording has a separate worker; this example selects its Redis connection.
@@ -1208,7 +1210,7 @@ php -d memory_limit=512M artisan queue:work redis-signals --queue=signals --stop
 
 `FEATURES_QUEUE`, `HISTORY_BACKFILL_QUEUE`, `INTELLIGENCE_QUEUE` and `INTELLIGENCE_SIGNALS_QUEUE` can override the names. Match the signal worker's positional connection to `INTELLIGENCE_SIGNALS_CONNECTION`; `redis-signals` uses a separate reservation budget even though its storage is shared with the training queue. A scheduler success or an empty database `jobs` table does not prove Redis/other backend queues are empty. Use the actual configured connection and owner monitoring.
 
-Keep queue reservation/retry timing longer than the longest job timeout on that connection. The default training profile is **1800 seconds** for `INTELLIGENCE_MAX_SECONDS`, **2400 seconds** for the job/worker timeout and **2700 seconds** for `retry_after`. The four-hour profile is **14400 / 15000 / 15300 seconds**; set the intelligence worker's `--timeout=15000` for that profile. The dedicated `redis-signals` connection uses **1200 seconds** for its **900-second** job timeout. Configure SQS visibility separately when used. Multiple scheduler nodes need a shared lock-capable cache. Queued feature continuations require subsequent worker passes; increasing only `--timeout` does not remove internal replay limits.
+Keep queue reservation/retry timing longer than the longest job timeout on that connection. The default `INTELLIGENCE_MAX_SECONDS` is **1800 seconds per algorithm and parameter run**. Training jobs carry a calculated whole-build timeout covering every enabled run plus dataset construction and cleanup. This overrides the worker timeout fallback. Database/Redis/Beanstalkd reservation settings enforce at least **job timeout + 300 seconds**; larger configured values are preserved. Training locks use renewable leases covering a single stage, rather than the whole-build reservation. The dedicated `redis-signals` connection uses **1200 seconds** for its **900-second** job timeout. Configure SQS visibility separately when used. Multiple scheduler nodes need a shared lock-capable cache. Queued feature continuations require subsequent worker passes; increasing only `--timeout` does not remove internal replay limits.
 
 ## Common workflows
 
@@ -1269,7 +1271,7 @@ Fetching today's CoinGecko data cannot reconstruct yesterday's context. Do not a
 
 A finished build is not the same as a validated model. Read the reported status, validation evidence, freshness and abstention reasons. `INTELLIGENCE_MAX_MODEL_AGE_DAYS` is a history/expiry window, **not a mandatory waiting period**. An insufficient-human-label reason requires eligible submitted candle labels; collecting more automatic candles alone does not create them. Unsubmitted browser labels are not training rows.
 
-`optional budget exhausted` identifies an optional training-stage budget limit, not a missing-candle count. Gap repair, more labels and more execution time address different causes. Current intelligence jobs derive their timeout from the model budget plus auxiliary Human Training and cleanup time: 2400 seconds by default, or 15000 seconds for the four-hour profile. See [worker budgets and logging](CRONTABS.md#m4-intelligence-workers). Explicit command success does not override any validation gate.
+`optional budget exhausted` identifies an optional training-stage budget limit, not a missing-candle count. Gap repair, more labels and more execution time address different causes. Each optional learner or Human Training policy receives a fresh `INTELLIGENCE_MAX_SECONDS` allowance. Intelligence jobs derive their hard timeout from all enabled algorithm and parameter runs, dataset construction, and cleanup time. See [worker budgets and logging](CRONTABS.md#m4-intelligence-workers). Explicit command success does not override any validation gate.
 
 ### Where the KNN inputs are prepared
 
@@ -1327,7 +1329,7 @@ The automated documentation test checks command coverage, normalized signatures/
 
 ### Current Outcome + Action KNN contract
 
-trademinator:knn-build builds independently tuned Outcome and Action KNNs. H is the frequency-weighted mean spacing of opposite Action pivots. Outcome uses M=tanh(beta*sqrt(H)/V), V=ATR_t/Close_t, and hard boundaries -0.60/-0.20/0.20/0.60. K candidates begin at 4. Human source weight is min(0.60,0.60*sqrt(N_H/750)). Decision matrix v3 allows Action BUY with Neutral/Bull/Super Bull, keeps the Bear/Super Bear BUY veto, and preserves previous SELL rules. The default build budget is INTELLIGENCE_MAX_SECONDS=1800; intelligence workers use --timeout=2400 with retry_after >= 2700. The four-hour profile uses 14400, 15000 and 15300 seconds respectively.
+trademinator:knn-build builds independently tuned Outcome and Action KNNs. H is the frequency-weighted mean spacing of opposite Action pivots. Outcome uses M=tanh(beta*sqrt(H)/V), V=ATR_t/Close_t, and hard boundaries -0.60/-0.20/0.20/0.60. K candidates begin at 4. Human source weight is min(0.60,0.60*sqrt(N_H/750)). Decision matrix v3 allows Action BUY with Neutral/Bull/Super Bull, keeps the Bear/Super Bear BUY veto, and preserves previous SELL rules. INTELLIGENCE_MAX_SECONDS=1800 is the default allowance for each algorithm and parameter run. The complete build has a derived hard timeout, renewable ownership leases, and retry_after at least 300 seconds longer than that timeout. A 24-hour setting (86400) applies independently to each run.
 
 ### Degraded KNN availability
 

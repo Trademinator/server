@@ -1,9 +1,6 @@
 <?php
 
-$trainingTimeout = max(
-    max(60, (int) env('INTELLIGENCE_MAX_SECONDS', 1800)) + 600,
-    (int) env('INTELLIGENCE_JOB_TIMEOUT', 0),
-);
+$trainingTimeout = (static fn (): array => require __DIR__.'/intelligence.php')()['job_timeout'];
 
 return [
 

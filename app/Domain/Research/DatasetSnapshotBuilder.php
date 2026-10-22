@@ -6,6 +6,8 @@ use App\Domain\Features\ContextFeatures;
 use App\Domain\Features\FeatureEngine;
 use App\Domain\Intelligence\ActionLabelAnalysis;
 use App\Domain\Intelligence\ActionLabelReportStore;
+use App\Domain\Intelligence\AlgorithmicLabelBuilder;
+use App\Domain\Intelligence\AlgorithmicLabelSets;
 use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\PatternCatalog;
 use App\Domain\Intelligence\TrainingRuntime;
@@ -27,7 +29,7 @@ final class DatasetSnapshotBuilder
         private DatasetStore $store,
         private TickerRepository $tickers,
         private ActionLabelAnalysis $actionAnalysis,
-        private \App\Domain\Intelligence\AlgorithmicLabelSets $labelSets,
+        private AlgorithmicLabelSets $labelSets,
         private ActionLabelReportStore $actionReports,
     ) {}
 
@@ -71,6 +73,7 @@ final class DatasetSnapshotBuilder
         $file = null;
         $started = microtime(true);
         try {
+            TrainingRuntime::registerLock($lock);
             if (! mkdir($temporary, 0700, true)) {
                 throw new RuntimeException('Cannot create private dataset directory.');
             }
@@ -82,7 +85,7 @@ final class DatasetSnapshotBuilder
             if (DB::transactionLevel() === 0 && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
                 DB::statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
             }
-            $manifest = DB::transaction(function () use ($exchange, $symbol, $period, $definition, $schema, $keys, $fromMs, $toMs, $asOfMs, $id, $directory, $temporary, $file, $timeframe, $started) {
+            $manifest = DB::transaction(function () use ($exchange, $symbol, $period, $definition, $schema, $keys, $fromMs, $toMs, $asOfMs, $id, $directory, $temporary, $file, $timeframe, $started, $lock) {
                 $query = MarketFeature::query()->where('exchange', $exchange)->where('symbol', $symbol)->where('period', $period)
                     ->where('version', FeatureEngine::VERSION)->whereBetween('available_at_ms', [$fromMs, $toMs])->orderBy('microtimestamp');
                 $first = (clone $query)->first();
@@ -98,7 +101,7 @@ final class DatasetSnapshotBuilder
                     $set = $this->labelSets->find($exchange, $symbol, $period, $asOfMs);
                     if ($set === null) {
                         // Non-orchestrated CLI callers still receive a safe, on-demand build.
-                        $set = app(\App\Domain\Intelligence\AlgorithmicLabelBuilder::class)
+                        $set = app(AlgorithmicLabelBuilder::class)
                             ->build($exchange, $symbol, $period, $asOfMs);
                     }
                     $algorithmicActions = $set['action_labels'];
@@ -138,6 +141,7 @@ final class DatasetSnapshotBuilder
                 $count = 0;
                 $firstDecision = $lastDecision = null;
                 foreach ($query->lazyById(500, column: 'microtimestamp', alias: 'microtimestamp') as $feature) {
+                    TrainingRuntime::heartbeat();
                     $maxSeconds = config('research.dataset_max_seconds', 540);
                     if (microtime(true) - $started > $maxSeconds) {
                         throw new RuntimeException('Dataset build exceeded '.$maxSeconds.' seconds; use a smaller date range or increase RESEARCH_DATASET_MAX_SECONDS.');
@@ -267,6 +271,7 @@ final class DatasetSnapshotBuilder
                         : $definition->label((float) $entry['open'], (float) $exit['close']);
                     if ($label === null) {
                         $counts['immature']++;
+
                         continue;
                     }
                     if ($definition instanceof SemanticLabels) {
@@ -354,6 +359,10 @@ final class DatasetSnapshotBuilder
                     'rows_sha256' => hash_final($hash),
                 ];
                 $json = json_encode($manifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n";
+                TrainingRuntime::heartbeat(true);
+                if (! $lock->isOwnedByCurrentProcess()) {
+                    throw new RuntimeException('Feature lock ownership was lost before publishing the dataset.');
+                }
                 if (file_put_contents($temporary.'/manifest.json', $json) !== strlen($json) || ! rename($temporary, $directory)) {
                     throw new RuntimeException('Could not publish dataset snapshot.');
                 }
@@ -388,6 +397,7 @@ final class DatasetSnapshotBuilder
             if (is_resource($file)) {
                 fclose($file);
             }
+            TrainingRuntime::unregisterLock($lock);
             if (! $borrowedLock) {
                 $lock->release();
             }

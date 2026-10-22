@@ -1,8 +1,11 @@
 <?php
 
-uses(Tests\TestCase::class);
-
 use App\Domain\Intelligence\CoinGeckoInsight;
+use Rubix\ML\Classifiers\RandomForest;
+use Tests\Support\IntelligenceClock;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 it('trains a bounded independent Rubix forest on distinct past context and reports probabilities', function (): void {
     config([
@@ -45,7 +48,7 @@ it('trains a bounded independent Rubix forest on distinct past context and repor
             'context.global_regime', 'context.btc_dominance', 'context.activity',
         ])
         ->and($result['bundle']['status'])->toBe('validated')
-        ->and($result['estimator'])->toBeInstanceOf(\Rubix\ML\Classifiers\RandomForest::class);
+        ->and($result['estimator'])->toBeInstanceOf(RandomForest::class);
     $prediction = $advisor->predict($result['bundle'], [
         'context_snapshot_id' => 'latest',
         'features' => ['context.global_regime' => 0.7, 'context.btc_dominance' => 0.7,
@@ -62,4 +65,28 @@ it('keeps baseline Core independent from optional CoinGecko', function (): void 
     $result = (new CoinGeckoInsight)->train([], 'core', microtime(true) + 30);
     expect($result['bundle']['status'])->toBe('profile_without_context')
         ->and($result)->not->toHaveKey('estimator');
+});
+
+it('stops optional context preparation when its own run allowance is exhausted', function (): void {
+    config(['intelligence.coingecko_insight.enabled' => true]);
+    IntelligenceClock::freeze(1000.0);
+    $visited = 0;
+    $rows = (function () use (&$visited): Generator {
+        for ($i = 0; $i < 10; $i++) {
+            $visited++;
+            IntelligenceClock::advance(1.0);
+            yield ['context_snapshot_id' => 'snapshot-'.$i, 'label' => 'bull'];
+        }
+    })();
+
+    try {
+        $result = (new CoinGeckoInsight)->train($rows, 'enhanced', 1002.0);
+
+        expect($result['bundle']['status'])->toBe('optional_budget_exhausted')
+            ->and($result['bundle']['influence'])->toBeFalse()
+            ->and($result)->not->toHaveKey('estimator')
+            ->and($visited)->toBe(2);
+    } finally {
+        IntelligenceClock::reset();
+    }
 });

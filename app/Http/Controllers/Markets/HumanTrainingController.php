@@ -6,13 +6,13 @@ use App\Domain\Intelligence\CandleTraining;
 use App\Domain\Intelligence\HumanTraining;
 use App\Domain\Intelligence\HumanTrainingExport;
 use App\Domain\Intelligence\OutcomeTrainingSession;
-use App\Repositories\TickerRepository;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\MarketData\SubscribedPairOptions;
 use App\Http\Controllers\Controller;
 use App\Models\HumanCandleLabel;
 use App\Models\HumanTrainingReview;
 use App\Models\HumanTrainingSnapshot;
+use App\Repositories\TickerRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -48,7 +48,7 @@ class HumanTrainingController extends Controller
         }
 
         return response()->view('markets.human-training', ['datasets' => $datasets,
-            'availableMarkets' => $pairOptions->markets($request->user(), allSubscribed: Gate::allows('manage-server')), 'selectedDataset' => $selectedDataset,
+            'selectedDataset' => $selectedDataset,
             'pending' => $pending, 'completed' => (clone $reviews)->whereIn('label', HumanTraining::acceptedLabels())->count(),
             'candleCompleted' => $candleTraining->count($request->user()),
             'statistics' => Gate::allows('manage-server') ? $this->statistics() : null,
@@ -91,7 +91,7 @@ class HumanTrainingController extends Controller
                         break;
                     }
                     foreach (['open', 'high', 'low', 'close', 'volume'] as $field) {
-                        if (!is_numeric($candle[$field] ?? null)) {
+                        if (! is_numeric($candle[$field] ?? null)) {
                             $valid = false;
                             break 2;
                         }
@@ -119,10 +119,14 @@ class HumanTrainingController extends Controller
                             $timeframe->next($target, $snapshot['period']), $extraEnd
                         ) as $candle) {
                             $expectedExtra = $timeframe->next($expectedExtra, $snapshot['period']);
-                            if ((int) $candle['microtimestamp'] !== $expectedExtra) break;
+                            if ((int) $candle['microtimestamp'] !== $expectedExtra) {
+                                break;
+                            }
                             $fields = [];
                             foreach (['open', 'high', 'low', 'close', 'volume'] as $field) {
-                                if (!is_numeric($candle[$field] ?? null)) break 2;
+                                if (! is_numeric($candle[$field] ?? null)) {
+                                    break 2;
+                                }
                                 $fields[$field] = (string) $candle[$field];
                             }
                             $afterSeries[] = ['time' => intdiv($expectedExtra, 1000), ...$fields];

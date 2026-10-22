@@ -4,18 +4,23 @@ namespace App\Domain\Intelligence;
 
 use App\Domain\Research\SemanticLabels;
 use App\Domain\Research\WalkForward;
-use RuntimeException;
+use Closure;
 
 final class OutcomeKnnTuner
 {
-    public function __construct(private WeightedKnn $neighbors, private OutcomeKnn $outcomes) {}
+    private const TUNING_TIMEOUT = 'Outcome K tuning time budget exceeded.';
 
-    public function tunePrepared(array|TrainingRows $rows, array $settings, float $deadline): array
+    public function __construct(private WeightedKnn $neighbors, private OutcomeKnn $outcomes, private ?Closure $clock = null) {}
+
+    public function tunePrepared(array|TrainingRows $rows, array $settings, float $deadline, ?float $candidateSeconds = null): array
     {
+        $budget = new KnnCandidateBudget($deadline, $candidateSeconds, self::TUNING_TIMEOUT, $this->clock);
         $trainSize = $settings['min_train_size'];
         $minimum = max(1, (int) floor($this->neighbors->minEffective) + 1);
         $maximum = min($settings['k_cap'], $trainSize, count($rows));
         if ($maximum < $minimum) {
+            $budget->checkpointShared();
+
             return ['k' => null, 'k_min' => $minimum, 'k_max' => $maximum, 'folds' => [], 'candidates' => [],
                 'selection' => 'supported_macro_f1_then_baseline_improvement_accuracy_confidence_coverage',
                 'reason' => 'no_k_can_satisfy_effective_neighbor_floor'];
@@ -27,8 +32,10 @@ final class OutcomeKnnTuner
         $rows = TrainingRows::from($rows);
 
         $reports = [];
+        $budget->checkpointShared();
         foreach (range($minimum, $maximum) as $k) {
             $reports[$k] = $this->emptyReport($k);
+            $budget->checkpointCandidate($k);
         }
 
         $folds = [];
@@ -39,21 +46,23 @@ final class OutcomeKnnTuner
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
             foreach ($fold['test'] as $row) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('Outcome K tuning time budget exceeded.');
-                }
+                $budget->checkpointShared();
                 $neighbors = $this->neighbors->neighborsPrepared($training, $row['vector'], $maximum,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
+                $budget->checkpointShared();
                 foreach ($reports as $k => &$report) {
                     $this->accumulate($report, $row, $this->outcomes->vote($neighbors, $k), $baseline);
+                    $budget->checkpointCandidate($k);
                 }
                 unset($report);
             }
             unset($training);
         }
 
-        foreach ($reports as &$report) {
+        $budget->checkpointShared();
+        foreach ($reports as $k => &$report) {
             $report = $this->finish($report, $settings);
+            $budget->checkpointCandidate($k);
         }
         unset($report);
         $initialReports = array_intersect_key($reports, array_flip($initialCandidates));
@@ -65,13 +74,17 @@ final class OutcomeKnnTuner
         $reports = array_intersect_key($reports, array_flip($selected));
         ksort($reports);
 
-        return ['k' => $this->best($reports), 'k_min' => $minimum, 'k_max' => $maximum, 'folds' => $folds,
+        $result = ['k' => $this->best($reports), 'k_min' => $minimum, 'k_max' => $maximum, 'folds' => $folds,
             'candidates' => array_values($reports),
             'selection' => 'supported_macro_f1_then_baseline_improvement_accuracy_confidence_coverage'];
+        $budget->checkpointShared();
+
+        return $result;
     }
 
     public function evaluateWalkForwardPrepared(array|TrainingRows $rows, array $settings, int $k, float $deadline): array
     {
+        $budget = new KnnCandidateBudget($deadline, null, self::TUNING_TIMEOUT, $this->clock);
         $rows = TrainingRows::from($rows);
         $state = $this->emptyReport($k);
         $folds = [];
@@ -82,28 +95,29 @@ final class OutcomeKnnTuner
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
             foreach ($fold['test'] as $row) {
-                if (microtime(true) > $deadline) {
-                    throw new RuntimeException('Outcome K tuning time budget exceeded.');
-                }
+                $budget->checkpointShared();
                 $nearest = $this->neighbors->neighborsPrepared($training, $row['vector'], $k,
                     $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 $this->accumulate($state, $row, $this->outcomes->vote($nearest, $k), $baseline);
+                $budget->checkpointShared();
             }
             unset($training);
         }
 
-        return ['report' => $this->finish($state, $settings), 'folds' => $folds];
+        $result = ['report' => $this->finish($state, $settings), 'folds' => $folds];
+        $budget->checkpointShared();
+
+        return $result;
     }
 
     public function evaluatePrepared(array|TrainingRows $training, array|TrainingRows $test, int $k, array $settings, float $deadline): array
     {
+        $budget = new KnnCandidateBudget($deadline, null, 'Outcome KNN evaluation time budget exceeded.', $this->clock);
         $state = $this->emptyReport($k);
         $baseline = $this->majorityLabel($training);
         $trace = [];
         foreach ($test as $row) {
-            if (microtime(true) > $deadline) {
-                throw new RuntimeException('Outcome KNN evaluation time budget exceeded.');
-            }
+            $budget->checkpointShared();
             $neighbors = $this->neighbors->neighborsPrepared($training, $row['vector'], $k,
                 $row['decision_at_ms'], $row['feature_weights'] ?? []);
             $prediction = $this->outcomes->vote($neighbors, $k);
@@ -119,9 +133,13 @@ final class OutcomeKnnTuner
             if (count($trace) > 180) {
                 array_shift($trace);
             }
+            $budget->checkpointShared();
         }
 
-        return [...$this->finish($state, $settings), 'trace' => $trace];
+        $result = [...$this->finish($state, $settings), 'trace' => $trace];
+        $budget->checkpointShared();
+
+        return $result;
     }
 
     private function emptyReport(int $k): array

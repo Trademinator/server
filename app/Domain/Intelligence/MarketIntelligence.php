@@ -62,12 +62,13 @@ final class MarketIntelligence
         $buildPerformance['started_at'] ??= now()->toIso8601String();
         $buildPerformance['started_monotonic_ns'] = hrtime(true);
         $buildPerformance['stages'] ??= [];
-        $deadline = microtime(true) + config('intelligence.max_seconds');
+        $deadline = microtime(true) + TrainingRuntime::jobTimeout();
         $lock = Cache::lock('trademinator:intelligence-build:'.ModelStore::marketKey($exchange, $symbol, $period), TrainingRuntime::lockSeconds());
         if (! $lock->get()) {
             throw new RuntimeException('A knowledge build is already running for this market and period.');
         }
         try {
+            TrainingRuntime::registerLock($lock);
             if ($generation !== null && ($existing = $this->models->generation($generation)) !== null) {
                 return $existing;
             }
@@ -95,7 +96,7 @@ final class MarketIntelligence
                     && config('intelligence.technical_fallback', true)) {
                     $inspection = app(KnnSchemaFallback::class)->inspect(
                         $exchange, $symbol, $period, (int) $fromMs, $toMs, $asOfMs,
-                        $definition->horizon, $deadline
+                        $definition->horizon, TrainingRuntime::algorithmDeadline($deadline)
                     );
                     $effective = $inspection['effective_schema'];
                     if ($effective === null) {
@@ -124,12 +125,14 @@ final class MarketIntelligence
 
             return $this->trainer->train($dataset, $deadline, $generation, $buildPerformance, $schemaSelection,
                 beforePublish: function () use ($lock, $beforePublish): void {
+                    TrainingRuntime::heartbeat(true);
                     if (! $lock->isOwnedByCurrentProcess()) {
                         throw new RuntimeException('Knowledge build lock ownership was lost before publication.');
                     }
                     $beforePublish?->__invoke();
                 });
         } finally {
+            TrainingRuntime::unregisterLock($lock);
             $lock->release();
         }
     }

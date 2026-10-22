@@ -79,7 +79,7 @@ One machine may combine all roles; additional machines may combine any supported
 - Human Outcome Training and Human Action Training never overwrite algorithmic labels. For either KNN, W_H = min(0.60, 0.60 * sqrt(N_H / 750)); W_A = 1 - W_H. If one source abstains, the supported source receives 100% effective weight.
 - Final matrix: SELL with SUPER BEAR/BEAR/NEUTRAL => SELL; SELL with BULL/SUPER BULL => HOLD. HOLD => HOLD. BUY with SUPER BEAR/BEAR/NEUTRAL => HOLD; BUY with BULL/SUPER BULL => BUY.
 - Existing old-version models and frozen semantic datasets must be rebuilt; they are never silently reinterpreted.
-- `INTELLIGENCE_MAX_SECONDS` defaults to 1800 seconds. Intelligence jobs and workers use a 2400-second timeout with `retry_after >= 2700`. The four-hour profile uses 14400 seconds for model work, 15000 for the job/worker timeout and 15300 for reservation. Composer requires `ext-pcntl` so CLI workers can enforce hard timeouts.
+- `INTELLIGENCE_MAX_SECONDS` defaults to 1800 seconds per algorithm and parameter run, including each K candidate across its tuning folds. Training jobs carry a whole-build timeout derived from all enabled runs plus dataset work and cleanup; it overrides the worker timeout fallback. Queue reservations remain at least 300 seconds longer, while training locks and database leases renew through ownership-checked progress checkpoints and cover the longest single stage. Composer requires `ext-pcntl` so CLI workers can enforce hard timeouts.
 
 ## M4.2 acceptance and implementation
 

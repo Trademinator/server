@@ -234,7 +234,7 @@ it('retains pending training while intelligence is disabled and recovers stale b
     $stale = new RebuildBackfilledIntelligence($id, $first->build_lease_token);
     expect(app(BackfillIntelligence::class)->renew($id, $first->build_lease_token))->toBeTrue();
     $this->assertDatabaseHas('market_history_backfills', [
-        'history_id' => $id, 'build_lease_until' => '2024-01-10 04:11:00',
+        'history_id' => $id, 'build_lease_until' => '2024-01-10 04:10:00',
     ]);
     $this->travel(21)->minutes();
     expect(app(BackfillIntelligence::class)->dispatchDue())->toBe(0);
