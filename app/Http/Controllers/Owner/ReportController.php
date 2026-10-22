@@ -6,6 +6,7 @@ use App\Domain\Features\FeatureEngine;
 use App\Domain\Intelligence\CoinGeckoReadiness;
 use App\Domain\Intelligence\KnowledgeWaterfall;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\Operations\FailedJobMarketContext;
 use App\Domain\Operations\GeoLocation;
 use App\Domain\Operations\QueueBacklog;
 use App\Http\Controllers\Controller;
@@ -74,7 +75,7 @@ class ReportController extends Controller
             $failedQuery->orderBy($column, $failedDirection);
         }
         $failed = $failedQuery->orderByDesc('id')->limit(10)->get();
-        app(\App\Domain\Operations\FailedJobMarketContext::class)->enrich($failed);
+        app(FailedJobMarketContext::class)->enrich($failed);
         $failed->each(function ($job): void {
             $name = trim(Str::before(Str::before((string) $job->exception, "\n"), ':'));
             $job->exception_name = $name !== '' ? $name : 'Unknown exception';
@@ -137,7 +138,18 @@ class ReportController extends Controller
         $direction = $filters['direction'] = $filters['direction'] ?? ($sort === 'created_at' ? 'desc' : 'asc');
         $query = DB::table('intelligence_models as models')->leftJoin('intelligence_heads as heads', 'heads.model_id', '=', 'models.model_id')
             ->select('models.model_id', 'models.dataset_id', 'models.status', 'models.created_at', 'models.report', 'heads.model_id as current_id')
-            ->when(! ($filters['history'] ?? false), fn ($q) => $q->whereNotNull('heads.model_id'))
+            ->when(! ($filters['history'] ?? false), function ($query): void {
+                $query->whereNotNull('heads.model_id')
+                    ->whereExists(function ($active): void {
+                        $active->selectRaw('1')
+                            ->from('market_feeds as active_feeds')
+                            ->join('markets as active_markets', 'active_markets.market_id', '=', 'active_feeds.market_id')
+                            ->join('exchanges as active_exchanges', 'active_exchanges.exchange_id', '=', 'active_markets.exchange_id')
+                            ->whereColumn('active_feeds.selected_period', 'models.report->period')
+                            ->whereColumn('active_markets.symbol', 'models.report->symbol')
+                            ->whereColumn('active_exchanges.class', 'models.report->exchange');
+                    });
+            })
             ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('models.status', $status));
         $grammar = $query->getGrammar();
         foreach (preg_split('/\s+/u', $filters['q'], flags: PREG_SPLIT_NO_EMPTY) as $term) {

@@ -2,6 +2,7 @@
 
 namespace App\Domain\Intelligence;
 
+use App\Domain\Features\FeatureEngine;
 use App\Domain\Operations\ActionLog;
 use App\Domain\Research\FeatureSchema;
 use Composer\InstalledVersions;
@@ -21,7 +22,8 @@ final class ModelStore
 
     public static function isReadyReport(?array $report): bool
     {
-        return $report !== null && FeatureSchema::modelCompatible($report)
+        return $report !== null && ($report['feature_version'] ?? null) === FeatureEngine::VERSION
+            && FeatureSchema::modelCompatible($report)
             && self::rubixCompatible($report)
             && ($report['status'] ?? null) === 'ready'
             && ($report['validation_version'] ?? null) === IntelligenceTrainer::VERSION
@@ -212,7 +214,10 @@ final class ModelStore
                 ]);
                 $head = DB::table('intelligence_heads')->where('market_key', $key)->first();
                 $previous = $head === null ? null : $this->report($head->model_id);
-                if ($previous === null || $previous['trained_as_of_ms'] <= $artifact['trained_as_of_ms']) {
+                if (ModelPromotionPolicy::mayPromote($artifact, $previous)) {
+                    // Validate all persisted sidecars and checksums before atomically
+                    // moving the active head, never just the in-memory artifact.
+                    $this->verify($id);
                     DB::table('intelligence_heads')->upsert([
                         'market_key' => $key, 'model_id' => $id, 'updated_at' => now(),
                     ], ['market_key'], ['model_id', 'updated_at']);

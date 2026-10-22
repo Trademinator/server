@@ -41,8 +41,9 @@ $scheduleArtisan('trademinator:collect-market-context')
 $scheduleArtisan('trademinator:collect-market-events')
     ->everyFiveMinutes()->onOneServer()->withoutOverlapping(15)->runInBackground();
 
+// Scheduled feature prewarming; consumers may also request feature work directly.
 $scheduleArtisan('trademinator:dispatch-market-features')
-    ->everyMinute()->onOneServer()->withoutOverlapping(5);
+    ->twiceDaily(7, 19)->timezone('America/Toronto')->onOneServer()->withoutOverlapping(5);
 
 $scheduleArtisan('trademinator:dispatch-market-signals')
     ->everyMinute()->onOneServer()->withoutOverlapping(5);
@@ -73,7 +74,6 @@ $scheduleArtisan('trademinator:archive-eligible-tickers')
 // Prune expired multipart export/import staging files and metadata, never permanent archives.
 $scheduleArtisan('trademinator:prune-portable-archives')
     ->dailyAt('04:40')->onOneServer()->withoutOverlapping(60)->runInBackground();
-
 
 // Shadow research never affects published intelligence or Client actions.
 // Jobs run on separate tournament workers via the scheduler's asynchronous connection.

@@ -1,7 +1,7 @@
 @php
     $names = ['ohlcv' => 'OHLCV', 'features' => 'Features', 'labels' => 'Labels',
         'dataset' => 'Snapshot', 'ai' => 'AI'];
-    $stateLabels = ['green' => 'Healthy', 'yellow' => 'Warning', 'red' => 'Needs update'];
+    $stateLabels = ['green' => 'Healthy', 'yellow' => 'Warning', 'red' => 'Needs update', 'gray' => 'Blocked upstream'];
     $redCount = count(array_filter($waterfall, fn ($stage) => $stage['state'] === 'red'));
     $yellowCount = count(array_filter($waterfall, fn ($stage) => $stage['state'] === 'yellow'));
     $summary = $redCount > 0 ? $redCount.' need update'
@@ -28,6 +28,14 @@
                     </div>
                     <span class="knowledge-waterfall-stage-bar knowledge-waterfall-bar-{{ $health['state'] }}" aria-hidden="true"></span>
                     <p>{{ $health['detail'] }}</p>
+                    @if ($step === 'labels' && !empty($health['sources']))
+                        <div class="knowledge-label-sources" aria-label="Four labeling sources">
+                            @foreach ($health['sources'] as $source => $sourceHealth)
+                                <p><span class="knowledge-waterfall-mini-bar knowledge-waterfall-bar-{{ $sourceHealth['state'] }}" aria-hidden="true"></span>
+                                    <strong>{{ ucwords(str_replace('_', ' ', $source)) }}:</strong> {{ $sourceHealth['detail'] }}</p>
+                            @endforeach
+                        </div>
+                    @endif
                     @if ($health['through_ms'] !== null)
                         <small>Watermark: <x-display-time :value="$health['through_ms']" unit="milliseconds" /></small>
                     @endif

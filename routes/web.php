@@ -4,6 +4,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Markets\CandleTrainingController;
 use App\Http\Controllers\Markets\DashboardSuggestionController;
 use App\Http\Controllers\Markets\HumanTrainingController;
+use App\Http\Controllers\Markets\HumanAnnotationController;
 use App\Http\Controllers\Markets\IntelligenceController;
 use App\Http\Controllers\Markets\SubscriptionController;
 use App\Http\Controllers\Markets\SuggestionController;
@@ -84,6 +85,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 require __DIR__.'/auth.php';
 
 Route::prefix('human-training')->name('human-training.')->middleware(['auth', 'verified', 'can:train-intelligence'])->group(function () {
+    Route::get('ohlcv/{market}', [HumanAnnotationController::class, 'show'])
+        ->whereUuid('market')->name('ohlcv.show');
+    Route::post('ohlcv/{market}', [HumanAnnotationController::class, 'store'])
+        ->whereUuid('market')->middleware('throttle:30,1')->name('ohlcv.store');
     Route::get('/', [HumanTrainingController::class, 'index'])->name('index');
     Route::get('evaluations', [EvaluationController::class, 'index'])->name('evaluations.index');
     Route::get('evaluations/{model}', [EvaluationController::class, 'show'])->whereUuid('model')->name('evaluations.show');

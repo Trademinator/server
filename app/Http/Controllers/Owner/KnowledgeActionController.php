@@ -2,20 +2,20 @@
 
 namespace App\Http\Controllers\Owner;
 
+use App\Domain\Intelligence\KnowledgeRequestJournal;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\MarketData\MarketFeedDispatcher;
 use App\Domain\Operations\ActionLog;
 use App\Http\Controllers\Controller;
-use App\Jobs\AnalyzeMarketAutoLabels;
 use App\Jobs\BuildMarketFeatures;
 use App\Jobs\BuildOwnerDatasetSnapshot;
-use App\Jobs\TrainMarketIntelligence;
 use App\Models\Market;
+use App\Repositories\TickerRepository;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -73,8 +73,24 @@ final class KnowledgeActionController extends Controller
         return back()->with('status', strtoupper($action).' requested for '.$exchange.' '.$symbol.' ('.$period.'). Check the waterfall and job queue for results.');
     }
 
+    private function latestCompletedCandle(string $exchange, string $symbol, string $period): ?int
+    {
+        $latest = app(TickerRepository::class)->latestTimestamp($exchange, $symbol, $period);
+        if ($latest === null) {
+            return null;
+        }
+        $timeframe = new CandleTimeframe;
+
+        return $timeframe->next($latest, $period) <= now()->getTimestampMs()
+            ? $latest : max(0, $timeframe->previous($latest, $period));
+    }
+
     private function features(string $exchange, string $symbol, string $period): bool
     {
+        app(KnowledgeRequestJournal::class)->request(
+            $exchange, $symbol, $period, 'features',
+            $this->latestCompletedCandle($exchange, $symbol, $period)
+        );
         BuildMarketFeatures::dispatch($exchange, $symbol, $period)
             ->onQueue((string) config('features.queue', 'features'));
 
@@ -83,24 +99,22 @@ final class KnowledgeActionController extends Controller
 
     private function labels(string $exchange, string $symbol, string $period, string $scope): bool
     {
-        $cacheKey = 'trademinator:owner-knowledge-labels:'.$scope;
-        if (! Cache::add($cacheKey.':lock', true, now()->addMinutes(20))) {
-            return false;
-        }
-        Cache::put($cacheKey.':status', 'queued', now()->addDay());
-        try {
-            AnalyzeMarketAutoLabels::dispatch($exchange, $symbol, $period, $cacheKey)
-                ->onQueue((string) config('intelligence.queue'));
-        } catch (Throwable $error) {
-            Cache::forget($cacheKey.':lock');
-            throw $error;
-        }
+        // The trainer already evaluates four learning paths sequentially.
+        // Prepare mature algorithmic labels + compatible features first.
+        app(KnowledgeRequestJournal::class)
+            ->request($exchange, $symbol, $period, 'snapshot');
+        app(KnowledgeRequestJournal::class)
+            ->request($exchange, $symbol, $period, 'ai');
+        BuildOwnerDatasetSnapshot::dispatch($exchange, $symbol, $period, true)
+            ->onQueue((string) config('intelligence.queue'));
 
         return true;
     }
 
     private function snapshot(string $exchange, string $symbol, string $period): bool
     {
+        app(KnowledgeRequestJournal::class)
+            ->request($exchange, $symbol, $period, 'snapshot');
         BuildOwnerDatasetSnapshot::dispatch($exchange, $symbol, $period)
             ->onQueue((string) config('intelligence.queue'));
 
@@ -109,7 +123,11 @@ final class KnowledgeActionController extends Controller
 
     private function train(string $exchange, string $symbol, string $period): bool
     {
-        TrainMarketIntelligence::dispatch($exchange, $symbol, $period, 'owner:'.Str::uuid7())
+        app(KnowledgeRequestJournal::class)
+            ->request($exchange, $symbol, $period, 'snapshot');
+        app(KnowledgeRequestJournal::class)
+            ->request($exchange, $symbol, $period, 'ai');
+        BuildOwnerDatasetSnapshot::dispatch($exchange, $symbol, $period, true)
             ->onQueue((string) config('intelligence.queue'));
 
         return true;

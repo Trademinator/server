@@ -41,8 +41,10 @@ final class KnowledgeWaterfall
             ->where('market_id', $marketId)->where('period', $period)
             ->first(['history_revision', 'trained_revision']);
         $historyDirty = $history !== null && (int) $history->history_revision > (int) $history->trained_revision;
+        $windowStart = KnowledgeWindow::fromMs($nowMs);
         $unresolvedGaps = $marketId === null ? 0 : DB::table('candle_gap_repairs')
-            ->where('market_id', $marketId)->where('period', $period)->where('status', '!=', 'resolved')->count();
+            ->where('market_id', $marketId)->where('period', $period)
+            ->where('status', '!=', 'resolved')->where('to_ms', '>', $windowStart)->count();
         $feed = $marketId === null ? null : DB::table('market_feeds')
             ->where('market_id', $marketId)->first(['status', 'last_error']);
 
@@ -56,7 +58,7 @@ final class KnowledgeWaterfall
         } else {
             $behind = $this->periodsBehind($sourceMs, $period, $nowMs);
             $ohlcv = match (true) {
-                $behind === -1 => $this->stage('yellow', 'The newest OHLCV candle has not closed yet.', $sourceMs),
+                $behind === -1 => $this->stage('green', 'Newest OHLCV is still forming; the latest completed period is not overdue.', $sourceMs),
                 $behind === 0 && $feed?->last_error === null => $this->stage('green', 'Latest completed OHLCV is current; no unresolved tracked gaps.', $sourceMs),
                 $behind <= 2 => $this->stage('yellow', $feed?->last_error !== null
                     ? 'Collection has a recorded warning; inspect the market feed.' : 'OHLCV is slightly behind the latest closed candle.', $sourceMs),
@@ -64,6 +66,8 @@ final class KnowledgeWaterfall
             };
         }
 
+        $featureRequest = DB::table('knowledge_stage_requests')->where($scope)
+            ->where('stage', 'features')->orderByDesc('created_at')->first();
         $featuresMs = DB::table('market_features')->where($scope)
             ->where('version', FeatureEngine::VERSION)->where('available_at_ms', '<=', $nowMs)
             ->max('microtimestamp');
@@ -85,6 +89,21 @@ final class KnowledgeWaterfall
             };
         }
 
+        if ($featureRequest === null && $featuresMs === null && $sourceMs !== null) {
+            $features = $this->stage('green', 'Features have not been requested; no work is overdue.');
+        } elseif ($featureRequest === null && $featuresMs !== null && ! $historyDirty) {
+            $features = $this->stage('green', 'No outstanding feature request. Cached features are reusable.', (int) $featuresMs);
+        } elseif ($featureRequest !== null) {
+            $requestState = $featureRequest->status;
+            $features = match ($requestState) {
+                'completed' => $this->stage('green', 'Last requested feature range completed.', (int) ($featuresMs ?? 0)),
+                'failed' => $this->stage('red', 'Feature calculation failed; inspect the request error.', $featuresMs === null ? null : (int) $featuresMs),
+                'blocked' => $this->stage('gray', 'Feature build is blocked by required upstream OHLCV.', $featuresMs === null ? null : (int) $featuresMs),
+                default => $this->stage($featureRequest->created_at < now()->subMinutes((int) config('intelligence.knowledge_warning_minutes', 30))->toDateTimeString() ? 'yellow' : 'green',
+                    'Feature work requested; status: '.$requestState.'.', $featuresMs === null ? null : (int) $featuresMs),
+            };
+        }
+
         $labelReport = DB::table('market_action_label_analyses')->where($scope)->first(['as_of_ms', 'analysis']);
         if ($labelReport === null) {
             $labels = $this->stage('red', 'Never analyzed: no Action-label diagnostics are published.');
@@ -97,14 +116,30 @@ final class KnowledgeWaterfall
                 $labels = $this->stage('red', 'Label analysis is beyond the configured knowledge age.', $asOf);
             } elseif (($analysis['status'] ?? null) !== 'validated') {
                 $labels = $this->stage('yellow', 'Action analysis exists, but the Outcome horizon is not validated.', $asOf);
-            } elseif ($featuresMs !== null
-                && $this->stepsBetween($asOf, (int) $featuresMs, $period) > 2) {
-                $labels = $this->stage('red', 'Label analysis is more than two candles behind current features.', $asOf);
-            } elseif ($featuresMs === null || $asOf < (int) $featuresMs) {
-                $labels = $this->stage('yellow', 'Label analysis predates current features; pending labels still require future confirmation.', $asOf);
             } else {
                 $labels = $this->stage('green', 'Latest Action analysis is validated; immature labels remain excluded.', $asOf);
             }
+        }
+
+        $labelRequest = DB::table('knowledge_stage_requests')->where($scope)
+            ->where('stage', 'labels')->orderByDesc('created_at')->first();
+        if ($labelRequest !== null) {
+            $labels = match ($labelRequest->status) {
+                'failed' => $this->stage('red', 'Requested labeling failed; inspect the error.', $labels['through_ms']),
+                'blocked' => $this->stage('gray', 'Labeling blocked by OHLCV inputs.', $labels['through_ms']),
+                'queued', 'running' => $this->stage(
+                    $labelRequest->created_at < now()->subMinutes((int) config('intelligence.knowledge_warning_minutes', 30))->toDateTimeString() ? 'yellow' : 'green',
+                    'Labeling request pending; a warning is shown only if overdue.', $labels['through_ms']),
+                default => $this->stage('green', 'Requested label analysis completed.', $labels['through_ms']),
+            };
+        } elseif ($labelReport === null) {
+            $labels = $this->stage('green', 'No label generation requested yet.');
+        }
+
+        $labelSources = app(KnowledgeLabelSources::class)->describe($exchange, $symbol, $period);
+        $labels['sources'] = $labelSources;
+        if ($labelRequest !== null && $labelRequest->status === 'completed') {
+            $labels['detail'] = 'Last requested algorithmic labeling completed. Human annotations remain optional.';
         }
 
         // Prefer the newest published snapshot for this market, even if it has
@@ -119,7 +154,7 @@ final class KnowledgeWaterfall
                 ->first(['dataset_id', 'manifest']);
         }
         if ($dataset === null) {
-            $snapshot = $this->stage('red', 'Never built: there is no immutable research dataset snapshot.');
+            $snapshot = $this->stage('gray', 'No immutable snapshot has been requested or completed yet.');
         } else {
             try {
                 // Verify the on-disk manifest against the DB record without loading rows.
@@ -135,9 +170,9 @@ final class KnowledgeWaterfall
             } elseif (! is_int($manifest['as_of_ms'] ?? null) || ($manifest['rows'] ?? 0) < 1) {
                 $snapshot = $this->stage('red', 'Snapshot has no verified knowledge cutoff or eligible rows.');
             } else {
-                $snapshot = $this->byAge((int) $manifest['as_of_ms'], $nowMs,
-                    'Compatible frozen dataset exists.', 'Snapshot is old; a newer one can be built.',
-                    'Snapshot exceeds the retained knowledge age.');
+                $snapshot = $this->stage('green',
+                    'Immutable snapshot verified; its historical cutoff remains valid regardless of age.',
+                    (int) $manifest['as_of_ms']);
                 if ($historyDirty && $snapshot['state'] === 'green') {
                     $snapshot = $this->stage('yellow', 'History was revised after training; a new snapshot is recommended.',
                         (int) $manifest['as_of_ms']);
@@ -167,6 +202,35 @@ final class KnowledgeWaterfall
             }
             if ($historyDirty && $ai['state'] === 'green') {
                 $ai = $this->stage('yellow', 'Live model remains published, but historical changes require retraining.', $trainedAt);
+            }
+        }
+
+        foreach (['snapshot' => 'dataset', 'ai' => 'ai'] as $requestStage => $viewStage) {
+            $request = DB::table('knowledge_stage_requests')->where($scope)
+                ->where('stage', $requestStage)->orderByDesc('created_at')->first();
+            if ($request === null) {
+                continue;
+            }
+            $state = match ($request->status) {
+                'failed' => $viewStage === 'ai' && in_array($ai['state'], ['green', 'yellow'], true) ? 'yellow' : 'red',
+                'retained' => $viewStage === 'ai' ? 'yellow' : null,
+                'blocked' => 'gray',
+                'queued', 'running' => $request->created_at < now()->subMinutes((int) config('intelligence.knowledge_warning_minutes', 30))->toDateTimeString()
+                    ? 'yellow' : 'green',
+                default => null,
+            };
+            if ($state !== null) {
+                $diagnostic = match ($request->status) {
+                    'failed' => 'Task failed: '.($request->error ?: 'inspect the failed job'),
+                    'retained' => 'Candidate validated but not promoted; incumbent model retained.',
+                    'blocked' => 'Task waiting for required upstream knowledge.',
+                    default => 'Request '.$request->status.'; processing is managed by the queue.',
+                };
+                if ($viewStage === 'ai') {
+                    $ai = $this->stage($state, $diagnostic, $ai['through_ms']);
+                } else {
+                    $snapshot = $this->stage($state, $diagnostic, $snapshot['through_ms']);
+                }
             }
         }
 
@@ -213,6 +277,7 @@ final class KnowledgeWaterfall
     private function byAge(int $asOfMs, int $nowMs, string $healthy, string $warning, string $expired): array
     {
         $days = ($nowMs - $asOfMs) / 86_400_000;
+
         return match (true) {
             $days < 0 => $this->stage('red', 'Knowledge cutoff lies in the future.', $asOfMs),
             $days > KnowledgeWindow::days() => $this->stage('red', $expired, $asOfMs),

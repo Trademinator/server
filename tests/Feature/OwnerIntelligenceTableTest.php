@@ -1,6 +1,9 @@
 <?php
 
 use App\Domain\Intelligence\ModelStore;
+use App\Models\Exchange;
+use App\Models\Market;
+use App\Models\MarketFeed;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -30,6 +33,12 @@ function intelligenceTableModel(array $report = [], bool $current = true, string
         'report' => json_encode($report, JSON_THROW_ON_ERROR)]);
     if ($current) {
         DB::table('intelligence_heads')->insert(['market_key' => $key, 'model_id' => $model, 'updated_at' => $builtAt]);
+        $exchange = Exchange::query()->firstOrCreate(['class' => $report['exchange']],
+            ['name' => ucfirst($report['exchange']), 'config' => '{}']);
+        $market = Market::query()->firstOrCreate(['exchange_id' => $exchange->exchange_id, 'symbol' => $report['symbol']],
+            ['tick_size' => '0.01']);
+        MarketFeed::query()->updateOrCreate(['market_id' => $market->market_id],
+            ['selected_period' => $report['period'], 'status' => 'ready']);
     }
 
     return $model;
@@ -181,4 +190,21 @@ it('shows persisted auto-label d H and independent K diagnostics', function () {
         ->assertSee('Outcome 9')
         ->assertSee('Action 17')
         ->assertSee('H</strong> = round(Σ(d × frequency) / Σfrequency)', false);
+});
+
+it('shows the selected candle period and keeps older periods in model history', function () {
+    $owner = intelligenceTableOwner();
+    $older = intelligenceTableModel(['exchange' => 'bitso', 'symbol' => 'ATOM/USD', 'period' => '15m']);
+    $current = intelligenceTableModel(['exchange' => 'bitso', 'symbol' => 'ATOM/USD', 'period' => '1h']);
+    $otherOlder = intelligenceTableModel(['exchange' => 'bitso', 'symbol' => 'ATOM/USD', 'period' => '4h']);
+    $market = Market::query()->where('symbol', 'ATOM/USD')->firstOrFail();
+    $market->feed->update(['selected_period' => '1h']);
+
+    $this->actingAs($owner)->get(route('owner.intelligence'))
+        ->assertOk()
+        ->assertViewHas('models', fn ($models) => $models->pluck('model_id')->all() === [$current])
+        ->assertSee('<strong class="owner-intelligence-market-name">bitso · ATOM/USD</strong>', false);
+
+    $this->get(route('owner.intelligence', ['history' => 1]))
+        ->assertOk()->assertViewHas('models', fn ($models) => count(array_intersect($models->pluck('model_id')->all(), [$older, $current, $otherOlder])) === 3);
 });

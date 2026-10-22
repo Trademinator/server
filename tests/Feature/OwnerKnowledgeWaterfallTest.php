@@ -1,5 +1,7 @@
 <?php
 
+use App\Domain\Intelligence\KnowledgeRequestJournal;
+use App\Domain\Intelligence\ModelStore;
 use App\Jobs\BuildMarketFeatures;
 use App\Jobs\BuildOwnerDatasetSnapshot;
 use App\Jobs\CollectMarketFeed;
@@ -9,7 +11,9 @@ use App\Models\Market;
 use App\Models\MarketFeed;
 use App\Models\MarketSubscription;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 function waterfallOwnerAndMarket(): array
 {
@@ -49,8 +53,7 @@ it('queues a requested feature build only for the authorized selected market and
     [$owner, $market] = waterfallOwnerAndMarket();
     $this->actingAs($owner)->post(route('owner.intelligence.action', $market), ['action' => 'features'])
         ->assertRedirect()->assertSessionHas('status');
-    Queue::assertPushed(BuildMarketFeatures::class, fn ($job) =>
-        $job->exchange === 'kraken' && $job->symbol === 'BTC/USD' && $job->period === '1m');
+    Queue::assertPushed(BuildMarketFeatures::class, fn ($job) => $job->exchange === 'kraken' && $job->symbol === 'BTC/USD' && $job->period === '1m');
 });
 
 it('forces exactly the requested feed while respecting its existing lease', function () {
@@ -70,7 +73,9 @@ it('can queue an immutable dataset snapshot and model retraining separately', fu
     $this->post(route('owner.intelligence.action', $market), ['action' => 'train'])
         ->assertRedirect();
     Queue::assertPushed(BuildOwnerDatasetSnapshot::class);
-    Queue::assertPushed(TrainMarketIntelligence::class);
+    Queue::assertNotPushed(TrainMarketIntelligence::class);
+    expect(app(KnowledgeRequestJournal::class)
+        ->outstanding('kraken', 'BTC/USD', '1m', 'snapshot'))->toBe(1);
 });
 
 it('rejects arbitrary commands, inactive subscriptions, and non-owner requests', function () {
@@ -88,7 +93,6 @@ it('rejects arbitrary commands, inactive subscriptions, and non-owner requests',
     Queue::assertNotPushed(TrainMarketIntelligence::class);
 });
 
-
 it('keeps the waterfall collapsed below each pair and provides responsive card styling', function () {
     [$owner] = waterfallOwnerAndMarket();
     $this->actingAs($owner)->get(route('owner.intelligence'))
@@ -102,16 +106,15 @@ it('keeps the waterfall collapsed below each pair and provides responsive card s
         ->toContain('.knowledge-waterfall-toggle');
 });
 
-
 it('places the current model waterfall beneath the pair in a full-width table row', function () {
     [$owner, $market] = waterfallOwnerAndMarket();
-    $datasetId = (string) \Illuminate\Support\Str::uuid();
-    $modelId = (string) \Illuminate\Support\Str::uuid();
-    $marketKey = \App\Domain\Intelligence\ModelStore::marketKey('kraken', 'BTC/USD', '1m');
-    \Illuminate\Support\Facades\DB::table('research_datasets')->insert([
+    $datasetId = (string) Str::uuid();
+    $modelId = (string) Str::uuid();
+    $marketKey = ModelStore::marketKey('kraken', 'BTC/USD', '1m');
+    DB::table('research_datasets')->insert([
         'dataset_id' => $datasetId, 'manifest' => '{}', 'created_at' => now(),
     ]);
-    \Illuminate\Support\Facades\DB::table('intelligence_models')->insert([
+    DB::table('intelligence_models')->insert([
         'model_id' => $modelId, 'dataset_id' => $datasetId, 'market_key' => $marketKey,
         'status' => 'abstaining', 'sha256' => str_repeat('0', 64), 'created_at' => now(),
         'report' => json_encode([
@@ -119,7 +122,7 @@ it('places the current model waterfall beneath the pair in a full-width table ro
             'status' => 'abstaining', 'reason' => 'no_eligible_k', 'knowledge_rows' => 0,
         ], JSON_THROW_ON_ERROR),
     ]);
-    \Illuminate\Support\Facades\DB::table('intelligence_heads')->insert([
+    DB::table('intelligence_heads')->insert([
         'market_key' => $marketKey, 'model_id' => $modelId, 'updated_at' => now(),
     ]);
 

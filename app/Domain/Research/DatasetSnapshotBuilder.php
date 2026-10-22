@@ -27,6 +27,7 @@ final class DatasetSnapshotBuilder
         private DatasetStore $store,
         private TickerRepository $tickers,
         private ActionLabelAnalysis $actionAnalysis,
+        private \App\Domain\Intelligence\AlgorithmicLabelSets $labelSets,
         private ActionLabelReportStore $actionReports,
     ) {}
 
@@ -94,16 +95,22 @@ final class DatasetSnapshotBuilder
                 $actionDiagnostics = null;
                 $outcomeAvailable = true;
                 if ($definition instanceof SemanticLabels) {
-                    $analysis = $this->actionAnalysis->analyze($exchange, $symbol, $period, $asOfMs);
-                    $algorithmicActions = $analysis['_action_labels'];
-                    $algorithmicActionAvailability = $analysis['_action_available_at_ms'];
-                    $actionDiagnostics = ActionLabelAnalysis::publicDiagnostics($analysis);
-                    if ($analysis['horizon'] === null) {
+                    $set = $this->labelSets->find($exchange, $symbol, $period, $asOfMs);
+                    if ($set === null) {
+                        // Non-orchestrated CLI callers still receive a safe, on-demand build.
+                        $set = app(\App\Domain\Intelligence\AlgorithmicLabelBuilder::class)
+                            ->build($exchange, $symbol, $period, $asOfMs);
+                    }
+                    $algorithmicActions = $set['action_labels'];
+                    $algorithmicActionAvailability = $set['action_available_at_ms'];
+                    $actionDiagnostics = $set['action'];
+                    if ($set['outcome_horizon'] === null) {
                         $outcomeAvailable = false;
                     } else {
-                        $definition = $definition->withHorizon($analysis['horizon']);
+                        $definition = $definition->withHorizon($set['outcome_horizon']);
                     }
-                    unset($analysis);
+                    $frozenOutcomes = $set['outcome_labels'];
+                    unset($set);
                 }
 
                 $candles = $this->tickers->streamHistory(
@@ -256,8 +263,16 @@ final class DatasetSnapshotBuilder
                     $entry = $window[1];
                     $exit = $window[$definition->horizon];
                     $label = $definition instanceof SemanticLabels
-                        ? $definition->label($past, $window)
+                        ? ($frozenOutcomes[$timestamp] ?? null)
                         : $definition->label((float) $entry['open'], (float) $exit['close']);
+                    if ($label === null) {
+                        $counts['immature']++;
+                        continue;
+                    }
+                    if ($definition instanceof SemanticLabels) {
+                        $label['action'] = $label['label'];
+                        unset($label['label']);
+                    }
                     $row = [
                         'microtimestamp' => $timestamp, 'decision_at_ms' => $decision,
                         'entry_at_ms' => $entry['microtimestamp'], 'label_available_at_ms' => $labelAvailable,

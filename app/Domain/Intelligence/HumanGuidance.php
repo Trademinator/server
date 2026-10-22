@@ -188,6 +188,12 @@ final class HumanGuidance
                 ];
             }
         }
+        foreach (app(IndependentHumanAnnotations::class)->opinions($manifest, 'human_outcome', $annotationCutoff, $deadline) as $opinion) {
+            $decision = $opinion['decision_at_ms'];
+            if (! isset($opinions[$decision]) || ($opinion['updated_at_ms'] ?? 0) > ($opinions[$decision]['updated_at_ms'] ?? 0)) {
+                $opinions[$decision] = $opinion;
+            }
+        }
         ksort($opinions);
 
         return array_values($opinions);

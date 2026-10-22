@@ -7,6 +7,7 @@ use App\Domain\Features\FeatureBuilder;
 use App\Domain\Features\FeatureBuildLocked;
 use App\Domain\Features\FeatureEngine;
 use App\Domain\Features\FeatureReplayTimeout;
+use App\Domain\Intelligence\KnowledgeRequestJournal;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\Operations\ActionLog;
 use App\Repositories\TickerRepository;
@@ -54,6 +55,13 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
         if ($latestCandle === null) {
             return;
         }
+        $timeframe = new CandleTimeframe;
+        if ($timeframe->next($latestCandle, $this->period) > now()->getTimestampMs()) {
+            $latestCandle = $timeframe->previous($latestCandle, $this->period);
+        }
+        if ($latestCandle < 0) {
+            return;
+        }
 
         $latestFeature = DB::table('market_features')
             ->where('exchange', $this->exchange)
@@ -64,10 +72,12 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
 
         // A previous queued build may have caught up before this job started.
         if ($this->replayCutoffMs === null && $latestFeature !== null && (int) $latestFeature >= $latestCandle) {
+            app(KnowledgeRequestJournal::class)
+                ->markSatisfied($this->exchange, $this->symbol, $this->period, 'features', (int) $latestFeature);
+
             return;
         }
 
-        $timeframe = new CandleTimeframe;
         $fromMs = $this->replayFromMs;
         if ($this->replayCutoffMs === null && $latestFeature !== null) {
             // Rebuild a small overlap so any recent exchange correction is folded
@@ -130,7 +140,22 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
         if ($chunkCutoffMs < $cutoffMs) {
             $this->continueReplay($fromMs, $cutoffMs, $chunkCutoffMs, $chunkCandles);
             $this->logContinuation($rows, $timeframe->previous($chunkCutoffMs, $this->period), $started, 'chunk_limit');
+        } else {
+            $completed = DB::table('market_features')->where('exchange', $this->exchange)
+                ->where('symbol', $this->symbol)->where('period', $this->period)
+                ->where('version', FeatureEngine::VERSION)->max('microtimestamp');
+            if ($completed !== null) {
+                app(KnowledgeRequestJournal::class)
+                    ->markSatisfied($this->exchange, $this->symbol, $this->period, 'features', (int) $completed);
+            }
         }
+    }
+
+    public function failed(?\Throwable $error): void
+    {
+        app(KnowledgeRequestJournal::class)
+            ->fail($this->exchange, $this->symbol, $this->period, 'features',
+                $error?->getMessage() ?? 'Feature build exhausted retries.');
     }
 
     private function continueReplay(?int $fromMs, int $cutoffMs, ?int $checkpointBeforeMs, int $chunkCandles): void

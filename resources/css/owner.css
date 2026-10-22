@@ -153,3 +153,12 @@
         border-color: #43536b;
     }
 }
+
+.knowledge-waterfall-bar-gray { background: #87909c; }
+
+.knowledge-label-sources { display: grid; gap: 3px; margin-top: 8px; }
+.knowledge-label-sources p { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: .67rem; margin: 2px 0; }
+.knowledge-label-sources .knowledge-waterfall-mini-bar { width: 9px; height: 9px; flex: none; }
+
+.owner-intelligence-market-name { color: #187448; font-weight: 800; }
+.dark .owner-intelligence-market-name { color: #79dfaa; }

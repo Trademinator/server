@@ -165,12 +165,14 @@ it('keeps the combined model abstaining when Outcome validation fails despite va
         ->and($report['action']['human']['status'])->toBe('validated');
     IntelligenceFixtures::feature(250, 1.0);
     $this->travelTo('2024-01-01 04:11:00 UTC');
+    // The rejected candidate remains available for diagnostics, but failed
+    // Outcome validation cannot promote a new active model.
     $signal = app(MarketIntelligence::class)->predict('kraken', 'BTC/USD', '1m');
-    $expectedHuman = 0.60 * sqrt(240 / 750);
-    expect($signal['action'])->toBe('sell')
-        ->and($signal['reason'])->toBe('degraded_action_only')
-        ->and($signal['action_knn']['sources']['effective_weights']['human'])->toEqualWithDelta($expectedHuman, 1e-12)
-        ->and($signal['action_knn']['sources']['effective_weights']['algorithmic'])->toEqualWithDelta(1 - $expectedHuman, 1e-12);
+    expect($signal['action'])->toBe('hodl')
+        ->and($signal['confidence'])->toBe(0.0)
+        ->and(app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m'))->toBeNull();
+    $this->assertDatabaseCount('intelligence_models', 1);
+    $this->assertDatabaseCount('intelligence_heads', 0);
 });
 
 it('keeps final holdout annotations out of policy selection and purges both chronology boundaries', function () {

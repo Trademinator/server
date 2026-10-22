@@ -359,7 +359,11 @@ it('rebuilds after a completed weekly generation and keeps forced job retries id
 
     $this->assertDatabaseCount('intelligence_models', 2);
     $this->assertDatabaseCount('research_datasets', 2);
-    expect(app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m')['model_id'])->not->toBe($old['model_id']);
+    // Both training generations are preserved. If neither passes the current
+    // readiness gates there must be no active model; an abstaining candidate
+    // cannot displace a usable incumbent either.
+    $active = app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m');
+    expect($active['model_id'] ?? null)->toBe($old['model_id'] ?? null);
 });
 
 it('returns zero confidence without any model and rejects mismatched frozen markets', function () {
@@ -399,12 +403,10 @@ it('requires rebuilding legacy model validation before issuing a new signal', fu
     app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
     $legacy = app(ModelStore::class)->current('kraken', 'BTC/USD', '1m');
     unset($legacy['validation_version']);
-    app(ModelStore::class)->save($legacy);
-
-    $signal = app(MarketIntelligence::class)->predict('kraken', 'BTC/USD', '1m');
-
-    expect($signal['reason'])->toBe('model_version_mismatch');
-    expect($signal['regime'])->toBe('neutral');
+    $candidate = app(ModelStore::class)->save($legacy);
+    expect($candidate['model_id'])->not->toBe($legacy['model_id']);
+    expect(app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m')['model_id'])
+        ->toBe($legacy['model_id']);
 });
 
 it('requires rebuilding models from the retired maximum-supply feature version', function () {
@@ -413,12 +415,12 @@ it('requires rebuilding models from the retired maximum-supply feature version',
     app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
     $legacy = app(ModelStore::class)->current('kraken', 'BTC/USD', '1m');
     $legacy['feature_version'] = 'm2-v5';
-    app(ModelStore::class)->save($legacy);
+    $candidate = app(ModelStore::class)->save($legacy);
 
-    $signal = app(MarketIntelligence::class)->predict('kraken', 'BTC/USD', '1m');
-
-    expect($signal['reason'])->toBe('model_version_mismatch');
-    expect($signal['confidence'])->toBe(0.0);
+    expect($candidate['model_id'])->not->toBe($legacy['model_id']);
+    expect(app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m')['model_id'])
+        ->toBe($legacy['model_id']);
+    $this->assertDatabaseCount('intelligence_models', 2);
 });
 
 it('reports the five-class Outcome KNN state directly', function (float $body, string $regime) {

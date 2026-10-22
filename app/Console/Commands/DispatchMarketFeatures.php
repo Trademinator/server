@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Domain\Features\FeatureEngine;
+use App\Domain\Intelligence\KnowledgeRequestJournal;
+use App\Domain\MarketData\CandleTimeframe;
 use App\Jobs\BuildMarketFeatures;
 use App\Models\MarketFeed;
 use App\Repositories\TickerRepository;
@@ -32,6 +34,13 @@ final class DispatchMarketFeatures extends Command
             if ($latestCandle === null) {
                 continue;
             }
+            $timeframe = new CandleTimeframe;
+            if ($timeframe->next($latestCandle, $period) > now()->getTimestampMs()) {
+                $latestCandle = $timeframe->previous($latestCandle, $period);
+            }
+            if ($latestCandle < 0) {
+                continue;
+            }
 
             $latestFeature = DB::table('market_features')
                 ->where('exchange', $exchange)
@@ -44,6 +53,8 @@ final class DispatchMarketFeatures extends Command
                 continue;
             }
 
+            app(KnowledgeRequestJournal::class)
+                ->request($exchange, $symbol, $period, 'features', $latestCandle);
             BuildMarketFeatures::dispatch($exchange, $symbol, $period);
             $count++;
         }

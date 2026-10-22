@@ -34,7 +34,7 @@
                 <tbody>
                     @forelse ($models as $model)
                         <tr class="owner-intelligence-model">
-                            <td class="owner-intelligence-market-cell">{{ $model->summary['exchange'] ?? 'Unknown' }} · {{ $model->summary['symbol'] ?? 'Unknown' }}
+                            <td class="owner-intelligence-market-cell"><strong class="owner-intelligence-market-name">{{ $model->summary['exchange'] ?? 'Unknown' }} · {{ $model->summary['symbol'] ?? 'Unknown' }}</strong>
                                 <small>{{ $model->summary['period'] ?? 'Unknown' }} · {{ $model->current_id ? 'Current model' : 'Historical version' }}</small>
                             </td>
                             <td data-label="Readiness"><x-knn-readiness :report="$model->summary" :coingecko="$model->coingecko" /><small>{{ $model->summary['reason'] ?? 'Unknown' }}</small></td>

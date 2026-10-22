@@ -419,6 +419,12 @@ final class HumanCandleKnn
             $metric = $opinion['provenance']['projection_version'] === 'legacy_same_version' ? 'legacy_same_version_candles' : 'projected_candles';
             $diagnostics[$metric]++;
         }
+        foreach (app(IndependentHumanAnnotations::class)->opinions($manifest, 'human_action', $annotationCutoff, $deadline) as $opinion) {
+            $decision = $opinion['decision_at_ms'];
+            if (! isset($opinions[$decision]) || ($opinion['updated_at_ms'] ?? 0) > ($opinions[$decision]['updated_at_ms'] ?? 0)) {
+                $opinions[$decision] = $opinion;
+            }
+        }
         ksort($opinions);
         ksort($diagnostics['excluded']);
 

@@ -25,6 +25,7 @@ return [
     'max_seconds' => $automaticSeconds,
     // Both the training history window and the published model's maximum age.
     'max_model_age_days' => (int) env('INTELLIGENCE_MAX_MODEL_AGE_DAYS', 14),
+    'knowledge_warning_minutes' => max(1, (int) env('INTELLIGENCE_KNOWLEDGE_WARNING_MINUTES', 30)),
     'max_signal_age_periods' => (int) env('INTELLIGENCE_MAX_SIGNAL_AGE_PERIODS', 2),
     'max_signal_age_seconds' => max(60, (int) env('INTELLIGENCE_MAX_SIGNAL_AGE_SECONDS', 86400)),
     'knn' => [

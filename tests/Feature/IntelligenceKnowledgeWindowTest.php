@@ -74,8 +74,10 @@ it('moves the retained history forward on each rebuild without accumulating dupl
     $firstReport = app(IntelligenceTrainer::class)->train($first['dataset_id']);
     $second = IntelligenceFixtures::snapshot(27, period: '1d');
 
-    app(IntelligenceTrainer::class)->train($second['dataset_id']);
-    $artifact = app(ModelStore::class)->current('kraken', 'BTC/USD', '1d');
+    $secondReport = app(IntelligenceTrainer::class)->train($second['dataset_id']);
+    // A saved candidate remains inspectable even if it does not pass
+    // publication gates; history retention is independent of promotion.
+    $artifact = app(ModelStore::class)->load($secondReport['model_id']);
     $decisions = array_column($artifact['knowledge'], 'decision_at_ms');
 
     expect($artifact['knowledge_rows'])->toBe(12)

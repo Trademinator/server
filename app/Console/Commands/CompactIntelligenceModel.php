@@ -41,6 +41,7 @@ final class CompactIntelligenceModel extends Command
             // Generation keys identify training runs and must remain unique.
             // Publish a new immutable artifact; keep the old model as a rollback.
             $artifact['generation_key'] = null;
+            $artifact['compacted_from_model_id'] = $previousId;
             $report = $models->save($artifact);
             $active = $models->currentForPrediction($exchange, $symbol, $period);
             if ($active['model_id'] !== $report['model_id']) {

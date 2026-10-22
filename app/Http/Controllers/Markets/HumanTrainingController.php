@@ -47,7 +47,8 @@ class HumanTrainingController extends Controller
             }
         }
 
-        return response()->view('markets.human-training', ['datasets' => $datasets, 'selectedDataset' => $selectedDataset,
+        return response()->view('markets.human-training', ['datasets' => $datasets,
+            'availableMarkets' => $pairOptions->markets($request->user(), allSubscribed: Gate::allows('manage-server')), 'selectedDataset' => $selectedDataset,
             'pending' => $pending, 'completed' => (clone $reviews)->whereIn('label', HumanTraining::acceptedLabels())->count(),
             'candleCompleted' => $candleTraining->count($request->user()),
             'statistics' => Gate::allows('manage-server') ? $this->statistics() : null,
