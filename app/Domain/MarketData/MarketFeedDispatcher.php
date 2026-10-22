@@ -10,6 +10,36 @@ use Throwable;
 
 final class MarketFeedDispatcher
 {
+    /** Queue precisely this feed, even if its next scheduled pull is in the future. */
+    public function dispatchOne(string $marketId, bool $force = false): bool
+    {
+        $token = (string) Str::uuid7();
+        $candidate = DB::table('market_feeds')->where('market_id', $marketId)
+            ->where(fn ($query) => $query->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
+            ->whereExists(fn ($query) => $query->selectRaw('1')->from('market_subscriptions')
+                ->whereColumn('market_subscriptions.market_id', 'market_feeds.market_id')->where('active', true));
+        if (! $force) {
+            $candidate->where('next_pull_at', '<=', now());
+        }
+        $claimed = $candidate->update([
+            'lease_token' => $token, 'lease_until' => now()->addMinutes(15),
+            'status' => 'queued', 'updated_at' => now(),
+        ]);
+        if (! $claimed) {
+            return false;
+        }
+        try {
+            CollectMarketFeed::dispatch($marketId, $token);
+        } catch (Throwable $error) {
+            DB::table('market_feeds')->where('market_id', $marketId)->where('lease_token', $token)
+                ->update(['lease_token' => null, 'lease_until' => null, 'status' => 'error',
+                    'last_error' => mb_substr($error->getMessage(), 0, 1000), 'updated_at' => now()]);
+            throw $error;
+        }
+
+        return true;
+    }
+
     public function dispatchDue(int $limit = 100): int
     {
         $dispatched = 0;

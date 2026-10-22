@@ -46,3 +46,110 @@
 .dark .owner-nav a[aria-current], .dark .owner-nav a:hover { background: #25476e; color: #e2f0ff; }
 .dark .owner-page input, .dark .owner-page select, .dark .owner-page pre { background: #233248; color: #f1f5fb; }
 @media (max-width: 600px) { .owner-details { grid-template-columns: 1fr; }.owner-hero { padding: 20px; }.owner-panel { padding: 14px; } }
+/* Compact knowledge waterfall under the pair; stages are health states, never artificial percentages. */
+.owner-intelligence-market-cell { min-width: 210px; max-width: 310px; }
+.knowledge-waterfall-panel { max-width: 100%; min-width: 0; margin-top: 8px; font-size: .78rem; }
+.knowledge-waterfall-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 7px;
+    padding: 5px 0; cursor: pointer; list-style: none; color: #075baf; font-size: .74rem; }
+.knowledge-waterfall-toggle::-webkit-details-marker { display: none; }
+.knowledge-waterfall-toggle:focus-visible { outline: 3px solid #e6a21c; outline-offset: 3px; }
+.knowledge-waterfall-toggle::before { content: '▸'; display: inline-block; color: #53677d; font-size: .9rem; }
+.knowledge-waterfall-panel[open] > .knowledge-waterfall-toggle::before { content: '▾'; }
+.knowledge-waterfall-heading { font-weight: 750; white-space: nowrap; }
+.knowledge-waterfall-mini { display: inline-flex; gap: 3px; align-items: center; }
+.knowledge-waterfall-mini-bar { width: 12px; height: 9px; border-radius: 3px; display: block; }
+.knowledge-waterfall-summary { font-size: .68rem; color: #526176; }
+.knowledge-waterfall-bar-green { background: #187448; }
+.knowledge-waterfall-bar-yellow { background: #b57705; }
+.knowledge-waterfall-bar-red { background: #ad3037; }
+.knowledge-waterfall-content { min-width: 0; margin-top: 8px; padding-left: 9px; border-left: 2px solid #dce3eb; }
+.knowledge-waterfall-stages { display: grid; gap: 8px; min-width: 0; }
+.knowledge-waterfall-stage { min-width: 0; padding: 7px 0; border-bottom: 1px solid #e1e7ef; }
+.knowledge-waterfall-stage-header { display: flex; gap: 5px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
+.knowledge-waterfall-stage-header strong { font-size: .75rem; }
+.knowledge-waterfall-stage-header span { font-size: .68rem; font-weight: 700; color: #526176; }
+.knowledge-waterfall-stage-bar { display: block; height: 7px; width: 100%; margin-top: 4px; border-radius: 4px; }
+.knowledge-waterfall-stage p { font-size: .73rem; margin: 5px 0 0; line-height: 1.35; overflow-wrap: anywhere; }
+.knowledge-waterfall-stage small { display: block; font-size: .68rem; margin-top: 4px; overflow-wrap: anywhere; }
+.knowledge-waterfall-actions { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 12px; }
+.owner-page .knowledge-waterfall-actions button { width: 100%; font-size: .73rem; padding: 7px 9px; min-width: 0; }
+.owner-page .knowledge-waterfall-repair { display: inline-block; margin-top: 10px; font-size: .73rem; }
+.knowledge-waterfall-note { margin: 8px 0 0; line-height: 1.4; }
+.owner-untrained-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+.owner-untrained-market { min-width: 0; padding: 13px; border: 1px solid #dce3eb; border-radius: 9px; }
+.owner-untrained-market > strong { display: block; }
+.owner-untrained-market > small { display: block; margin-top: 4px; color: #526176; }
+.owner-page input[type="hidden"] { display: none; }
+.dark .knowledge-waterfall-toggle { color: #9accff; }
+.dark .knowledge-waterfall-summary, .dark .knowledge-waterfall-stage-header span { color: #b7c6da; }
+.dark .knowledge-waterfall-content { border-left-color: #43536b; }
+.dark .knowledge-waterfall-stage, .dark .owner-untrained-market { border-color: #43536b; }
+.dark .owner-untrained-market > small { color: #b7c6da; }
+/* On mobile the existing six-column report becomes stacked cards instead of horizontal scrolling. */
+@media (max-width: 760px) {
+    .owner-intelligence-table, .owner-intelligence-table > tbody,
+    .owner-intelligence-table > tbody > tr, .owner-intelligence-table > tbody > tr > td { display: block; width: 100%; }
+    .owner-intelligence-table > thead { position: absolute; width: 1px; height: 1px;
+        overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .owner-intelligence-table > tbody > .owner-intelligence-model { display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px;
+        border: 1px solid #cbd5e1; border-radius: 10px 10px 0 0; padding: 9px; margin-top: 12px; }
+    .owner-intelligence-table > tbody > .owner-intelligence-model > td { min-width: 0; padding: 7px; border: 0; overflow-wrap: anywhere; }
+    .owner-intelligence-table > tbody > .owner-intelligence-model > td:not(.owner-intelligence-market-cell)::before {
+        content: attr(data-label); display: block; font-size: .67rem; font-weight: 750;
+        text-transform: uppercase; color: #526176; letter-spacing: .03em; margin-bottom: 4px;
+    }
+    .owner-intelligence-table > tbody > .owner-intelligence-model > .owner-intelligence-market-cell { grid-column: 1 / -1; max-width: none; }
+    .owner-intelligence-table > tbody > .owner-intelligence-model > td[data-label="Readiness"],
+    .owner-intelligence-table > tbody > .owner-intelligence-model > td[data-label="Report"] { grid-column: 1 / -1; }
+    .owner-intelligence-table > tbody > .owner-intelligence-diagnostics { border: 1px solid #cbd5e1;
+        border-top: 0; border-radius: 0 0 10px 10px; }
+    .owner-intelligence-table > tbody > .owner-intelligence-diagnostics > td { border: 0; padding: 11px; }
+    .owner-intelligence-table > tbody > .owner-intelligence-diagnostics details { min-width: 0; }
+    .knowledge-waterfall-content { width: 100%; }
+    .knowledge-waterfall-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; }
+    .knowledge-waterfall-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dark .owner-intelligence-table > tbody > .owner-intelligence-model,
+    .dark .owner-intelligence-table > tbody > .owner-intelligence-diagnostics { border-color: #43536b; }
+}
+@media (max-width: 430px) {
+    .owner-intelligence-table > tbody > .owner-intelligence-model { grid-template-columns: 1fr; }
+    .knowledge-waterfall-stages, .knowledge-waterfall-actions { grid-template-columns: 1fr; }
+}
+
+
+/* Expanded waterfall lives in a separate row spanning all six model columns. */
+.owner-intelligence-waterfall > td { padding: 0 12px 14px; border-bottom: 0; }
+.owner-intelligence-waterfall .knowledge-waterfall-panel { margin-top: 0; }
+.owner-intelligence-waterfall .knowledge-waterfall-content {
+    padding: 12px 0 0; margin-top: 6px; border-left: 0; border-top: 1px solid #dce3eb;
+}
+/* Auto-fit five cards/actions on desktops, fewer on tablets and narrow phones. */
+.owner-intelligence-waterfall .knowledge-waterfall-stages,
+.owner-untrained-market .knowledge-waterfall-stages {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr)); gap: 12px;
+}
+.owner-intelligence-waterfall .knowledge-waterfall-actions,
+.owner-untrained-market .knowledge-waterfall-actions {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 8px;
+}
+.owner-intelligence-waterfall .knowledge-waterfall-stage,
+.owner-untrained-market .knowledge-waterfall-stage {
+    padding: 10px; border: 1px solid #dce3eb; border-radius: 8px;
+}
+.owner-untrained-grid { grid-template-columns: minmax(0, 1fr); }
+.dark .owner-intelligence-waterfall .knowledge-waterfall-content { border-top-color: #43536b; }
+.dark .owner-intelligence-waterfall .knowledge-waterfall-stage,
+.dark .owner-untrained-market .knowledge-waterfall-stage { border-color: #43536b; }
+
+@media (max-width: 760px) {
+    .owner-intelligence-table > tbody > .owner-intelligence-waterfall {
+        border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;
+    }
+    .owner-intelligence-table > tbody > .owner-intelligence-waterfall > td {
+        padding: 2px 16px 12px; border: 0;
+    }
+    .dark .owner-intelligence-table > tbody > .owner-intelligence-waterfall {
+        border-color: #43536b;
+    }
+}

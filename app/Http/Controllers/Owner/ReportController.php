@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Owner;
 
 use App\Domain\Features\FeatureEngine;
 use App\Domain\Intelligence\CoinGeckoReadiness;
+use App\Domain\Intelligence\KnowledgeWaterfall;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\Operations\GeoLocation;
 use App\Domain\Operations\QueueBacklog;
@@ -122,7 +123,7 @@ class ReportController extends Controller
         return view('owner.market', compact('market', 'subscriptions', 'period', 'candles', 'features', 'head', 'backfill'));
     }
 
-    public function intelligence(Request $request, CoinGeckoReadiness $contextReadiness): View
+    public function intelligence(Request $request, CoinGeckoReadiness $contextReadiness, KnowledgeWaterfall $waterfall): View
     {
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
@@ -179,7 +180,66 @@ class ReportController extends Controller
             return $row;
         });
 
-        return view('owner.intelligence', compact('models', 'filters', 'sort', 'direction'));
+        // Add current-stage readiness to the rows already paginated by the owner report.
+        // Historical model versions keep their immutable diagnostics, not a misleading live waterfall.
+        $models->through(function ($row) use ($waterfall) {
+            $row->waterfall = null;
+            $row->knowledge_market_id = null;
+            if ($row->current_id === null) {
+                return $row;
+            }
+            $exchange = $row->summary['exchange'] ?? null;
+            $symbol = $row->summary['symbol'] ?? null;
+            $period = $row->summary['period'] ?? null;
+            if (! is_string($exchange) || ! is_string($symbol) || ! is_string($period)) {
+                return $row;
+            }
+            $feed = MarketFeed::query()->where('selected_period', $period)
+                ->whereHas('market', fn ($q) => $q->where('symbol', $symbol)
+                    ->whereHas('exchange', fn ($exchangeQuery) => $exchangeQuery->where('class', $exchange)))
+                ->whereHas('market.subscriptions', fn ($q) => $q->where('active', true))
+                ->first(['market_id']);
+            $row->knowledge_market_id = $feed?->market_id;
+            $row->waterfall = $waterfall->describe($exchange, $symbol, $period,
+                $row->summary, $row->dataset_id, $feed?->market_id);
+
+            return $row;
+        });
+
+        // The current model table intentionally excludes markets never trained.
+        // Keep those pairs visible on this SAME page, with red first-build stages.
+        $untrained = collect();
+        if (! ($filters['status'] ?? null) && ! ($filters['history'] ?? false)) {
+            $terms = preg_split('/\s+/u', Str::lower($filters['q']), flags: PREG_SPLIT_NO_EMPTY);
+            $feeds = MarketFeed::query()->with('market.exchange')->whereNotNull('selected_period')
+                ->whereHas('market.subscriptions', fn ($q) => $q->where('active', true))
+                ->lazyById(100, column: 'market_id');
+            foreach ($feeds->chunk(100) as $batch) {
+                $keys = $batch->map(fn ($feed) => ModelStore::marketKey($feed->market->exchange->class,
+                    $feed->market->symbol, $feed->selected_period))->all();
+                $published = DB::table('intelligence_heads')->whereIn('market_key', $keys)->pluck('market_key')->flip();
+                foreach ($batch as $feed) {
+                    $exchange = $feed->market->exchange->class;
+                    $symbol = $feed->market->symbol;
+                    $period = $feed->selected_period;
+                    if (isset($published[ModelStore::marketKey($exchange, $symbol, $period)])) {
+                        continue;
+                    }
+                    $identity = Str::lower($exchange.' '.$symbol.' '.$period);
+                    if (array_any($terms, fn ($term) => ! str_contains($identity, $term))) {
+                        continue;
+                    }
+                    $feed->waterfall = $waterfall->describe($exchange, $symbol, $period,
+                        marketId: $feed->market_id);
+                    $untrained->push($feed);
+                    if ($untrained->count() >= 10) {
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        return view('owner.intelligence', compact('models', 'filters', 'sort', 'direction', 'untrained'));
     }
 
     public function model(string $model, ModelStore $store, CoinGeckoReadiness $contextReadiness): View

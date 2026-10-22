@@ -10,9 +10,9 @@
             @if ($filters['q'] !== '')<a href="{{ route('owner.intelligence', array_diff_key($filters, ['q' => true])) }}">Clear search</a>@endif
         </form>
         <p><a href="{{ route('owner.evaluations.index') }}">Visual Outcome / Action evaluations →</a></p>
-        <p class="owner-muted">{{ \App\Helpers\Decimal::format($models->total()) }} matching models. Markets awaiting their first model are shown in the subscription report.</p>
+        <p class="owner-muted">{{ \App\Helpers\Decimal::format($models->total()) }} matching models. Markets awaiting their first model are listed below.</p>
         <div class="owner-scroll">
-            <table class="owner-table">
+            <table class="owner-table owner-intelligence-table">
                 <thead>
                     <tr>
                         @foreach (['market' => 'Market', 'reason' => 'Readiness / build reason', 'knowledge_rows' => 'Knowledge rows', 'k' => 'K', 'created_at' => 'Built at'] as $column => $label)
@@ -33,16 +33,27 @@
                 </thead>
                 <tbody>
                     @forelse ($models as $model)
-                        <tr>
-                            <td>{{ $model->summary['exchange'] ?? 'Unknown' }} · {{ $model->summary['symbol'] ?? 'Unknown' }}<small>{{ $model->summary['period'] ?? 'Unknown' }} · {{ $model->current_id ? 'Current model' : 'Historical version' }}</small></td>
-                            <td><x-knn-readiness :report="$model->summary" :coingecko="$model->coingecko" /><small>{{ $model->summary['reason'] ?? 'Unknown' }}</small></td>
-                            <td>{{ \App\Helpers\Decimal::format($model->summary['knowledge_rows'] ?? 0) }}</td>
-                            <td>Outcome {{ $model->summary['k'] ?? '—' }}<small>Action {{ $model->summary['action_k'] ?? '—' }}</small></td>
-                            <td><x-display-time :value="$model->created_at" /></td>
-                            <td><a href="{{ route('owner.intelligence.show', $model->model_id) }}">Validation details</a></td>
+                        <tr class="owner-intelligence-model">
+                            <td class="owner-intelligence-market-cell">{{ $model->summary['exchange'] ?? 'Unknown' }} · {{ $model->summary['symbol'] ?? 'Unknown' }}
+                                <small>{{ $model->summary['period'] ?? 'Unknown' }} · {{ $model->current_id ? 'Current model' : 'Historical version' }}</small>
+                            </td>
+                            <td data-label="Readiness"><x-knn-readiness :report="$model->summary" :coingecko="$model->coingecko" /><small>{{ $model->summary['reason'] ?? 'Unknown' }}</small></td>
+                            <td data-label="Knowledge rows">{{ \App\Helpers\Decimal::format($model->summary['knowledge_rows'] ?? 0) }}</td>
+                            <td data-label="Neighbors">Outcome {{ $model->summary['k'] ?? '—' }}<small>Action {{ $model->summary['action_k'] ?? '—' }}</small></td>
+                            <td data-label="Built at"><x-display-time :value="$model->created_at" /></td>
+                            <td data-label="Report"><a href="{{ route('owner.intelligence.show', $model->model_id) }}">Validation details</a></td>
                         </tr>
+                        @if ($model->waterfall !== null)
+                            <tr class="owner-intelligence-waterfall">
+                                <td colspan="6">
+                                    @include('owner.partials.knowledge-waterfall', [
+                                        'waterfall' => $model->waterfall, 'marketId' => $model->knowledge_market_id,
+                                    ])
+                                </td>
+                            </tr>
+                        @endif
                         @php($analysis = $model->summary['action_label_analysis'] ?? null)
-                        <tr>
+                        <tr class="owner-intelligence-diagnostics">
                             <td colspan="6">
                                 <details class="owner-details">
                                     <summary>Auto-label / d / H / K diagnostics</summary>
@@ -81,4 +92,21 @@
         </div>
         {{ $models->links() }}
     </section>
+    @if ($untrained->isNotEmpty())
+        <section class="owner-panel">
+            <h2>Subscribed markets awaiting their first model</h2>
+            <p class="owner-muted">Showing the first {{ $untrained->count() }} untrained active markets matching these search terms. First-build stages are never silently omitted.</p>
+            <div class="owner-untrained-grid">
+                @foreach ($untrained as $feed)
+                    <article class="owner-untrained-market">
+                        <strong>{{ $feed->market->exchange->class }} · {{ $feed->market->symbol }}</strong>
+                        <small>{{ $feed->selected_period }} · Never trained</small>
+                        @include('owner.partials.knowledge-waterfall', [
+                            'waterfall' => $feed->waterfall, 'marketId' => $feed->market_id,
+                        ])
+                    </article>
+                @endforeach
+            </div>
+        </section>
+    @endif
 </x-owner.layout>

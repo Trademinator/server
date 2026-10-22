@@ -12,6 +12,7 @@ use App\Http\Controllers\Owner\ArchiveController;
 use App\Http\Controllers\Owner\CoinGeckoMappingController;
 use App\Http\Controllers\Owner\FailedJobController;
 use App\Http\Controllers\Owner\HistoryRecoveryController;
+use App\Http\Controllers\Owner\KnowledgeActionController;
 use App\Http\Controllers\Owner\MarketEventController;
 use App\Http\Controllers\Owner\ReportController;
 use App\Http\Controllers\Markets\EvaluationController;
@@ -117,6 +118,8 @@ Route::prefix('owner')->name('owner.')->middleware(['auth', 'verified', 'server-
     Route::post('history-recovery/{market}', [HistoryRecoveryController::class, 'store'])->whereUuid('market')
         ->middleware(['throttle:6,1,history-recovery', ConfirmHistoryRecoveryPassword::class])->name('history-recovery.store');
     Route::get('intelligence', [ReportController::class, 'intelligence'])->name('intelligence');
+    Route::post('intelligence/actions/{market}', [KnowledgeActionController::class, 'store'])
+        ->whereUuid('market')->middleware('throttle:6,1,owner-knowledge-actions')->name('intelligence.action');
     Route::get('evaluations', [EvaluationController::class, 'index'])->name('evaluations.index');
     Route::get('evaluations/{model}', [EvaluationController::class, 'show'])->whereUuid('model')->name('evaluations.show');
     Route::get('status', [StatusController::class, 'index'])->name('status');
