@@ -164,7 +164,11 @@ final class KnnTuner
 
         unset($accumulator['last_prediction']);
 
-        $result = $this->finishAccumulator($accumulator, $settings);
+        // finishAccumulator() deliberately returns aggregate scores only.
+        // Attach the bounded held-out trace explicitly for model evaluations.
+        // It is research metadata and never changes the inference model.
+        $result = [...$this->finishAccumulator($accumulator, $settings),
+            'trace' => $accumulator['trace']];
         $budget->checkpointShared();
 
         return $result;

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Markets;
 
 use App\Domain\Intelligence\ModelEvaluation;
+use App\Domain\Intelligence\TournamentCandidateRanking;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -21,6 +22,15 @@ final class EvaluationController extends Controller
     {
         $report = $evaluations->report($model, $request->user()->isOwner(), $request->user()->getAuthIdentifier());
         $tournament = $evaluations->tournament((string) ($report['dataset_id'] ?? ''));
+        if ($tournament !== null) {
+            foreach (['outcome', 'action'] as $task) {
+                if (isset($tournament['tasks'][$task])) {
+                    $tournament['tasks'][$task]['ranked_candidates'] = TournamentCandidateRanking::rank(
+                        $tournament['tasks'][$task]
+                    );
+                }
+            }
+        }
         return view('markets.evaluations-show', [
             'report' => $report,
             'tournament' => $tournament,

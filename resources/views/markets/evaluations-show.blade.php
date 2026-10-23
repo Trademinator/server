@@ -1,5 +1,44 @@
 <x-layouts.app title="Model evaluation">
     @include('markets.guide-styles')
+    <style>
+        .evaluation-overlay-color { font-weight:800; }
+        .evaluation-overlay-green { color:#16a34a; }
+        .evaluation-overlay-red { color:#ef4444; }
+        .evaluation-overlay-yellow { color:#eab308; }
+        .evaluation-overlay-gray { color:#94a3b8; }
+        .evaluation-abstention-option { border-left:1px solid #94a3b8; padding-left:14px; margin-left:6px; }
+        .evaluation-candidates { display:grid; gap:14px; margin:16px 0 24px; }
+        .evaluation-candidate { border:1px solid #94a3b8; border-radius:12px; overflow:hidden; min-width:0; }
+        .dark .evaluation-candidate { border-color:#475569; }
+        .evaluation-candidate-row { display:flex; align-items:flex-start; flex-wrap:wrap; gap:8px 22px; padding:11px 15px; min-width:0; }
+        .evaluation-candidate-row + .evaluation-candidate-row { border-top:1px solid #d5deea; }
+        .dark .evaluation-candidate-row + .evaluation-candidate-row { border-color:#334155; }
+        .evaluation-candidate-heading { align-items:center; justify-content:space-between; background:#edf3fb; }
+        .dark .evaluation-candidate-heading { background:#223047; }
+        .evaluation-candidate-rank { display:inline-block; min-width:2.2rem; margin-right:10px; font-weight:800; color:#475569; }
+        .dark .evaluation-candidate-rank { color:#cbd5e1; }
+        .evaluation-candidate-name { color:#16803a; font-size:1.1rem; font-weight:800; }
+        .dark .evaluation-candidate-name { color:#4ade80; }
+        .evaluation-candidate-status.is-evaluated { color:#15803d; font-weight:700; }
+        .dark .evaluation-candidate-status.is-evaluated { color:#4ade80; }
+        .evaluation-candidate-status.is-unavailable { color:#b91c1c; font-weight:700; }
+        .dark .evaluation-candidate-status.is-unavailable { color:#f87171; }
+        .evaluation-candidate-trophy { color:#d9a500; font-size:1.25rem; vertical-align:middle; margin-left:9px; }
+        .evaluation-candidate-stat { display:flex; flex-direction:column; gap:2px; min-width:100px; flex:1 1 140px; }
+        .evaluation-candidate-stat > span:first-child { font-size:.8rem; opacity:.75; }
+        .evaluation-candidate-stat > strong { font-size:1rem; font-variant-numeric:tabular-nums; }
+        .evaluation-candidate-detail { width:100%; overflow-wrap:anywhere; }
+        .evaluation-candidate-detail > strong { display:block; margin-bottom:4px; }
+        .evaluation-calibration { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; margin-top:8px; }
+        .evaluation-calibration-bin { padding:9px; border-radius:7px; background:#edf3fb; min-width:0; font-size:.86rem; }
+        .dark .evaluation-calibration-bin { background:#263348; }
+        .evaluation-calibration-bin strong, .evaluation-calibration-bin span { display:block; }
+        @media(max-width:750px) {
+            .evaluation-candidate-row { padding:12px; gap:10px; }
+            .evaluation-candidate-stat { flex-basis:calc(50% - 10px); min-width:0; }
+            .evaluation-calibration { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        }
+    </style>
     <section class="pair-guide pair-review">
         <header class="guide-hero">
             <p><a href="{{ route($ownerRoute ? 'owner.evaluations.index' : 'human-training.evaluations.index') }}">← Model evaluations</a></p>
@@ -39,42 +78,116 @@
                         @if($task === 'action') · dominant directional class {{ $competition['baseline']['directional_class'] ?? '—' }} · directional reference {{ number_format(100*($competition['baseline']['directional_precision'] ?? 0), 1) }}% @endif
                         </p>
                     @endif
-                    <div class="review-table-wrap"><table>
-                        <thead><tr><th>Rubix candidate</th><th>Status</th><th>{{ $task === 'outcome' ? 'Macro F1' : 'BUY/SELL precision' }}</th><th>Coverage</th><th>Walk-forward mean</th><th>Lowest fold</th><th>Eligibility</th><th>Baseline Δ</th><th>Calibration (5 bins)</th><th>Time</th><th>Memory peak</th></tr></thead>
-                        <tbody>
-                        @foreach(($competition['candidates'] ?? []) as $name => $candidate)
-                            <tr><th>{{ str_replace('_', ' ', ucwords($name, '_')) }}</th>
-                                <td>{{ $candidate['status'] }}</td>
-                                <td>{{ isset($candidate['score']) ? number_format($candidate['score'] * 100, 1).'%' : '—' }}</td>
-                                <td>{{ number_format(($candidate['coverage'] ?? 0) * 100, 1) }}%</td>
-                                <td>{{ isset($candidate['walk_forward_mean']) ? number_format(100*$candidate['walk_forward_mean'], 1).'%' : '—' }}</td>
-                                <td>{{ isset($candidate['walk_forward_min']) ? number_format(100*$candidate['walk_forward_min'], 1).'%' : '—' }}</td>
-                                <td>{{ ($candidate['eligible'] ?? false) ? 'Eligible' : implode(', ', $candidate['failed_gates'] ?? ['Not evaluated']) }}</td>
-                                <td>{{ isset($candidate['baseline_margin']) ? number_format(100*$candidate['baseline_margin'], 1).' pp' : '—' }}</td>
-                                <td>
-                                    @if(isset($candidate['calibration']))
-                                        @foreach($candidate['calibration'] as $index => $bin)
-                                            <span title="Confidence {{ $index*20 }}–{{ ($index+1)*20 }}%">
-                                                {{ $index*20 }}–{{ ($index+1)*20 }}%:
-                                                {{ $bin['samples'] }} samples,
-                                                {{ $bin['accuracy'] !== null ? number_format(100*$bin['accuracy'], 1).'%' : '—' }} accuracy
-                                            </span>
-                                        @endforeach
-                                    @else
-                                        —
+                    <p class="guide-help">Ranked by eligibility first, then walk-forward mean, lowest fold and coverage. A research champion must also pass final holdout confirmation; an ineligible candidate can never become champion.</p>
+                    <div class="evaluation-candidates">
+                        @foreach(($competition['ranked_candidates'] ?? $competition['candidates'] ?? []) as $name => $candidate)
+                            <section class="evaluation-candidate" aria-label="{{ str_replace('_', ' ', ucwords($name, '_')) }} evaluation">
+                                {{-- Row 1: algorithm identity, status and winner --}}
+                                <div class="evaluation-candidate-row evaluation-candidate-heading">
+                                    <div>
+                                        <span class="evaluation-candidate-rank" aria-label="Research rank {{ $loop->iteration }}">#{{ $loop->iteration }}</span>
+                                        <strong class="evaluation-candidate-name">{{ str_replace('_', ' ', ucwords($name, '_')) }}</strong>
+                                        @if(($competition['research_leader'] ?? null) === $name)
+                                            <span class="evaluation-candidate-trophy" role="img" aria-label="Research champion" title="Research champion">🏆</span>
+                                        @endif
+                                    </div>
+                                    <span class="evaluation-candidate-status {{ ($candidate['status'] ?? '') === 'evaluated' ? 'is-evaluated' : 'is-unavailable' }}">
+                                        {{ ucfirst(str_replace('_', ' ', $candidate['status'] ?? 'unavailable')) }}
+                                    </span>
+                                </div>
+                                {{-- Row 2: scoring --}}
+                                <div class="evaluation-candidate-row">
+                                    <div class="evaluation-candidate-stat"><span>{{ $task === 'outcome' ? 'Macro F1' : 'BUY/SELL precision' }}</span><strong>{{ isset($candidate['score']) ? number_format(100*$candidate['score'], 1).'%' : '—' }}</strong></div>
+                                    <div class="evaluation-candidate-stat"><span>Coverage</span><strong>{{ isset($candidate['coverage']) ? number_format(100*$candidate['coverage'], 1).'%' : '—' }}</strong></div>
+                                    <div class="evaluation-candidate-stat"><span>Walk-forward mean</span><strong>{{ isset($candidate['walk_forward_mean']) ? number_format(100*$candidate['walk_forward_mean'], 1).'%' : '—' }}</strong></div>
+                                    <div class="evaluation-candidate-stat"><span>Lowest fold</span><strong>{{ isset($candidate['walk_forward_min']) ? number_format(100*$candidate['walk_forward_min'], 1).'%' : '—' }}</strong></div>
+                                </div>
+                                {{-- Row 3: eligibility and baseline --}}
+                                <div class="evaluation-candidate-row">
+                                    <div class="evaluation-candidate-stat">
+                                        <span>Eligibility</span>
+                                        <strong>{{ ($candidate['eligible'] ?? false) ? 'Eligible' : 'Not eligible' }}</strong>
+                                    </div>
+                                    <div class="evaluation-candidate-stat">
+                                        <span>Baseline Δ</span>
+                                        <strong>{{ isset($candidate['baseline_margin']) ? number_format(100*$candidate['baseline_margin'], 1).' pp' : '—' }}</strong>
+                                    </div>
+                                    @if(!empty($candidate['failed_gates']))
+                                        <div class="evaluation-candidate-detail"><strong>Failed gates</strong>{{ implode(', ', array_map(fn ($gate) => str_replace('_', ' ', $gate), $candidate['failed_gates'])) }}</div>
                                     @endif
-                                </td>
-                                <td>{{ $candidate['elapsed_ms'] ?? '—' }} ms</td>
-                                <td>{{ $candidate['peak_memory_mb'] ?? '—' }} MB</td>
-                            </tr>
+                                </div>
+                                {{-- Row 4: separate calibration grid --}}
+                                <div class="evaluation-candidate-row">
+                                    <div class="evaluation-candidate-detail">
+                                        <strong>Calibration (5 confidence bins)</strong>
+                                        @if(isset($candidate['calibration']))
+                                            <div class="evaluation-calibration">
+                                                @foreach($candidate['calibration'] as $index => $bin)
+                                                    <div class="evaluation-calibration-bin">
+                                                        <strong>{{ $index*20 }}–{{ ($index+1)*20 }}%</strong>
+                                                        <span>{{ $bin['samples'] }} samples</span>
+                                                        <span>{{ $bin['accuracy'] !== null ? number_format(100*$bin['accuracy'], 1).'%' : '—' }} accuracy</span>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <span>Not available</span>
+                                        @endif
+                                    </div>
+                                </div>
+                                {{-- Row 5: execution resources --}}
+                                <div class="evaluation-candidate-row">
+                                    <div class="evaluation-candidate-stat"><span>Time</span><strong>{{ isset($candidate['elapsed_ms']) ? $candidate['elapsed_ms'].' ms' : '—' }}</strong></div>
+                                    <div class="evaluation-candidate-stat"><span>Peak memory</span><strong>{{ isset($candidate['peak_memory_mb']) ? $candidate['peak_memory_mb'].' MB' : '—' }}</strong></div>
+                                </div>
+                            </section>
                         @endforeach
-                        </tbody>
-                    </table></div>
+                    </div>
                 @endforeach
             @else
                 <p>No tournament results for this frozen dataset yet. Run <code>php -d memory_limit=512M artisan trademinator:tournament {{ $report['dataset_id'] ?? 'DATASET_UUID' }}</code> to evaluate challengers.</p>
             @endif
         </section>
+        @php($humanBundles = ['outcome' => ($report['outcome']['human'] ?? []), 'action' => ($report['action']['human'] ?? [])])
+        @if(collect($humanBundles)->contains(fn ($bundle) => !empty($bundle)))
+            <section class="guide-panel">
+                <h2>Human-trained models</h2>
+                <p class="guide-help">Human KNN evaluations are separate from the Rubix research tournament. Only metrics recorded in the model report are shown.</p>
+                <div class="evaluation-candidates">
+                    @foreach($humanBundles as $task => $human)
+                        @continue(empty($human))
+                        @php($metrics = $human['holdout'] ?? $human['tuning'] ?? [])
+                        <section class="evaluation-candidate" aria-label="Human-trained {{ ucfirst($task) }} evaluation">
+                            <div class="evaluation-candidate-row evaluation-candidate-heading">
+                                <strong class="evaluation-candidate-name">Human {{ ucfirst($task) }} KNN</strong>
+                                <span class="evaluation-candidate-status {{ in_array(($human['status'] ?? ''), ['validated', 'ready'], true) ? 'is-evaluated' : 'is-unavailable' }}">
+                                    {{ ucfirst(str_replace('_', ' ', $human['status'] ?? 'unavailable')) }}
+                                </span>
+                            </div>
+                            <div class="evaluation-candidate-row">
+                                <div class="evaluation-candidate-stat"><span>{{ $task === 'outcome' ? 'Macro F1' : 'Directional precision' }}</span><strong>{{ isset($metrics[$task === 'outcome' ? 'macro_f1' : 'semantic_precision']) ? number_format(100*$metrics[$task === 'outcome' ? 'macro_f1' : 'semantic_precision'], 1).'%' : '—' }}</strong></div>
+                                <div class="evaluation-candidate-stat"><span>Coverage</span><strong>{{ isset($metrics['coverage']) ? number_format(100*$metrics['coverage'], 1).'%' : '—' }}</strong></div>
+                                <div class="evaluation-candidate-stat"><span>Walk-forward</span><strong>—</strong></div>
+                                <div class="evaluation-candidate-stat"><span>Lowest fold</span><strong>—</strong></div>
+                            </div>
+                            <div class="evaluation-candidate-row">
+                                <div class="evaluation-candidate-stat"><span>Eligibility</span><strong>{{ ($metrics['eligible'] ?? $human['influence'] ?? false) ? 'Eligible' : 'Not eligible' }}</strong></div>
+                                <div class="evaluation-candidate-stat"><span>Baseline lift</span><strong>{{ isset($metrics['precision_lift_over_baseline']) ? number_format(100*$metrics['precision_lift_over_baseline'], 1).' pp' : '—' }}</strong></div>
+                                @if(!empty($metrics['failed_gates']))
+                                    <div class="evaluation-candidate-detail"><strong>Failed gates</strong>{{ implode(', ', array_map(fn ($gate) => str_replace('_', ' ', $gate), $metrics['failed_gates'])) }}</div>
+                                @endif
+                            </div>
+                            <div class="evaluation-candidate-row"><div class="evaluation-candidate-detail"><strong>Calibration</strong>Not recorded in the human-model report</div></div>
+                            <div class="evaluation-candidate-row">
+                                <div class="evaluation-candidate-stat"><span>Time</span><strong>—</strong></div>
+                                <div class="evaluation-candidate-stat"><span>Peak memory</span><strong>—</strong></div>
+                                <div class="evaluation-candidate-stat"><span>Training samples</span><strong>{{ $human['samples'] ?? '—' }}</strong></div>
+                            </div>
+                        </section>
+                    @endforeach
+                </div>
+            </section>
+        @endif
         <section class="guide-panel">
             <h2>Live research shadow evaluation</h2>
             <p class="guide-help">Shadow predictions are research-only and never sent to the Client. Scoring waits for independently finalized labels in a newer frozen dataset.</p>
@@ -93,20 +206,30 @@
         </section>
         <section class="guide-panel">
             <h2>Historical prediction overlay</h2>
-            <p class="guide-help">Green ↑ BUY · Red ↓ SELL. Outcome predictions appear as green (BULL), red (BEAR), or gray (NEUTRAL) close-to-close lines across H candles. The line shows observed price movement, not a predicted price target. Labels remain when the slope is subtle. Supported HOLD and abstention remain distinct; abstentions are hidden unless toggled. No execution or profitability is implied.</p>
+            <p class="guide-help">
+                Action markers: <strong class="evaluation-overlay-color evaluation-overlay-green">Green</strong> ↑ BUY when correct ·
+                <strong class="evaluation-overlay-color evaluation-overlay-red">Red</strong> ↓ SELL when correct ·
+                <strong class="evaluation-overlay-color evaluation-overlay-yellow">Yellow</strong> ↑/↓ means the predicted BUY or SELL was incorrect (disagrees with the historical label).
+                <strong class="evaluation-overlay-color evaluation-overlay-gray">Gray</strong> indicates supported HOLD or a displayed abstention.
+                Outcome predictions use <strong class="evaluation-overlay-color evaluation-overlay-green">Green</strong> (BULL),
+                <strong class="evaluation-overlay-color evaluation-overlay-red">Red</strong> (BEAR), or
+                <strong class="evaluation-overlay-color evaluation-overlay-gray">Gray</strong> (NEUTRAL) close-to-close lines across H candles.
+                Lines show observed price movement, not predicted targets; subtle slopes retain labels.
+                Abstentions are hidden unless enabled. No execution or profitability is implied.
+            </p>
             <div class="flex flex-wrap gap-4">
                 <label for="evaluation-algorithm">Model</label>
                 <select id="evaluation-algorithm" data-algorithm>
-                    <option value="production">Published KNN</option>
+                    <option value="production">Current Champion ({{ str_contains((string) ($report['knn_engine'] ?? ''), 'weighted') ? 'Weighted KNN' : ($report['knn_engine'] ?? 'KNN') }})</option>
                     @if($tournament)
-                        @foreach(['weighted_knn' => 'Rubix weighted KNN', 'decision_tree' => 'Decision Tree', 'random_forest' => 'Random Forest', 'neural_network' => 'Neural Network'] as $name => $label)
+                        @foreach(['weighted_knn' => 'Weighted KNN', 'decision_tree' => 'Decision Tree', 'random_forest' => 'Random Forest', 'neural_network' => 'Neural Network'] as $name => $label)
                             <option value="{{ $name }}">{{ $label }} (research)</option>
                         @endforeach
                     @endif
                 </select>
                 <label><input type="checkbox" data-action-toggle checked> Action predictions</label>
                 <label><input type="checkbox" data-outcome-toggle checked> Outcome predictions</label>
-                <label><input type="checkbox" data-abstain-toggle> Abstentions</label>
+                <label class="evaluation-abstention-option"><input type="checkbox" data-abstain-toggle> Abstentions</label>
             </div>
             <div data-evaluation-chart data-series='@json($series)' class="mt-3">
                 <p data-status role="status">Loading historical candles…</p>
