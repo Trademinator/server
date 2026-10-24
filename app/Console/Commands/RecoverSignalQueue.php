@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Domain\Intelligence\TrainingRuntime;
+use App\Domain\Operations\WorkerRegistry;
 use App\Jobs\RebuildBackfilledIntelligence;
 use App\Jobs\RecordMarketSignal;
 use App\Jobs\TrainMarketIntelligence;
@@ -26,7 +27,9 @@ final class RecoverSignalQueue extends Command
 
     private const MAX_PAYLOADS = 20000;
 
-    protected $signature = 'trademinator:recover-signal-queue {--apply : Apply the backed-up recovery while both local queue workers are stopped}';
+    protected $signature = 'trademinator:recover-signal-queue
+        {--apply : Apply the backed-up recovery while affected workers on every host are stopped}
+        {--workers-stopped : Confirm that workers with lost contact have been stopped on every host}';
 
     protected $description = 'Inspect or recover the legacy Redis signal backlog without discarding training work';
 
@@ -34,6 +37,8 @@ final class RecoverSignalQueue extends Command
     {
         $handles = [];
         $dispatchLock = null;
+        $maintenanceOwner = null;
+        $workers = app(WorkerRegistry::class);
         $backup = null;
         try {
             [$source, $target, $redis, $store, $sourceName, $targetName, $targetConnection] = $this->connections();
@@ -53,6 +58,11 @@ final class RecoverSignalQueue extends Command
                 if (! $dispatchLock->get()) {
                     throw new RuntimeException('Signal dispatch is running; retry recovery after it finishes.');
                 }
+                if (! $workers->usesConnection($redis)) {
+                    throw new RuntimeException('Queue recovery requires the worker registry and queues on the same Redis connection.');
+                }
+                $maintenanceOwner = $workers->beginMaintenance();
+                $workers->assertQueuesStopped([$sourceName, $targetName], (bool) $this->option('workers-stopped'));
             }
 
             $snapshots = $this->snapshots($redis, [$source->getQueue($sourceName), $target->getQueue($targetName)]);
@@ -69,14 +79,14 @@ final class RecoverSignalQueue extends Command
             unset($snapshot);
 
             return DB::transaction(function () use ($apply, $snapshots, $historyIds, $redis, $store, $target,
-                $targetName, $targetConnection, $dispatchLock, &$backup): int {
+                $targetName, $targetConnection, $dispatchLock, $maintenanceOwner, $workers, &$backup): int {
                 $history = DB::table('market_history_backfills')->whereIn('history_id', array_unique($historyIds))
                     ->orderBy('history_id')->when($apply, fn ($query) => $query->lockForUpdate())->get()->keyBy('history_id');
                 [$keys, $plan, $report, $leases] = $this->plan($snapshots, $history->all(), $redis, $store,
-                    $target, $targetName, $targetConnection, $dispatchLock?->owner());
+                    $target, $targetName, $targetConnection, $dispatchLock?->owner(), $maintenanceOwner);
                 $this->table(['Recovery item', 'Count'], collect($report)->map(fn (int $count, string $name): array => [$name, $count])->all());
                 if (! $apply) {
-                    $this->info('Dry run complete. Use --apply only after stopping both local queue workers.');
+                    $this->info('Dry run complete. Use --apply only after stopping intelligence and signals workers on every host.');
 
                     return self::SUCCESS;
                 }
@@ -86,6 +96,7 @@ final class RecoverSignalQueue extends Command
                 if (! $dispatchLock->isOwnedByCurrentProcess()) {
                     throw new RuntimeException('Signal dispatcher guard expired; no recovery was applied.');
                 }
+                $workers->assertMaintenanceOwner($maintenanceOwner);
                 foreach ($leases as $id => $token) {
                     DB::table('market_history_backfills')->where('history_id', $id)->where('build_lease_token', $token)
                         ->update(['build_lease_until' => null, 'updated_at' => now()]);
@@ -110,10 +121,21 @@ final class RecoverSignalQueue extends Command
 
             return self::FAILURE;
         } finally {
-            $dispatchLock?->release();
-            foreach (array_reverse($handles) as $handle) {
-                flock($handle, LOCK_UN);
-                fclose($handle);
+            try {
+                if ($maintenanceOwner !== null) {
+                    $workers->endMaintenance($maintenanceOwner);
+                }
+            } catch (Throwable $error) {
+                report($error);
+            } finally {
+                try {
+                    $dispatchLock?->release();
+                } finally {
+                    foreach (array_reverse($handles) as $handle) {
+                        flock($handle, LOCK_UN);
+                        fclose($handle);
+                    }
+                }
             }
         }
     }
@@ -246,7 +268,7 @@ final class RecoverSignalQueue extends Command
 
     /** @return array{list<string>, array, array<string, int>, array<string, string>} */
     private function plan(array $snapshots, array $history, Connection $redis, RedisStore $store,
-        RedisQueue $target, string $targetName, string $targetConnection, ?string $guardOwner): array
+        RedisQueue $target, string $targetName, string $targetConnection, ?string $guardOwner, ?string $maintenanceOwner): array
     {
         $keys = [];
         $keyIndex = function (string $key) use (&$keys): int {
@@ -265,6 +287,7 @@ final class RecoverSignalQueue extends Command
         $plan = ['queues' => [], 'locks' => [], 'signals' => [], 'signal_class' => RecordMarketSignal::class,
             'max_payloads' => self::MAX_PAYLOADS,
             'guard_key' => $keyIndex($store->getPrefix().self::DISPATCH_LOCK), 'guard_owner' => $guardOwner,
+            'maintenance_key' => $keyIndex(app(WorkerRegistry::class)->maintenanceKey()), 'maintenance_owner' => $maintenanceOwner,
             'marker' => 'signal-recovery:'.Str::uuid7(), 'target' => $keyIndex($target->getQueue($targetName)),
             'target_notify' => $keyIndex($target->getQueue($targetName).':notify')];
         $oldSignals = [];
@@ -411,6 +434,7 @@ local function keyType(index, expected)
     return actual == 'none' or actual == expected
 end
 if redis.call('get', KEYS[plan.guard_key]) ~= plan.guard_owner then return {0} end
+if redis.call('get', KEYS[plan.maintenance_key]) ~= plan.maintenance_owner then return {0} end
 local count = 0
 for _, queue in ipairs(plan.queues) do
     if not keyType(queue.key, queue.state == 'ready' and 'list' or 'zset') or not keyType(queue.notify, 'list') then return {0} end

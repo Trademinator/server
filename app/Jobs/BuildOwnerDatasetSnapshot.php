@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Domain\Features\FeatureEngine;
+use App\Domain\Intelligence\AlgorithmicLabelSets;
 use App\Domain\Intelligence\KnowledgeRequestJournal;
 use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\ModelStore;
@@ -71,14 +72,21 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
         }
         $targetMs = min($asOfMs, $timeframe->next($latest, $this->period));
         $scope = ['exchange' => $this->exchange, 'symbol' => $this->symbol, 'period' => $this->period];
-        $label = app(\App\Domain\Intelligence\AlgorithmicLabelSets::class)
+        $label = app(AlgorithmicLabelSets::class)
             ->find($this->exchange, $this->symbol, $this->period, $asOfMs);
         if ($label === null) {
             $journal->request($this->exchange, $this->symbol, $this->period, 'labels', $targetMs);
             $cacheKey = 'trademinator:snapshot-labels:'.ModelStore::marketKey($this->exchange, $this->symbol, $this->period);
-            if (Cache::add($cacheKey.':lock', true, now()->addMinutes(20))) {
-                AnalyzeMarketAutoLabels::dispatch($this->exchange, $this->symbol, $this->period, $cacheKey, $asOfMs)
-                    ->onQueue((string) config('intelligence.queue'));
+            $lock = Cache::lock($cacheKey.':lock', 1200);
+            if ($lock->get()) {
+                $job = new AnalyzeMarketAutoLabels($this->exchange, $this->symbol, $this->period, $cacheKey, $asOfMs);
+                $job->dispatchLockOwner = $lock->owner();
+                try {
+                    dispatch($job->onQueue((string) config('intelligence.queue')));
+                } catch (\Throwable $error) {
+                    $lock->release();
+                    throw $error;
+                }
             }
             $this->release(120);
 

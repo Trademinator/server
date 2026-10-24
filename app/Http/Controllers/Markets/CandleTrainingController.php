@@ -2,17 +2,18 @@
 
 namespace App\Http\Controllers\Markets;
 
+use App\Domain\Intelligence\ActionLabelReportStore;
 use App\Domain\Intelligence\CandleTraining;
 use App\Domain\Intelligence\HumanTraining;
+use App\Domain\Research\DatasetStore;
 use App\Http\Controllers\Controller;
+use App\Jobs\AnalyzeMarketAutoLabels;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
-use App\Domain\Research\DatasetStore;
-use App\Jobs\AnalyzeMarketAutoLabels;
 use Illuminate\Validation\Rule;
 
 class CandleTrainingController extends Controller
@@ -47,6 +48,7 @@ class CandleTrainingController extends Controller
                 'has_newer' => $state['next_decision_at_ms'] !== null,
             ])->header('Cache-Control', 'no-store, private');
         }
+
         return response()->view('markets.candle-training', ['state' => $state,
             'datasets' => $snapshots->datasets()])->header('Cache-Control', 'no-store, private');
     }
@@ -74,9 +76,10 @@ class CandleTrainingController extends Controller
             return response()->json(['message' => 'Intelligence queue is not enabled.'], 422);
         }
         $key = 'trademinator:action-auto-label:'.hash('sha256', implode('|', [
-            $manifest['exchange'], $manifest['symbol'], $manifest['period']
+            $manifest['exchange'], $manifest['symbol'], $manifest['period'],
         ]));
-        if (! Cache::add($key.':lock', true, now()->addHour())) {
+        $lock = Cache::lock($key.':lock', 3600);
+        if (! $lock->get()) {
             return response()->json(['message' => 'Auto-labelling is already queued or running.'], 409);
         }
         Cache::put($key.':status', 'queued', now()->addDay());
@@ -84,15 +87,17 @@ class CandleTrainingController extends Controller
         $job = new AnalyzeMarketAutoLabels(
             $manifest['exchange'], $manifest['symbol'], $manifest['period'], $key
         );
+        $job->dispatchLockOwner = $lock->owner();
         $job->onQueue(config('intelligence.queue'));
         try {
             dispatch($job);
         } catch (\Throwable $error) {
-            Cache::forget($key.':lock');
+            $lock->release();
             Cache::put($key.':status', 'failed', now()->addDay());
             Cache::put($key.':error', 'Could not dispatch auto-labelling.', now()->addDay());
             throw $error;
         }
+
         return response()->json(['status' => 'queued',
             'message' => 'System auto-labelling queued. Human labels will not be changed.'], 202);
     }
@@ -102,15 +107,16 @@ class CandleTrainingController extends Controller
         Gate::forUser($request->user())->authorize('train-intelligence');
         $manifest = app(DatasetStore::class)->manifest($dataset);
         $key = 'trademinator:action-auto-label:'.hash('sha256', implode('|', [
-            $manifest['exchange'], $manifest['symbol'], $manifest['period']
+            $manifest['exchange'], $manifest['symbol'], $manifest['period'],
         ]));
-        $report = app(\App\Domain\Intelligence\ActionLabelReportStore::class)->latest(
+        $report = app(ActionLabelReportStore::class)->latest(
             $manifest['exchange'], $manifest['symbol'], $manifest['period']
         );
         $counts = $report['analysis']['action_counts'] ?? null;
+
         return response()->json([
             'status' => Cache::get($key.':status', 'idle'),
-            'locked' => (bool) Cache::get($key.':lock', false),
+            'locked' => Cache::lock($key.':lock')->isLocked() || (bool) Cache::get($key.':lock', false),
             'error' => Cache::get($key.':error'),
             'analyzed_at' => Cache::get($key.':summary')['analyzed_at'] ?? null,
             'as_of_ms' => $report['as_of_ms'] ?? null,

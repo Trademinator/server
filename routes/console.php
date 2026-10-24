@@ -41,9 +41,9 @@ $scheduleArtisan('trademinator:collect-market-context')
 $scheduleArtisan('trademinator:collect-market-events')
     ->everyFiveMinutes()->onOneServer()->withoutOverlapping(15)->runInBackground();
 
-// Scheduled feature prewarming; consumers may also request feature work directly.
+// Reconcile missing feature requests; live candle collection also requests updates.
 $scheduleArtisan('trademinator:dispatch-market-features')
-    ->twiceDaily(7, 19)->timezone('America/Toronto')->onOneServer()->withoutOverlapping(5);
+    ->everyMinute()->onOneServer()->withoutOverlapping(5);
 
 $scheduleArtisan('trademinator:dispatch-market-signals')
     ->everyMinute()->onOneServer()->withoutOverlapping(5);

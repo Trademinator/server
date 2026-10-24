@@ -8,7 +8,11 @@ use App\Models\Exchange;
 use App\Repositories\ExchangeRepository;
 use App\Repositories\TickerRepository;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Psr\Log\NullLogger;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
 
 it('revisits the last candle and reports an observed gap', function () {
     $exchange = new Exchange(['name' => 'Demo', 'class' => 'kraken']);

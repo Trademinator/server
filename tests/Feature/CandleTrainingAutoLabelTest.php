@@ -4,7 +4,6 @@ use App\Jobs\AnalyzeMarketAutoLabels;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Tests\Support\IntelligenceFixtures;
@@ -34,10 +33,11 @@ it('queues exactly one market-wide analysis and leaves human labels unchanged', 
     $this->actingAs($trainer)->postJson($url)->assertStatus(202)
         ->assertJsonPath('status', 'queued');
     Bus::assertDispatchedTimes(AnalyzeMarketAutoLabels::class, 1);
-    Bus::assertDispatched(AnalyzeMarketAutoLabels::class, fn ($job) =>
-        $job->exchange === $manifest['exchange'] &&
+    Bus::assertDispatched(AnalyzeMarketAutoLabels::class, fn ($job) => $job->exchange === $manifest['exchange'] &&
         $job->symbol === $manifest['symbol'] &&
-        $job->period === $manifest['period']);
+        $job->period === $manifest['period'] &&
+        $job->dispatchLockOwner !== null &&
+        Cache::restoreLock($job->cacheKey.':lock', $job->dispatchLockOwner)->isOwnedByCurrentProcess());
     $this->postJson($url)->assertStatus(409);
     Bus::assertDispatchedTimes(AnalyzeMarketAutoLabels::class, 1);
     $this->assertDatabaseEmpty('human_candle_labels');

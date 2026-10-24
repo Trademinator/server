@@ -118,7 +118,7 @@ it('coalesces successful imports into a feature rebuild followed by one fresh KN
     expect($performance['feature_replay']['rows_processed'])->toBeGreaterThan(0)
         ->and($performance['feature_replay']['chunks'])->toBeGreaterThan(0);
     $this->assertDatabaseCount('intelligence_models', 0);
-    $this->assertDatabaseHas('market_history_backfills', ['build_stage' => 'knn', 'build_revision' => 2]);
+    $this->assertDatabaseHas('market_history_backfills', ['build_stage' => 'knn', 'build_revision' => 2, 'feature_revision' => 2]);
     $job = runBackfillTrainingStep($id);
     $job->handle(app(BackfillIntelligence::class), app(FeatureBuilder::class), app(MarketIntelligence::class));
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Intelligence\TrainingRuntime;
+use App\Domain\Operations\WorkerRegistry;
 use App\Jobs\BackfillMarketHistory;
 use App\Jobs\RebuildBackfilledIntelligence;
 use App\Jobs\RecordMarketSignal;
@@ -18,16 +19,21 @@ use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     $socket = getenv('SIGNAL_REPAIR_TEST_REDIS_SOCKET');
-    if (! extension_loaded('redis') || ! is_string($socket) || ! str_starts_with($socket, sys_get_temp_dir().'/') || ! file_exists($socket)) {
-        $this->markTestSkipped('Set SIGNAL_REPAIR_TEST_REDIS_SOCKET to an isolated temporary Redis Unix socket.');
+    $port = getenv('SIGNAL_REPAIR_TEST_REDIS_PORT');
+    $hasSocket = is_string($socket) && str_starts_with($socket, sys_get_temp_dir().'/') && file_exists($socket);
+    $hasPort = is_string($port) && ctype_digit($port) && (int) $port > 0 && (int) $port < 65536;
+    if (! extension_loaded('redis') || (! $hasSocket && ! $hasPort)) {
+        $this->markTestSkipped('Set SIGNAL_REPAIR_TEST_REDIS_SOCKET or SIGNAL_REPAIR_TEST_REDIS_PORT to an isolated temporary Redis server.');
     }
     $this->recoveryStorage = sys_get_temp_dir().'/trademinator-recovery-test-'.Str::uuid7();
     File::makeDirectory($this->recoveryStorage.'/framework', 0700, true);
     $this->app->useStoragePath($this->recoveryStorage);
     config([
         'database.redis' => ['client' => 'phpredis', 'options' => ['prefix' => 'recovery-test:'.Str::uuid7().':'],
-            'recovery' => ['host' => $socket, 'port' => 0, 'database' => 0, 'timeout' => 2, 'read_timeout' => 2]],
+            'recovery' => ['host' => $hasSocket ? $socket : '127.0.0.1', 'port' => $hasSocket ? 0 : (int) $port,
+                'database' => 14, 'timeout' => 2, 'read_timeout' => 2]],
         'queue.default' => 'recovery-training',
+        'queue_management.workers.connection' => 'recovery',
         'queue.connections.recovery-training' => ['driver' => 'redis', 'connection' => 'recovery', 'queue' => 'intelligence',
             'retry_after' => 15300, 'block_for' => null, 'after_commit' => false],
         'queue.connections.recovery-signals' => ['driver' => 'redis', 'connection' => 'recovery', 'queue' => 'signals',
@@ -44,6 +50,12 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    if (isset($this->recoveryRedis)) {
+        $keys = $this->recoveryRedis->keys('*');
+        if ($keys !== []) {
+            $this->recoveryRedis->client()->rawCommand('DEL', ...$keys);
+        }
+    }
     if (isset($this->recoveryStorage)) {
         File::deleteDirectory($this->recoveryStorage);
     }
@@ -103,7 +115,7 @@ it('defaults to a read-only report and leaves payloads, owners, and running leas
     $lease = DB::table('market_history_backfills')->where('history_id', $id)->value('build_lease_until');
 
     $this->artisan('trademinator:recover-signal-queue')
-        ->expectsOutput('Dry run complete. Use --apply only after stopping both local queue workers.')->assertSuccessful();
+        ->expectsOutput('Dry run complete. Use --apply only after stopping intelligence and signals workers on every host.')->assertSuccessful();
 
     expect($this->recoveryRedis->lrange('queues:intelligence', 0, -1))->toBe([$raw]);
     expect($this->recoveryRedis->zscore('queues:intelligence:reserved', $rebuildRaw))->toEqual(1700000000);
@@ -129,6 +141,40 @@ it('refuses recovery while either local worker guard is held', function (string 
         fclose($handle);
     }
 })->with(['intelligence', 'signals']);
+
+it('refuses recovery while a worker on any host still owns its Redis slot', function (bool $assertStopped): void {
+    $raw = recoveryPayload(recoveryLegacySignal(signalQueueRecoveryMarket()));
+    $this->recoveryRedis->rpush('queues:intelligence', $raw);
+    $workers = app(WorkerRegistry::class);
+    $lease = $workers->acquire('recovery-training', ['intelligence'], 'remote-1');
+    $this->artisan('trademinator:recover-signal-queue', ['--apply' => true, '--workers-stopped' => $assertStopped])
+        ->expectsOutput('Stop intelligence and signals workers on every host before recovery. Worker '
+            .$lease['worker_id'].' still owns its slot.')->assertFailed();
+    expect($this->recoveryRedis->lrange('queues:intelligence', 0, -1))->toBe([$raw]);
+    expect($this->recoveryRedis->get($lease['slot_key']))->toBe($lease['owner']);
+    expect($this->recoveryRedis->exists($workers->maintenanceKey()))->toBe(0);
+    expect(is_dir($this->recoveryStorage.'/app/private/signal-queue-recovery'))->toBeFalse();
+})->with([false, true]);
+
+it('requires the explicit all-hosts assertion before recovering work from a worker with lost contact', function (): void {
+    $this->freezeTime();
+    $raw = recoveryPayload(recoveryLegacySignal(signalQueueRecoveryMarket()));
+    $this->recoveryRedis->rpush('queues:intelligence', $raw);
+    $workers = app(WorkerRegistry::class);
+    $lease = $workers->acquire('recovery-training', ['intelligence'], 'remote-1');
+    $this->recoveryRedis->del($lease['slot_key']);
+    $this->travel(61)->seconds();
+
+    $this->artisan('trademinator:recover-signal-queue', ['--apply' => true])
+        ->expectsOutput('Stop intelligence and signals workers on every host before recovery. Worker '
+            .$lease['worker_id'].' has uncertain status; after verifying every host, use --workers-stopped.')->assertFailed();
+    expect($this->recoveryRedis->lrange('queues:intelligence', 0, -1))->toBe([$raw]);
+    $this->artisan('trademinator:recover-signal-queue', ['--apply' => true, '--workers-stopped' => true])->assertSuccessful();
+    expect($this->recoveryRedis->llen('queues:intelligence'))->toBe(0);
+    expect($this->recoveryRedis->llen('queues:signals'))->toBe(1);
+    expect($this->recoveryRedis->get($lease['slot_key']))->toBeNull();
+    expect($workers->snapshot()[0]['status'])->toBe('contact_lost');
+});
 
 it('refuses recovery during signal dispatch and does not release the competing owner', function (): void {
     $lock = Cache::lock('trademinator:signal-dispatch', 600);

@@ -2,6 +2,7 @@
 
 namespace App\Domain\Intelligence;
 
+use App\Domain\Operations\WorkerRegistry;
 use Closure;
 use Illuminate\Cache\Lock;
 use RuntimeException;
@@ -55,6 +56,9 @@ final class TrainingLease
 
     public function heartbeat(bool $force = false): void
     {
+        if (app()->bound(WorkerRegistry::class)) {
+            app(WorkerRegistry::class)->guard(force: $force);
+        }
         if ($this->locks === [] && $this->callbacks === []) {
             return;
         }
@@ -77,6 +81,9 @@ final class TrainingLease
         }
 
         $this->lastHeartbeat = $now;
+        if (app()->bound(WorkerRegistry::class)) {
+            app(WorkerRegistry::class)->progress('training_checkpoint');
+        }
     }
 
     private function refresh(Lock $lock, int $seconds): bool

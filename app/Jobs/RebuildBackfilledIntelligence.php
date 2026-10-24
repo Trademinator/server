@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Domain\Archive\FeatureCheckpointStore;
 use App\Domain\Features\FeatureBuilder;
+use App\Domain\Features\FeatureHistoryRevisions;
 use App\Domain\Features\FeatureReplayTimeout;
 use App\Domain\Intelligence\BackfillIntelligence;
 use App\Domain\Intelligence\MarketIntelligence;
@@ -161,6 +162,7 @@ final class RebuildBackfilledIntelligence implements ShouldQueue
                     return;
                 }
 
+                app(FeatureHistoryRevisions::class)->complete($this->historyId, $revision);
                 $builds->release($this->historyId, $this->leaseToken, [
                     'build_stage' => 'knn', 'build_revision' => $revision, 'build_error' => null,
                 ]);

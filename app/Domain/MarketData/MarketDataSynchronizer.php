@@ -2,6 +2,7 @@
 
 namespace App\Domain\MarketData;
 
+use App\Domain\Features\MarketFeatureRefresh;
 use App\Domain\Intelligence\BackfillIntelligence;
 use App\Domain\Operations\ActionLog;
 use App\Models\MarketFeed;
@@ -23,7 +24,17 @@ final class MarketDataSynchronizer
     public function sync(string $exchange, string $symbol, string $period, int $from, int $to, bool $incremental = false, bool $repairGaps = false, int $requestLimit = 100): array
     {
         if (! $repairGaps) {
-            return $this->perform($exchange, $symbol, $period, $from, $to, $incremental, false, $requestLimit);
+            $feed = MarketFeed::query()->where('selected_period', $period)
+                ->whereHas('market', fn ($query) => $query->where('symbol', $symbol)
+                    ->whereHas('exchange', fn ($query) => $query->where('class', $exchange)))
+                ->whereHas('market.subscriptions', fn ($query) => $query->where('active', true)
+                    ->whereHas('user', fn ($users) => $users->whereNull('suspended_at')))->first();
+            $result = $this->perform($exchange, $symbol, $period, $from, $to, $incremental, false, $requestLimit, $feed);
+            if ($feed !== null && ! in_array(config('queue.default'), ['sync', 'null'], true)) {
+                app(MarketFeatureRefresh::class)->dispatch($exchange, $symbol, $period);
+            }
+
+            return $result;
         }
         $key = hash('sha256', "$exchange|$symbol|$period");
         $feed = MarketFeed::query()->with('market.exchange')->where('selected_period', $period)
@@ -79,13 +90,37 @@ final class MarketDataSynchronizer
             }
         }
 
-        $before = $repairGaps ? iterator_to_array($this->tickers->streamHistory($exchange, $symbol, $period, $from * 1000, $to * 1000)) : [];
+        $correctionFrom = $to * 1000;
+        if (! $repairGaps && $feed !== null) {
+            $timeframe = new CandleTimeframe;
+            for ($i = 0; $i < min(1000, max(1, $requestLimit)); $i++) {
+                $correctionFrom = $timeframe->previous($correctionFrom, $period);
+            }
+            $correctionFrom = max($from * 1000, $correctionFrom);
+        }
+        $before = $repairGaps || $feed !== null
+            ? iterator_to_array($this->tickers->streamHistory($exchange, $symbol, $period,
+                $repairGaps ? $from * 1000 : $correctionFrom, $to * 1000)) : [];
         $fetched = $start <= $to ? count($this->exchanges->fetch($symbol, $period, $start, $to, $requestLimit)) : 0;
         $timestamps = $this->tickers->timestamps($exchange, $symbol, $period, $from * 1000, $to * 1000);
         $missing = $this->gaps->between($timestamps, $period);
         $repaired = 0;
         $reconstructed = 0;
         $details = [];
+
+        if (! $repairGaps && $feed !== null && $before !== []) {
+            $nativeCorrections = [];
+            foreach ($this->tickers->streamHistory($exchange, $symbol, $period, $correctionFrom, $to * 1000) as $at => $bar) {
+                if (isset($before[$at]) && ! isset($before[$at]['reconstruction']) && ! isset($bar['reconstruction'])
+                    && $before[$at] !== $bar && (new CandleTimeframe)->next($at, $period) <= now()->getTimestampMs()) {
+                    $nativeCorrections[] = $at;
+                }
+            }
+            if ($nativeCorrections !== []) {
+                app(HistoryChanges::class)->record($feed->market_id, $period, min($nativeCorrections), max($nativeCorrections),
+                    'live_candle_correction', immediate: true);
+            }
+        }
 
         if ($repairGaps) {
             // Limit repair calls within a page as well as the candle request.

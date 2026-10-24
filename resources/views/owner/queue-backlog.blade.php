@@ -7,8 +7,11 @@
             @forelse($queueBacklog['rows'] as $queue)
                 <tr>
                     <td>{{ $queue['connection'] }} / {{ $queue['driver'] }}</td>
-                    <td>{{ $queue['driver'] === 'sqs' ? basename($queue['queue']) : $queue['queue'] }}</td>
-                    <td>{{ $queue['waiting'] }}</td><td>{{ $queue['delayed'] }}</td><td>{{ $queue['reserved'] }}</td><td>{{ $queue['total'] }}</td>
+                    <td>@if($queue['driver'] === 'redis')<a href="{{ route('owner.queue-jobs.index', ['connection' => $queue['connection'], 'queue' => $queue['queue']]) }}">{{ $queue['queue'] }}</a>@else{{ $queue['driver'] === 'sqs' ? basename($queue['queue']) : $queue['queue'] }}@endif</td>
+                    @foreach(['waiting', 'delayed', 'reserved'] as $state)
+                        <td>@if($queue['driver'] === 'redis')<a href="{{ route('owner.queue-jobs.index', ['connection' => $queue['connection'], 'queue' => $queue['queue'], 'state' => $state]) }}">{{ $queue[$state] }}</a>@else{{ $queue[$state] }}@endif</td>
+                    @endforeach
+                    <td>{{ $queue['total'] }}</td>
                     <td>@if($queue['oldest'] !== null)<x-display-time :value="$queue['oldest']" unit="seconds" />@else—@endif</td>
                 </tr>
             @empty
@@ -16,6 +19,32 @@
             @endforelse
         </tbody></table></div>
         <p class="owner-muted">Reserved jobs have been claimed by a worker. Oldest-job times are shown when available.@if(collect($queueBacklog['rows'])->contains('driver', 'sqs')) SQS counts are approximate.@endif</p>
+        <section id="workers">
+            <h3>Workers</h3>
+            <p class="owner-muted">Heartbeats show worker contact. Progress shows the last reported job checkpoint; a busy algorithm may continue between checkpoints. Lost contact does not requeue or cancel a running job.</p>
+            @if($workerError)<p role="status">{{ $workerError }}</p>@endif
+            <div class="owner-scroll"><table class="owner-table"><thead><tr><th>Host / IP</th><th>Worker / slot</th><th>Queues</th><th>Status</th><th>Current job</th><th>Last heartbeat</th><th>Last progress</th></tr></thead><tbody>
+                @forelse($workers as $worker)
+                    <tr>
+                        <td>{{ $worker['hostname'] }}<br>{{ $worker['ip'] }}</td>
+                        <td><code>{{ $worker['worker_id'] }}</code><br>PID {{ $worker['pid'] ?? '—' }} · Slot {{ $worker['slot'] }}</td>
+                        <td>{{ $worker['connection'] }}<br>{{ is_array($worker['queues']) ? implode(', ', $worker['queues']) : $worker['queues'] }}</td>
+                        <td>{{ ucfirst(str_replace('_', ' ', $worker['status'])) }}<br>{{ ucfirst(str_replace('_', ' ', $worker['state'])) }}</td>
+                        <td>@if($worker['job'] ?? null)
+                            {{ class_basename($worker['job']['name'] ?? 'Job') }}<br>
+                            @if(($worker['job']['uuid'] ?? null) && ($worker['job']['queue'] ?? null))
+                                <a href="{{ route('owner.queue-jobs.show', ['job' => $worker['job']['uuid'], 'connection' => $worker['job']['connection'] ?? $worker['connection'], 'queue' => $worker['job']['queue']]) }}"><code>{{ $worker['job']['uuid'] }}</code></a>
+                            @else<code>{{ $worker['job']['uuid'] ?? '—' }}</code>@endif
+                            @if($worker['job']['started_at'] ?? null)<br>Started <x-display-time :value="$worker['job']['started_at']" unit="seconds" />@endif
+                        @else—@endif</td>
+                        <td>@if($worker['heartbeat_at'] ?? null)<x-display-time :value="$worker['heartbeat_at']" unit="seconds" />@else—@endif</td>
+                        <td>{{ $worker['last_stage'] ?? '—' }}@if($worker['last_progress_at'] ?? null)<br><x-display-time :value="$worker['last_progress_at']" unit="seconds" />@endif</td>
+                    </tr>
+                @empty
+                    <tr><td colspan="7">{{ $workerError ? 'Worker records could not be read.' : 'No managed worker activity recorded yet.' }}</td></tr>
+                @endforelse
+            </tbody></table></div>
+        </section>
         <h3>Recent recorded job failures</h3><div class="owner-scroll"><table class="owner-table"><thead><tr>
             @foreach (['uuid' => 'Job UUID', 'connection' => 'Connection / queue', 'exception' => 'Exception', 'failed_at' => 'Failed at'] as $column => $label)
                 @php

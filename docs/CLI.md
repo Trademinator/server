@@ -104,6 +104,8 @@ Each link contains the exact signature, parameter meanings, execution/side-effec
 | Archives and portable data | [`trademinator:portable-export`](#trademinatorportable-export) |
 | Archives and portable data | [`trademinator:portable-import`](#trademinatorportable-import) |
 | Archives and portable data | [`trademinator:prune-portable-archives`](#trademinatorprune-portable-archives) |
+| Administration | [`trademinator:queue-work`](#trademinatorqueue-work) |
+| Administration | [`trademinator:queue-child`](#trademinatorqueue-child) (internal) |
 | Administration | [`trademinator:mailgun-check`](#trademinatormailgun-check) |
 | Administration | [`trademinator:prune-access-statistics`](#trademinatorprune-access-statistics) |
 
@@ -419,7 +421,7 @@ Signature: `trademinator:dispatch-market-features`
 
 Description: Queue M2 feature builds for subscribed markets whose current feature version is behind
 
-Queue catch-up only for active subscribed feeds with a selected period and source candles newer than the latest current-version feature. Requires `FEATURES_ENABLED=true`. Jobs use `FEATURES_QUEUE` (default **`features`**) and bounded replay continuations; a worker listening only to `default` will not drain that separate queue.
+Queue catch-up for feeds with active nonsuspended subscribers, a selected period, and newer completed candles or pending source-history corrections. Live ingestion requests updates after persistence; the scheduler reconciles every minute and current streams are skipped. Requires `FEATURES_ENABLED=true`. Jobs use `FEATURES_QUEUE` (default **`features`**) and bounded replay continuations; a worker listening only to `default` will not drain that separate queue.
 
 Parameters: none beyond standard Artisan options.
 
@@ -711,7 +713,7 @@ Signature: `trademinator:dispatch-market-intelligence {--force : Create a fresh 
 
 Description: Queue weekly KNN and pattern training once per subscribed market and selected period
 
-Queue training for all active subscribed feeds with selected periods on `INTELLIGENCE_QUEUE` (default `intelligence`). Requires enabled intelligence and a persistent queue. Uses the current weekly generation key; already completed generations are not a force-rebuild target. This command only dispatches: **`--timeout` belongs on `queue:work`, not here**. Training jobs carry a timeout calculated from all enabled algorithm and parameter runs; it takes precedence over the worker's timeout fallback. See [training and queue budgets](CRONTABS.md#m4-intelligence-workers).
+Queue training for all active subscribed feeds with selected periods on `INTELLIGENCE_QUEUE` (default `intelligence`). Requires enabled intelligence and a persistent queue. Uses the current weekly generation key; already completed generations are not a force-rebuild target. This command only dispatches; set the fallback `--timeout` on the worker command. Training jobs carry a timeout calculated from all enabled algorithm and parameter runs; it takes precedence over the worker's timeout fallback. See [training and queue budgets](CRONTABS.md#m4-intelligence-workers).
 
 Parameters: none beyond standard Artisan options.
 
@@ -747,6 +749,8 @@ Dispatch one unique queue job per dataset to the dedicated tournament queue. Eac
 
     php -d memory_limit=512M artisan trademinator:tournament DATASET_UUID --max-rows=1200
     php -d memory_limit=512M artisan trademinator:tournament --all --max-rows=1200
+
+Drain those jobs with `php -d memory_limit=512M artisan trademinator:queue-work redis --queue=tournament --slot=1 --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2`. Match `--queue` to `INTELLIGENCE_TOURNAMENT_QUEUE` when customized; the [research worker cron](CRONTABS.md#research-tournament-worker) also drains shadow work.
 
 ## trademinator:shadow
 
@@ -789,31 +793,64 @@ Parameters: none beyond standard Artisan options.
 ```bash
 php artisan trademinator:dispatch-market-signals
 # Redis deployment: run a dedicated signal consumer using its own connection.
-php -d memory_limit=512M artisan queue:work redis-signals --queue=signals --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2
+php -d memory_limit=512M artisan trademinator:queue-work redis-signals --queue=signals --slot=1 --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2
 ```
 
 Implementation: [`DispatchMarketSignals.php`](../app/Console/Commands/DispatchMarketSignals.php).
 
+## trademinator:queue-work
+
+Signature: `trademinator:queue-work {connection? : The Redis queue connection} {--queue= : Comma-separated queue names} {--slot=1 : Worker slot on this host and queue pool} {--stop-when-empty : Stop when the ready queue is empty} {--max-time=50 : Stop between jobs after this many seconds} {--max-jobs=0 : Stop after this many jobs, or zero for no job-count limit} {--timeout=600 : Fallback job timeout; a job-specific timeout takes precedence} {--memory=384 : Worker recycle threshold in MiB} {--tries=3 : Fallback maximum attempts} {--sleep=3 : Idle poll interval in seconds}`
+
+Description: Drain Redis work from cron with an owned worker slot and independent heartbeat
+
+Launch a finite Laravel worker on the selected Redis queue connection. The supervisor owns a Redis slot identified by hostname, IP, queue pool and `--slot`, and reports its child's heartbeat independently of job progress. An occupied slot or active maintenance guard exits successfully without starting another child. Use distinct slots for deliberate parallel workers on one host; each machine can use slot `1`. All nodes need the same application version, database, Redis namespace/cache and private model/research storage. See [CRONTABS.md](CRONTABS.md#queue-and-cache-requirements) for the complete deployment configuration.
+
+`--max-time` and `--timeout` must be positive. `--max-time=50` stops between jobs, allowing an active long job to finish. Job-specific timeouts and algorithm budgets retain precedence over the fallback timeout. The child inherits the parent's PHP configuration and hard memory limit; `--memory` controls recycling between jobs. Normal SIGTERM requests a graceful stop. Lost ownership prevents further claims and training publication at the next checkpoint; it does not cancel or automatically requeue the current job.
+
+```bash
+php -d memory_limit=512M artisan trademinator:queue-work redis --queue=features --slot=1 --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=3
+```
+
+Ready learning jobs are ordered by their current count of distinct active subscribers, with older work promoted to prevent starvation. Suspended users are excluded. Delays, retries and dependency readiness remain eligibility gates. Waiting age survives retries and dependent continuations. `QUEUE_PRIORITY_ENABLED=false` restores native FIFO ordering while preserving manual Owner overrides. The default age-promotion thresholds are 120 seconds for features/signals, 1,800 for history, 3,600 for intelligence/default work, and 7,200 for tournaments; these are promotion thresholds rather than completion guarantees. Due live feeds also use subscriber demand, exchange rotation and a 300-second age threshold. Configure the corresponding `QUEUE_*_MAX_WAIT` and `OHLCV_MAX_WAIT_SECONDS` values in `.env`.
+
+In Owner → Queue backlog, open a Redis queue to inspect ready, delayed and reserved jobs. Ready jobs support Up, Down, Top, Bottom and restoration of automatic order. Pending cancellation requires password confirmation and atomically fails if a worker already claimed the job. Reserved jobs are read-only. Cancelling a chained job prevents its remaining chain from dispatching. Unsupported job types, batches, archive parts and legacy unique jobs without a verifiable lock owner remain inspectable but require their own coordinated cleanup. Cancellation removes one invocation; recurring subscriptions remain active.
+
+Implementation: [`ManagedQueueWork.php`](../app/Console/Commands/ManagedQueueWork.php).
+
+## trademinator:queue-child
+
+Signature: `trademinator:queue-child {connection} {--queue=} {--stop-when-empty} {--max-time=50} {--max-jobs=0} {--timeout=600} {--memory=384} {--tries=3} {--sleep=3}`
+
+Description: Internal child process for a supervised queue worker
+
+Internal, hidden command launched only by `trademinator:queue-work`. It requires the supervisor's ephemeral identity handoff and verifies parent/slot ownership before consuming work. Do not add this command directly to cron; use the managed launcher above.
+
+Implementation: [`ManagedQueueChild.php`](../app/Console/Commands/ManagedQueueChild.php).
+
 ## trademinator:recover-signal-queue
 
-Signature: `trademinator:recover-signal-queue {--apply : Apply the backed-up recovery while both local queue workers are stopped}`
+Signature: `trademinator:recover-signal-queue {--apply : Apply the backed-up recovery while affected workers on every host are stopped} {--workers-stopped : Confirm that workers with lost contact have been stopped on every host}`
 
 Description: Inspect or recover the legacy Redis signal backlog without discarding training work
 
 Without `--apply`, inspect the configured intelligence and signals queues and report the proposed recovery counts without changing queued work, cache locks or database state. The command examines waiting, delayed and reserved payloads. It requires distinct queue names, Redis for both queue connections and the default cache lock store, and the exact same non-cluster Redis connection for queues and cache locks. Redis serialization and compression must be disabled.
 
-`--apply` is for a **single worker host with both intelligence and signals workers stopped**. Stop those consumers and prevent their restart until recovery finishes; the command cannot verify workers on other hosts. It acquires the same local guards as the documented cron entries, `storage/framework/trademinator-intelligence-queue.lock` and `storage/framework/trademinator-signals-queue.lock`, and the shared signal-dispatch guard. Workers launched manually or under different lock paths must also be stopped. Apply the current code and configuration before recovery, using `config:clear` / `config:cache` rather than `optimize:clear` or `cache:clear`, which can erase pending-job uniqueness locks. This queue repair does not require a database migration or frontend asset rebuild.
+`--apply` requires **all affected intelligence and signals workers on every host to be stopped**. Stop those consumers and prevent their restart until recovery finishes. The command holds a shared maintenance guard, checks registered workers across hosts, and retains the legacy local guards `storage/framework/trademinator-intelligence-queue.lock` and `storage/framework/trademinator-signals-queue.lock` plus the signal-dispatch guard. A live slot always blocks recovery. Lost or missing worker contact requires `--workers-stopped` after verifying that the processes have actually exited; a stale heartbeat is insufficient evidence. Unmanaged workers must also be stopped. Apply the current code and migrations before recovery, using `config:clear` / `config:cache` rather than `optimize:clear` or `cache:clear`, which can erase pending-job uniqueness locks.
 
 Before mutation, apply mode persists a private JSONL backup under `storage/app/private/signal-queue-recovery/` and prints its path. It coalesces legacy signal payloads into fresh unique jobs for eligible active markets, removes only superseded backfill jobs, refreshes retained training timeouts and requeues stopped training reservations. Current training work, unrelated queued jobs, candles, models and immutable signal history are preserved. Recovery queues observations; it does not execute predictions or reconstruct historical trade decisions.
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `--apply` | Off; dry run | Back up and apply the validated recovery after both local consumers are stopped. |
+| `--apply` | Off; dry run | Back up and apply the validated recovery after affected consumers on every host are stopped. |
+| `--workers-stopped` | Off | Explicitly confirm exit of workers whose contact was lost; never bypasses a live slot lease. |
 
 ```bash
 php artisan trademinator:recover-signal-queue
-# After stopping both consumers on the single worker host and reviewing the dry run:
+# After stopping affected consumers on every host and reviewing the dry run:
 php artisan trademinator:recover-signal-queue --apply
+# If old worker contact was lost, only after independently confirming process exit:
+php artisan trademinator:recover-signal-queue --apply --workers-stopped
 ```
 
 If inspection or ownership checks fail, review the message and rerun the dry run before applying. Redis and database updates are separate stores; after an interrupted or uncertain apply, retain the printed backup and rerun inspection to reconcile current state. Resume the separate intelligence and signals cron consumers only after recovery succeeds. See [CRONTABS.md](CRONTABS.md#m42-dashboard-recording-and-discovery) for their connection, timeout and lock paths.
@@ -1182,6 +1219,7 @@ Use the identifier printed by `queue:failed`, not a model/dataset UUID. Avoid bu
 | Option / setting | Meaning |
 | --- | --- |
 | `--queue=NAME[,NAME...]` | Queue names to drain, in priority order. Names are not connection/backend names. Match the configured names. |
+| `--slot=NAME` | Managed worker slot within this host and queue pool. Different slots permit deliberate parallelism. |
 | `--stop-when-empty` | Exit when there is no immediately available work; delayed/released/continued jobs may require a later pass. |
 | `--max-time=50` | Recycle the worker after the duration, checked between jobs; not a 50-second deadline for each job. |
 | `--timeout=SECONDS` | Worker per-job timeout. A job's own timeout can override it. It does not replace cooperative time limits inside feature/model code. |
@@ -1189,23 +1227,23 @@ Use the identifier printed by `queue:failed`, not a model/dataset UUID. Avoid bu
 | `php -d memory_limit=512M` | PHP's separate hard in-process memory ceiling. This setting precedes `artisan`. |
 | `--tries=N` | Worker attempt limit, subject to job-specific retry policy. |
 
-These examples drain the current default queues without starting a permanent daemon. Run only the workers assigned to that host and replace customized queue names. Resource values are starting settings, not capacity guarantees.
+These examples drain the managed Redis queues without starting a permanent daemon. Run only the workers assigned to that host and replace customized queue names. Resource values are starting settings, not capacity guarantees.
 
 ```bash
 # Live feeds and manually queued candle pages.
-php -d memory_limit=512M artisan queue:work --queue=default --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=5
+php -d memory_limit=512M artisan trademinator:queue-work redis --queue=default --slot=1 --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=5
 
 # M2 feature jobs have their own queue; do not omit it.
-php -d memory_limit=512M artisan queue:work --queue=features --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=3
+php -d memory_limit=512M artisan trademinator:queue-work redis --queue=features --slot=1 --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=3
 
 # Older-history collection and missing-candle repair.
-php -d memory_limit=256M artisan queue:work --queue=history --stop-when-empty --max-time=50 --timeout=120 --memory=192 --tries=1
+php -d memory_limit=512M artisan trademinator:queue-work redis --queue=history --slot=1 --stop-when-empty --max-time=50 --timeout=120 --memory=384 --tries=1
 
 # Model builds and backfill rebuild stages; each job carries its calculated timeout.
-php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
+php -d memory_limit=512M artisan trademinator:queue-work redis --queue=intelligence --slot=1 --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
 
 # Signal recording has a separate worker; this example selects its Redis connection.
-php -d memory_limit=512M artisan queue:work redis-signals --queue=signals --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2
+php -d memory_limit=512M artisan trademinator:queue-work redis-signals --queue=signals --slot=1 --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2
 ```
 
 `FEATURES_QUEUE`, `HISTORY_BACKFILL_QUEUE`, `INTELLIGENCE_QUEUE` and `INTELLIGENCE_SIGNALS_QUEUE` can override the names. Match the signal worker's positional connection to `INTELLIGENCE_SIGNALS_CONNECTION`; `redis-signals` uses a separate reservation budget even though its storage is shared with the training queue. A scheduler success or an empty database `jobs` table does not prove Redis/other backend queues are empty. Use the actual configured connection and owner monitoring.
@@ -1249,9 +1287,9 @@ For routine bulk work on active subscriptions:
 ```bash
 php artisan trademinator:dispatch-market-features
 # Drain features and confirm catch-up before relying on new inputs.
-php -d memory_limit=512M artisan queue:work --queue=features --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=3
+php -d memory_limit=512M artisan trademinator:queue-work redis --queue=features --slot=1 --stop-when-empty --max-time=50 --timeout=600 --memory=384 --tries=3
 php artisan trademinator:dispatch-market-intelligence
-php -d memory_limit=512M artisan queue:work --queue=intelligence --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
+php -d memory_limit=512M artisan trademinator:queue-work redis --queue=intelligence --slot=1 --stop-when-empty --max-time=50 --timeout=2400 --memory=384 --tries=3
 ```
 
 A single bounded worker pass may not finish all continuations. The weekly dispatcher does not force already completed weekly generations to rebuild and has no `--schema` argument; queued builds use configured intelligence settings. Direct `knn-build --schema=full` is a one-market operation.

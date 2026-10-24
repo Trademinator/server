@@ -9,6 +9,7 @@ use App\Domain\Intelligence\ModelStore;
 use App\Domain\Operations\FailedJobMarketContext;
 use App\Domain\Operations\GeoLocation;
 use App\Domain\Operations\QueueBacklog;
+use App\Domain\Operations\WorkerRegistry;
 use App\Http\Controllers\Controller;
 use App\Models\Market;
 use App\Models\MarketFeature;
@@ -22,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Throwable;
 
 class ReportController extends Controller
 {
@@ -57,7 +59,7 @@ class ReportController extends Controller
             'traffic', 'latestPull', 'latestModel', 'geoStatus'));
     }
 
-    public function queueBacklog(Request $request, QueueBacklog $backlog): View
+    public function queueBacklog(Request $request, QueueBacklog $backlog, WorkerRegistry $registry): View
     {
         $failedFilters = $request->validate([
             'failed_sort' => ['nullable', Rule::in(['uuid', 'connection', 'exception', 'failed_at'])],
@@ -82,8 +84,18 @@ class ReportController extends Controller
             unset($job->exception);
         });
         $queueDriver = config('queue.default');
+        $workers = [];
+        $workerError = null;
+        if (collect($queueBacklog['connections'])->contains(fn (string $connection): bool => config('queue.connections.'.$connection.'.driver') === 'redis')) {
+            try {
+                $workers = $registry->snapshot();
+            } catch (Throwable $exception) {
+                report($exception);
+                $workerError = 'Worker status is temporarily unavailable. Existing work continues under its queue reservations.';
+            }
+        }
 
-        return view('owner.queue-backlog', compact('queueBacklog', 'failed', 'failedFilters', 'failedSort', 'failedDirection', 'queueDriver'));
+        return view('owner.queue-backlog', compact('queueBacklog', 'failed', 'failedFilters', 'failedSort', 'failedDirection', 'queueDriver', 'workers', 'workerError'));
     }
 
     public function subscriptions(Request $request): View

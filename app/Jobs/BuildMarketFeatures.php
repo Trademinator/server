@@ -6,6 +6,7 @@ use App\Domain\Archive\FeatureCheckpointStore;
 use App\Domain\Features\FeatureBuilder;
 use App\Domain\Features\FeatureBuildLocked;
 use App\Domain\Features\FeatureEngine;
+use App\Domain\Features\FeatureHistoryRevisions;
 use App\Domain\Features\FeatureReplayTimeout;
 use App\Domain\Intelligence\KnowledgeRequestJournal;
 use App\Domain\MarketData\CandleTimeframe;
@@ -39,6 +40,12 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
 
     public ?int $chunkCandles = null;
 
+    public ?int $queueRequestedAt = null;
+
+    public ?string $featureHistoryId = null;
+
+    public ?int $featureHistoryRevision = null;
+
     public function __construct(public string $exchange, public string $symbol, public string $period)
     {
         $this->onQueue((string) config('features.queue', 'features'));
@@ -70,8 +77,16 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
             ->where('version', FeatureEngine::VERSION)
             ->max('microtimestamp');
 
+        $revision = $this->replayCutoffMs === null
+            ? app(FeatureHistoryRevisions::class)->pending($this->exchange, $this->symbol, $this->period)
+            : null;
+        if ($revision !== null) {
+            $this->featureHistoryId = $revision['history_id'];
+            $this->featureHistoryRevision = $revision['revision'];
+        }
+
         // A previous queued build may have caught up before this job started.
-        if ($this->replayCutoffMs === null && $latestFeature !== null && (int) $latestFeature >= $latestCandle) {
+        if ($this->replayCutoffMs === null && $revision === null && $latestFeature !== null && (int) $latestFeature >= $latestCandle) {
             app(KnowledgeRequestJournal::class)
                 ->markSatisfied($this->exchange, $this->symbol, $this->period, 'features', (int) $latestFeature);
 
@@ -79,7 +94,9 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
         }
 
         $fromMs = $this->replayFromMs;
-        if ($this->replayCutoffMs === null && $latestFeature !== null) {
+        if ($revision !== null) {
+            $fromMs = $latestFeature === null ? null : $revision['from_ms'];
+        } elseif ($this->replayCutoffMs === null && $latestFeature !== null) {
             // Rebuild a small overlap so any recent exchange correction is folded
             // into the new feature rows while the checkpoint preserves older state.
             $fromMs = (int) $latestFeature;
@@ -141,12 +158,21 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
             $this->continueReplay($fromMs, $cutoffMs, $chunkCutoffMs, $chunkCandles);
             $this->logContinuation($rows, $timeframe->previous($chunkCutoffMs, $this->period), $started, 'chunk_limit');
         } else {
+            if ($this->featureHistoryId !== null && $this->featureHistoryRevision !== null) {
+                app(FeatureHistoryRevisions::class)->complete($this->featureHistoryId, $this->featureHistoryRevision);
+            }
             $completed = DB::table('market_features')->where('exchange', $this->exchange)
                 ->where('symbol', $this->symbol)->where('period', $this->period)
                 ->where('version', FeatureEngine::VERSION)->max('microtimestamp');
             if ($completed !== null) {
                 app(KnowledgeRequestJournal::class)
                     ->markSatisfied($this->exchange, $this->symbol, $this->period, 'features', (int) $completed);
+            }
+            if (app(FeatureHistoryRevisions::class)->pending($this->exchange, $this->symbol, $this->period) !== null) {
+                $next = (new self($this->exchange, $this->symbol, $this->period))
+                    ->onConnection($this->connection)->onQueue($this->queue);
+                $next->queueRequestedAt = $this->requestedAt();
+                $this->prependToChain($next);
             }
         }
     }
@@ -166,10 +192,18 @@ final class BuildMarketFeatures implements ShouldBeUnique, ShouldQueue
         $next->replayCutoffMs = $cutoffMs;
         $next->checkpointBeforeMs = $checkpointBeforeMs;
         $next->chunkCandles = $chunkCandles;
+        $next->queueRequestedAt = $this->requestedAt();
+        $next->featureHistoryId = $this->featureHistoryId;
+        $next->featureHistoryRevision = $this->featureHistoryRevision;
 
         // Dispatch after successful completion releases this job's unique lock.
         // Fresh jobs preserve retries for real failures and keep recursive state sequential.
         $this->prependToChain($next);
+    }
+
+    private function requestedAt(): int
+    {
+        return $this->queueRequestedAt ?? (int) ($this->job?->payload()['queue_context']['requested_at'] ?? now()->getTimestamp());
     }
 
     private function logContinuation(int $rows, ?int $throughMs, int $started, string $reason): void

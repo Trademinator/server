@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Domain\Intelligence\AlgorithmicLabelBuilder;
-use App\Domain\Intelligence\ActionLabelReportStore;
 use App\Domain\Intelligence\KnowledgeRequestJournal;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -17,6 +16,8 @@ final class AnalyzeMarketAutoLabels implements ShouldQueue
 
     public int $timeout = 900;
 
+    public ?string $dispatchLockOwner = null;
+
     public function __construct(
         public string $exchange,
         public string $symbol,
@@ -27,6 +28,12 @@ final class AnalyzeMarketAutoLabels implements ShouldQueue
 
     public function handle(AlgorithmicLabelBuilder $builder): void
     {
+        $lock = $this->dispatchLockOwner === null ? null
+            : Cache::lock($this->cacheKey.':lock', $this->timeout + 300, $this->dispatchLockOwner);
+        if ($lock !== null && ! $lock->refresh() && ! $lock->get()) {
+            return;
+        }
+
         Cache::put($this->cacheKey.':status', 'running', now()->addDay());
         try {
             $result = $builder->build($this->exchange, $this->symbol, $this->period, $this->asOfMs ?? now()->getTimestampMs());
@@ -45,15 +52,21 @@ final class AnalyzeMarketAutoLabels implements ShouldQueue
             Cache::put($this->cacheKey.':error', $error->getMessage(), now()->addDay());
             throw $error;
         } finally {
-            Cache::forget($this->cacheKey.':lock');
+            $lock?->release();
         }
     }
 
     public function failed(?\Throwable $error): void
     {
+        $lock = $this->dispatchLockOwner === null ? null
+            : Cache::restoreLock($this->cacheKey.':lock', $this->dispatchLockOwner);
+        if ($lock !== null && ! $lock->isOwnedByCurrentProcess()) {
+            return;
+        }
+
         Cache::put($this->cacheKey.':status', 'failed', now()->addDay());
         Cache::put($this->cacheKey.':error',
             $error?->getMessage() ?? 'Auto-labelling exhausted its retry attempts.', now()->addDay());
-        Cache::forget($this->cacheKey.':lock');
+        $lock?->release();
     }
 }

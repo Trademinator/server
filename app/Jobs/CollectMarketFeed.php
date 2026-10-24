@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Domain\MarketData\CandleFeedSchedule;
 use App\Domain\MarketData\CandlePeriodReevaluation;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\MarketData\ExchangeMetadata;
@@ -13,12 +14,11 @@ use App\Repositories\TickerRepository;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
-
-use function Trademinator\Time\periods_to_seconds;
 
 final class CollectMarketFeed implements ShouldQueue
 {
@@ -32,6 +32,8 @@ final class CollectMarketFeed implements ShouldQueue
 
     /** @var list<int> */
     public array $backoff = [30, 60, 120, 240];
+
+    public ?int $queueRequestedAt = null;
 
     public function __construct(public readonly string $marketId, public readonly string $leaseToken) {}
 
@@ -49,7 +51,8 @@ final class CollectMarketFeed implements ShouldQueue
             if ($feed === null || $feed->lease_token !== $this->leaseToken) {
                 return; // Stale job from an expired or replaced claim.
             }
-            if (! $feed->market->subscriptions()->where('active', true)->exists()) {
+            if (! $feed->market->subscriptions()->where('active', true)
+                ->whereHas('user', fn ($query) => $query->whereNull('suspended_at'))->exists()) {
                 $this->finish('idle', null);
 
                 return;
@@ -77,14 +80,31 @@ final class CollectMarketFeed implements ShouldQueue
             if (! in_array($period, CandleTimeframe::SUPPORTED, true)) {
                 throw new RuntimeException('Invalid stored candle period.');
             }
-            $seconds = periods_to_seconds($period);
-            $to = time() - $seconds; // Never rely on an unfinished candle.
+            $schedule = new CandleFeedSchedule;
+            $timeframe = new CandleTimeframe;
             $latest = $tickers->latestTimestamp($exchange->class, $market->symbol, $period);
-            $from = max($to - 90 * $seconds, $latest === null ? 0 : intdiv($latest, 1000) - 3 * $seconds);
-            if ($from < $to) {
+            $toMs = $schedule->lastClosedOpening($period, now()->getTimestampMs(), $latest);
+            $windowStart = $toMs;
+            for ($i = 0; $i < 89; $i++) {
+                $windowStart = $timeframe->previous($windowStart, $period);
+            }
+            $overlap = $latest ?? 0;
+            for ($i = 0; $latest !== null && $i < 3; $i++) {
+                $overlap = $timeframe->previous($overlap, $period);
+            }
+            $from = intdiv(max(0, $windowStart, $overlap), 1000);
+            $to = intdiv($toMs, 1000);
+            if ($from <= $to) {
                 $synchronizer->sync($exchange->class, $market->symbol, $period, $from, $to, false, false, 90);
             }
-            $this->finish('ready', now()->addSeconds(max(60, $seconds)), null, true);
+            $completedAt = now()->getTimestampMs();
+            $grace = max(0, min(300, (int) config('queue_management.feed_publication_grace_seconds', 5)));
+            $expected = $schedule->lastClosedOpening($period, $completedAt - $grace * 1000, $latest);
+            $received = $tickers->timestamps($exchange->class, $market->symbol, $period, $expected, $expected) !== [];
+            $next = $schedule->nextPull($period, $completedAt, $latest, $received, $grace,
+                (int) config('queue_management.feed_publication_retry_seconds', 60));
+            $this->finish($received ? 'ready' : 'pending', Carbon::createFromTimestampMs($next, 'UTC'),
+                $received ? null : 'The latest completed candle is not available yet; collection will be retried shortly.', true);
         } finally {
             $lock->release();
         }

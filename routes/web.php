@@ -3,8 +3,9 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Markets\CandleTrainingController;
 use App\Http\Controllers\Markets\DashboardSuggestionController;
-use App\Http\Controllers\Markets\HumanTrainingController;
+use App\Http\Controllers\Markets\EvaluationController;
 use App\Http\Controllers\Markets\HumanAnnotationController;
+use App\Http\Controllers\Markets\HumanTrainingController;
 use App\Http\Controllers\Markets\IntelligenceController;
 use App\Http\Controllers\Markets\SubscriptionController;
 use App\Http\Controllers\Markets\SuggestionController;
@@ -15,13 +16,14 @@ use App\Http\Controllers\Owner\FailedJobController;
 use App\Http\Controllers\Owner\HistoryRecoveryController;
 use App\Http\Controllers\Owner\KnowledgeActionController;
 use App\Http\Controllers\Owner\MarketEventController;
+use App\Http\Controllers\Owner\QueueJobController;
 use App\Http\Controllers\Owner\ReportController;
-use App\Http\Controllers\Markets\EvaluationController;
 use App\Http\Controllers\Owner\StatusController;
 use App\Http\Controllers\Owner\UserController;
 use App\Http\Controllers\Settings;
 use App\Http\Middleware\ConfirmFailedJobPassword;
 use App\Http\Middleware\ConfirmHistoryRecoveryPassword;
+use App\Http\Middleware\ConfirmQueueJobPassword;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -109,6 +111,13 @@ Route::prefix('human-training')->name('human-training.')->middleware(['auth', 'v
 Route::prefix('owner')->name('owner.')->middleware(['auth', 'verified', 'server-owner', 'throttle:60,1'])->group(function () {
     Route::get('/', [ReportController::class, 'index'])->name('overview');
     Route::get('queue-backlog', [ReportController::class, 'queueBacklog'])->name('queue-backlog');
+    $queueJobId = '[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}|[0-9a-f]{64}';
+    Route::get('queue-jobs', [QueueJobController::class, 'index'])->name('queue-jobs.index');
+    Route::get('queue-jobs/{job}', [QueueJobController::class, 'show'])->where('job', $queueJobId)->name('queue-jobs.show');
+    Route::post('queue-jobs/{job}/move', [QueueJobController::class, 'move'])->where('job', $queueJobId)
+        ->middleware('throttle:30,1,queue-job-moves')->name('queue-jobs.move');
+    Route::delete('queue-jobs/{job}', [QueueJobController::class, 'destroy'])->where('job', $queueJobId)
+        ->middleware(['throttle:12,1,queue-job-cancel', ConfirmQueueJobPassword::class])->name('queue-jobs.destroy');
     Route::get('failed-jobs/{job}', [FailedJobController::class, 'show'])->whereUuid('job')->name('failed-jobs.show');
     Route::post('failed-jobs/{job}/retry', [FailedJobController::class, 'retry'])->whereUuid('job')
         ->middleware(['throttle:12,1,failed-jobs', ConfirmFailedJobPassword::class])->name('failed-jobs.retry');

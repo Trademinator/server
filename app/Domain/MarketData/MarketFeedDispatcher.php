@@ -4,6 +4,8 @@ namespace App\Domain\MarketData;
 
 use App\Jobs\CollectMarketFeed;
 use App\Models\MarketFeed;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -17,7 +19,9 @@ final class MarketFeedDispatcher
         $candidate = DB::table('market_feeds')->where('market_id', $marketId)
             ->where(fn ($query) => $query->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
             ->whereExists(fn ($query) => $query->selectRaw('1')->from('market_subscriptions')
-                ->whereColumn('market_subscriptions.market_id', 'market_feeds.market_id')->where('active', true));
+                ->join('users', 'users.user_id', '=', 'market_subscriptions.user_id')
+                ->whereColumn('market_subscriptions.market_id', 'market_feeds.market_id')
+                ->where('market_subscriptions.active', true)->whereNull('users.suspended_at'));
         if (! $force) {
             $candidate->where('next_pull_at', '<=', now());
         }
@@ -44,28 +48,31 @@ final class MarketFeedDispatcher
     {
         $dispatched = 0;
 
-        // Rank due feeds within each exchange, then dispatch one feed from each
-        // exchange per round. This reduces same-exchange request bursts while
-        // preserving oldest-first ordering inside every exchange.
+        $agedBefore = now()->subSeconds(max(1, (int) config('queue_management.feed_max_wait_seconds', 300)));
+        $priority = 'CASE WHEN market_feeds.next_pull_at <= ? THEN 0 ELSE 1 END, '
+            .'CASE WHEN market_feeds.next_pull_at <= ? THEN market_feeds.next_pull_at END, '
+            .'demand.active_subscriber_count DESC, market_feeds.next_pull_at, market_feeds.market_id';
+
+        // Preserve exchange turns while preferring demand within each turn.
+        // Protected old work is ordered by age before ordinary subscriber ranking.
         $ranked = MarketFeed::query()
-            ->select(['market_feeds.market_id', 'markets.exchange_id', 'market_feeds.next_pull_at'])
-            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY markets.exchange_id ORDER BY market_feeds.next_pull_at, market_feeds.market_id) AS exchange_rank')
-            ->selectRaw('MIN(market_feeds.next_pull_at) OVER (PARTITION BY markets.exchange_id) AS exchange_first_due')
+            ->select(['market_feeds.market_id', 'markets.exchange_id', 'market_feeds.next_pull_at', 'demand.active_subscriber_count'])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY markets.exchange_id ORDER BY '.$priority.') AS exchange_rank', [$agedBefore, $agedBefore])
+            ->selectRaw('CASE WHEN market_feeds.next_pull_at <= ? THEN 1 ELSE 0 END AS priority_aged', [$agedBefore])
             ->join('markets', 'markets.market_id', '=', 'market_feeds.market_id')
+            ->joinSub($this->subscriberCounts(), 'demand', 'demand.market_id', '=', 'market_feeds.market_id')
             ->where('market_feeds.next_pull_at', '<=', now())
             ->where(fn ($query) => $query->whereNull('market_feeds.lease_until')
-                ->orWhere('market_feeds.lease_until', '<=', now()))
-            ->whereExists(fn ($query) => $query->selectRaw('1')->from('market_subscriptions')
-                ->whereColumn('market_subscriptions.market_id', 'market_feeds.market_id')->where('active', true));
+                ->orWhere('market_feeds.lease_until', '<=', now()));
 
         $ids = DB::query()->fromSub($ranked, 'due_feeds')
-            ->orderBy('exchange_rank')
-            ->orderBy('exchange_first_due')
-            ->orderBy('exchange_id')
-            ->limit($limit)
-            ->pluck('market_id');
+            ->orderBy('exchange_rank')->orderByDesc('priority_aged')
+            ->orderByRaw('CASE WHEN priority_aged = 1 THEN next_pull_at END')
+            ->orderByDesc('active_subscriber_count')->orderBy('next_pull_at')->orderBy('exchange_id')
+            ->limit($limit)->get(['market_id', 'next_pull_at']);
 
-        foreach ($ids as $marketId) {
+        foreach ($ids as $candidate) {
+            $marketId = (string) $candidate->market_id;
             $token = (string) Str::uuid7();
             // The conditional update is a database claim. The cache scheduler lock
             // reduces contention; this claim remains safe with multiple HTTP nodes.
@@ -73,13 +80,17 @@ final class MarketFeedDispatcher
                 ->where('next_pull_at', '<=', now())
                 ->where(fn ($query) => $query->whereNull('lease_until')->orWhere('lease_until', '<=', now()))
                 ->whereExists(fn ($query) => $query->selectRaw('1')->from('market_subscriptions')
-                    ->whereColumn('market_subscriptions.market_id', 'market_feeds.market_id')->where('active', true))
+                    ->join('users', 'users.user_id', '=', 'market_subscriptions.user_id')
+                    ->whereColumn('market_subscriptions.market_id', 'market_feeds.market_id')
+                    ->where('market_subscriptions.active', true)->whereNull('users.suspended_at'))
                 ->update(['lease_token' => $token, 'lease_until' => now()->addMinutes(15), 'status' => 'queued', 'updated_at' => now()]);
             if (! $claimed) {
                 continue;
             }
             try {
-                CollectMarketFeed::dispatch((string) $marketId, $token);
+                $job = new CollectMarketFeed($marketId, $token);
+                $job->queueRequestedAt = Carbon::parse($candidate->next_pull_at)->getTimestamp();
+                dispatch($job);
                 $dispatched++;
             } catch (Throwable $exception) {
                 DB::table('market_feeds')->where('market_id', $marketId)->where('lease_token', $token)
@@ -90,5 +101,13 @@ final class MarketFeedDispatcher
         }
 
         return $dispatched;
+    }
+
+    private function subscriberCounts(): Builder
+    {
+        return DB::table('market_subscriptions')->join('users', 'users.user_id', '=', 'market_subscriptions.user_id')
+            ->where('market_subscriptions.active', true)->whereNull('users.suspended_at')
+            ->groupBy('market_subscriptions.market_id')
+            ->select('market_subscriptions.market_id')->selectRaw('COUNT(DISTINCT market_subscriptions.user_id) AS active_subscriber_count');
     }
 }
