@@ -28,7 +28,7 @@ final class ModelStore
             && self::rubixCompatible($report)
             && ($report['status'] ?? null) === 'ready'
             && ($report['validation_version'] ?? null) === IntelligenceTrainer::VERSION
-            && ($report['trained_as_of_ms'] ?? 0) >= KnowledgeWindow::fromMs(now()->getTimestampMs());
+            && ($report['trained_as_of_ms'] ?? 0) > KnowledgeWindow::fromMs(now()->getTimestampMs());
     }
 
     /** @return array<string, array{ready: bool, reason: string}> */
@@ -39,7 +39,7 @@ final class ModelStore
             ! self::rubixCompatible($report) => 'model_version_mismatch',
             ($report['validation_version'] ?? null) !== IntelligenceTrainer::VERSION => 'model_version_mismatch',
             ! FeatureSchema::modelCompatible($report) => 'model_schema_outdated',
-            ($report['trained_as_of_ms'] ?? 0) < KnowledgeWindow::fromMs(now()->getTimestampMs()) => 'stale_model',
+            ($report['trained_as_of_ms'] ?? 0) <= KnowledgeWindow::fromMs(now()->getTimestampMs()) => 'stale_model',
             default => null,
         };
 

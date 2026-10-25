@@ -79,9 +79,9 @@ it('neutralizes missing stale disabled and changed-timezone evidence', function 
     expect($engine->current($bundle, $at)['vector'])->toBe([0.5]);
 });
 
-it('keeps auxiliary lead lag training observations inside the intelligence age window', function () {
+it('does not truncate eligible auxiliary lead lag training to a candle cap or model lifetime', function () {
     $this->travelTo('2024-01-02 00:00:00 UTC');
-    config(['intelligence.max_model_age_days' => 1]);
+    config(['intelligence.max_model_age_days' => 1, 'lead_lag.max_bars' => 10]);
     LeadLagFixtures::market('kraken');
     LeadLagFixtures::market('bitso');
     LeadLagFixtures::candles();
@@ -89,7 +89,7 @@ it('keeps auxiliary lead lag training observations inside the intelligence age w
 
     $report = app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
 
-    expect($report['lead_lag']['report']['bitso']['samples'])->toBeGreaterThan(160)->toBeLessThan(900);
+    expect($report['lead_lag']['report']['bitso']['samples'])->toBeGreaterThan(2000);
 });
 
 it('reports incompatible periods and excludes different quotes without blocking core intelligence', function () {

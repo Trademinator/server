@@ -48,9 +48,10 @@ K candidates below 4 are skipped. Old published model versions and old frozen se
 
 ## Retain HOLDs; weight votes instead of deleting examples
 
-Both models retain every eligible distinct example within
-`INTELLIGENCE_MAX_MODEL_AGE_DAYS`, which also controls model expiration. There is
-no retained-example row cap. Human training checks source integrity, current trainer
+Both models retain every eligible distinct example from all available history,
+without a history-age or retained-example row cap. `INTELLIGENCE_MAX_MODEL_AGE_DAYS`
+controls model expiration only, with a default of 14 days. An hourly expiration
+check queues relearning for subscribed selected-period models. Human training checks source integrity, current trainer
 authorization, consensus, annotation cutoff and horizon compatibility. Different
 technical/full schemas can join after projecting the selected technical keys from
 the verified original snapshot; missing technical features exclude that snapshot.
@@ -210,8 +211,8 @@ If Action KNN is supported while Outcome KNN is unavailable, its BUY/HOLD/SELL p
 
 ## Weekly auto-label and horizon provenance
 
-The Monday intelligence build runs Action auto-labeling once over the complete available model-age window (bounded by `INTELLIGENCE_MAX_MODEL_AGE_DAYS`). That single result has two consumers: finalized BUY/HOLD/SELL labels provide algorithmic Action KNN targets, and consecutive opposite BUY/SELL pivots provide `d` observations for Outcome KNN horizon H. HOLD candles count inside a distance but are never pivot endpoints. Missing candles split the history into independent contiguous runs, so no d crosses a gap.
+The Monday intelligence build runs Action auto-labeling once over all available history. Model expiration does not restrict this history. That single result has two consumers: finalized BUY/HOLD/SELL labels provide algorithmic Action KNN targets, and consecutive opposite BUY/SELL pivots provide `d` observations for Outcome KNN horizon H. HOLD candles count inside a distance but are never pivot endpoints. Missing candles split the history into independent contiguous runs, so no d crosses a gap.
 
-H is valid only with at least 30 valid distances. Thirty is a minimum, not a sampling cap: every valid d in the complete age window contributes. The formula is `H = round(sum(d * frequency) / sum(frequency))`. If fewer than 30 distances exist, the build can still train Action KNN; Outcome KNN reports the horizon as unavailable.
+H is valid only with at least 30 valid distances. Thirty is a minimum, not a sampling cap: every valid d in the available history contributes. The formula is `H = round(sum(d * frequency) / sum(frequency))`. If fewer than 30 distances exist, the build can still train Action KNN; Outcome KNN reports the horizon as unavailable.
 
 Model reports persist the Action label counts, pivot count, d count/distribution/min/mean/median/max, continuity/gap counts, history window, H status/value, and independent Action/Outcome K selections. The OWNER intelligence page displays these diagnostics and formulas without recomputing history.

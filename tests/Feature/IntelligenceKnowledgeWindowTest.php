@@ -49,25 +49,25 @@ it('retains more than 3000 eligible examples independently of the research row b
         ->and($report['holdout_training_labels_available_by_ms'])->toBeLessThan($report['holdout_from_ms']);
 });
 
-it('includes the age boundary and excludes older rows from explicit datasets', function (int $days) {
+it('retains every eligible frozen example independently of the model lifetime', function (int $days) {
     $this->travelTo('2025-03-01 00:00:00 UTC');
     config(['intelligence.max_model_age_days' => $days]);
     $manifest = IntelligenceFixtures::snapshot(400, period: '1d');
-    $fromMs = $manifest['as_of_ms'] - $days * 86_400_000;
 
     $report = app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
     $artifact = app(ModelStore::class)->load($report['model_id']);
 
-    expect($artifact['knowledge'])->toHaveCount($days - 2)
-        ->and($artifact['knowledge'][0]['decision_at_ms'])->toBe($fromMs)
+    expect($artifact['knowledge'])->toHaveCount(400)
+        ->and($artifact['knowledge'][0]['decision_at_ms'])->toBe(IntelligenceFixtures::START + 86_400_000)
         ->and($report['training_data']['window'])->toBe([
-            'days' => $days, 'from_ms' => $fromMs, 'as_of_ms' => $manifest['as_of_ms'],
+            'policy' => 'all_available_eligible_history', 'days' => null,
+            'from_ms' => 0, 'as_of_ms' => $manifest['as_of_ms'],
         ])
         ->and($report['training_data']['snapshot_rows'])->toBe(400)
-        ->and($report['training_data']['age_excluded_rows'])->toBe(402 - $days);
+        ->and($report['training_data']['age_excluded_rows'])->toBe(0);
 })->with([14, 366]);
 
-it('moves the retained history forward on each rebuild without accumulating duplicates', function () {
+it('adds newly eligible history on rebuild without discarding old rows or accumulating duplicates', function () {
     $this->travelTo('2025-03-01 00:00:00 UTC');
     config(['intelligence.max_model_age_days' => 14]);
     $first = IntelligenceFixtures::snapshot(20, period: '1d');
@@ -80,24 +80,26 @@ it('moves the retained history forward on each rebuild without accumulating dupl
     $artifact = app(ModelStore::class)->load($secondReport['model_id']);
     $decisions = array_column($artifact['knowledge'], 'decision_at_ms');
 
-    expect($artifact['knowledge_rows'])->toBe(12)
-        ->and($decisions[0])->toBe($second['as_of_ms'] - 14 * 86_400_000)
+    expect($artifact['knowledge_rows'])->toBe(27)
+        ->and($decisions[0])->toBe(IntelligenceFixtures::START + 86_400_000)
         ->and(end($decisions))->toBe(IntelligenceFixtures::START + 27 * 86_400_000)
-        ->and(array_unique($decisions))->toHaveCount(12)
-        ->and(app(ModelStore::class)->load($firstReport['model_id'])['knowledge_rows'])->toBe(12);
+        ->and(array_unique($decisions))->toHaveCount(27)
+        ->and(app(ModelStore::class)->load($firstReport['model_id'])['knowledge_rows'])->toBe(20);
 });
 
-it('does not publish a model when the age window excludes every frozen example', function () {
+it('can learn from labels whose horizon exceeds the model lifetime', function () {
     $this->travelTo('2024-03-01 00:00:00 UTC');
     config(['intelligence.max_model_age_days' => 1]);
     $manifest = IntelligenceFixtures::snapshot(20, period: '1d');
 
-    expect(fn () => app(IntelligenceTrainer::class)->train($manifest['dataset_id']))
-        ->toThrow(InvalidArgumentException::class, 'No eligible history within INTELLIGENCE_MAX_MODEL_AGE_DAYS');
-    $this->assertDatabaseCount('intelligence_models', 0);
+    $report = app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
+
+    expect($report['knowledge_rows'])->toBe(20)
+        ->and($report['training_data']['age_excluded_rows'])->toBe(0);
+    $this->assertDatabaseCount('intelligence_models', 1);
 });
 
-it('rejects a nonpositive history age without publishing a model', function () {
+it('rejects a nonpositive model lifetime without publishing a model', function () {
     $this->travelTo('2024-01-01 04:10:00 UTC');
     config(['intelligence.max_model_age_days' => 0]);
     $manifest = IntelligenceFixtures::snapshot();
@@ -114,15 +116,15 @@ it('uses the same number of days for readiness and prediction expiry', function 
     $report = app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
     $expires = CarbonImmutable::createFromTimestampMs($manifest['as_of_ms'])->addDays($days);
 
-    $this->travelTo($expires);
+    $this->travelTo($expires->subMillisecond());
     expect(ModelStore::isReadyReport($report))->toBeTrue();
-    $this->travelTo($expires->addMillisecond());
+    $this->travelTo($expires);
 
     expect(ModelStore::isReadyReport($report))->toBeFalse()
         ->and(app(MarketIntelligence::class)->predict('kraken', 'BTC/USD', '1m')['reason'])->toBe('stale_model');
 })->with([14, 366]);
 
-it('clamps an explicit build range to the age window while retaining earlier candle warmup', function () {
+it('honours an explicit build range without imposing the model expiration window', function () {
     $this->travelTo('2024-01-03 00:00:00 UTC');
     config(['intelligence.max_model_age_days' => 1, 'research.max_rows' => 5]);
     IntelligenceFixtures::candles(1505);
@@ -133,7 +135,8 @@ it('clamps an explicit build range to the age window while retaining earlier can
         fromMs: IntelligenceFixtures::START, asOfMs: $cutoff);
     [, $rows] = app(DatasetStore::class)->load($report['dataset_id']);
 
-    expect($rows[0]['decision_at_ms'])->toBe($fromMs)
+    expect($rows[0]['decision_at_ms'])->toBeLessThan($fromMs)
+        ->and($rows[0]['decision_at_ms'])->toBeGreaterThanOrEqual(IntelligenceFixtures::START)
         ->and(count($rows))->toBeGreaterThan(250)
         ->and(max(array_column($rows, 'label_available_at_ms')))->toBeLessThanOrEqual($cutoff)
         ->and($report['knowledge_rows'])->toBe(count($rows));
@@ -149,4 +152,17 @@ it('builds default knowledge from every eligible feature instead of the latest 3
     expect($report['knowledge_rows'])->toBeGreaterThan(3000)
         ->and($artifact['knowledge'][0]['decision_at_ms'])->toBeLessThan(IntelligenceFixtures::START + 100 * 60000)
         ->and($report['trained_as_of_ms'])->toBe(IntelligenceFixtures::START + 3104 * 60000);
+});
+
+it('trains a four-hour model from existing months of history in one build', function () {
+    $manifest = IntelligenceFixtures::snapshot(600, period: '4h');
+    $this->travelTo(CarbonImmutable::createFromTimestampMs($manifest['as_of_ms'])->addMinute());
+    config(['intelligence.max_model_age_days' => 14]);
+
+    $report = app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
+
+    expect($report['status'])->toBe('ready')
+        ->and($report['knowledge_rows'])->toBe(600)
+        ->and($report['training_data']['age_excluded_rows'])->toBe(0)
+        ->and(ModelStore::isReadyReport($report))->toBeTrue();
 });

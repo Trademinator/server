@@ -50,6 +50,20 @@ function readiness(?array $report = null, ?string $period = '1m', ?MarketFeed $f
     return app(IntelligenceReadiness::class)->describe('kraken', 'BTC/USD', $period, $feed, $report, WeightedKnn::abstain('no_model'));
 }
 
+it('can attempt four-hour training immediately from backfilled history older than fourteen days', function () {
+    $this->travelTo('2024-03-16 00:00:00 UTC');
+    config(['intelligence.max_model_age_days' => 14]);
+    readinessFeatures(450, '4h');
+
+    $progress = readiness(period: '4h');
+
+    expect($progress['history']['closed'])->toBe(450)
+        ->and($progress['history']['potential'])->toBe(437)
+        ->and($progress['eta'])->toBeNull()
+        ->and($progress['issues'])->toBe([])
+        ->and($progress['eta_note'])->toContain('attempt training now');
+});
+
 it('shows configured row requirements and a conditional data ETA excluding open and immature features', function () {
     $this->travelTo('2024-01-01 03:20:00 UTC');
     readinessFeatures(201);
@@ -103,7 +117,7 @@ it('names missing selected features and withholds a timer for schema warmup', fu
     expect($progress['history']['potential'])->toBe(0);
 });
 
-it('reports gaps and an insufficient age window instead of extending the wait indefinitely', function () {
+it('reports source gaps without treating model expiration as a training history limit', function () {
     $this->travelTo('2024-01-01 00:20:00 UTC');
     readinessFeatures(20);
     DB::table('market_features')->where('microtimestamp', IntelligenceFixtures::START + 10 * 60000)->delete();
@@ -113,7 +127,8 @@ it('reports gaps and an insufficient age window instead of extending the wait in
 
     expect($progress['history']['gaps'])->toBe(1);
     expect($progress['eta'])->toBeNull();
-    expect(implode(' ', $progress['issues']))->toContain('INTELLIGENCE_MAX_MODEL_AGE_DAYS window is too short');
+    expect(implode(' ', $progress['issues']))->toContain('contains gaps')
+        ->not->toContain('INTELLIGENCE_MAX_MODEL_AGE_DAYS');
 });
 
 it('keeps unknown period, disabled scheduling and a nonpersistent queue explicit', function () {
@@ -157,7 +172,7 @@ it('preserves legacy model counts without confusing the retained pool with total
     expect(readiness($report)['source']['usable_rows'])->toBeNull();
 });
 
-it('counts all recent features and removes only those outside the configured age window', function () {
+it('counts all historical features independently of the configured model lifetime', function () {
     $this->travelTo('2024-01-03 05:25:00 UTC');
     readinessFeatures(3205);
 
@@ -165,11 +180,11 @@ it('counts all recent features and removes only those outside the configured age
     config(['intelligence.max_model_age_days' => 1]);
     $progress = readiness();
 
-    expect($progress['history']['closed'])->toBe(1442)
-        ->and($progress['history']['potential'])->toBe(1429);
+    expect($progress['history']['closed'])->toBe(3205)
+        ->and($progress['history']['potential'])->toBe(1987);
 });
 
-it('bounds feature loading while reporting the full age window and the latest sample', function () {
+it('bounds feature loading while reporting all available history and the latest sample', function () {
     $this->travelTo('2024-01-03 05:25:00 UTC');
     readinessFeatures(3206);
     $loaded = 0;
@@ -203,7 +218,7 @@ it('does not invent a wait when unchecked rows may already meet the training req
 
     expect($progress['history']['sampled'])->toBeTrue();
     expect($progress['eta'])->toBeNull();
-    expect($progress['eta_note'])->toContain('Older rows in the age window may already satisfy');
+    expect($progress['eta_note'])->toContain('Older stored rows may already satisfy');
 });
 
 it('keeps recent gaps and invalid features visible when older history is not inspected', function () {
@@ -234,8 +249,8 @@ it('labels sampled readiness counts on the dashboard and the intelligence page',
 
     $this->actingAs($user)->get('/dashboard')
         ->assertSee('Potential training rows (checked sample)')
-        ->assertSee('Checked the latest 2,000 of 3,205 rows in the age window.');
+        ->assertSee('Checked the latest 2,000 of 3,205 rows in the available history.');
     $this->get(route('markets.intelligence', $subscription->getKey()))
         ->assertSee('Potential training rows (checked sample)')
-        ->assertSee('training, which uses the full age window.');
+        ->assertSee('training, which uses all available eligible history.');
 });

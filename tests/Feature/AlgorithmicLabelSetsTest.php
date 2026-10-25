@@ -2,10 +2,13 @@
 
 use App\Domain\Intelligence\AlgorithmicLabelBuilder;
 use App\Domain\Intelligence\AlgorithmicLabelSets;
+use App\Domain\Intelligence\PublishedTakerFee;
 use App\Domain\Research\DatasetSnapshotBuilder;
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\SemanticLabels;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use Tests\Support\IntelligenceFixtures;
 
 beforeEach(function () {
@@ -18,12 +21,12 @@ beforeEach(function () {
         'intelligence.horizon' => 2,
         'intelligence.lookback' => 3,
         'intelligence.min_horizon_distance_observations' => 1,
-        'research.path' => sys_get_temp_dir().'/labels-'.\Illuminate\Support\Str::uuid7(),
+        'research.path' => sys_get_temp_dir().'/labels-'.Str::uuid7(),
     ]);
 });
 
 afterEach(function () {
-    \Illuminate\Support\Facades\File::deleteDirectory(config('research.path'));
+    File::deleteDirectory(config('research.path'));
 });
 
 it('freezes labels independently of M2 features and reuses identical immutable results', function () {
@@ -53,10 +56,34 @@ it('keeps semantic label outcomes stable when a feature dataset uses a frozen se
 
     [, $rows] = app(DatasetStore::class)->load($snapshot['dataset_id']);
     foreach ($rows as $row) {
-        if (!isset($set['outcome_labels'][$row['microtimestamp']])) {
+        if (! isset($set['outcome_labels'][$row['microtimestamp']])) {
             continue;
         }
         expect($row['label'])->toBe($set['outcome_labels'][$row['microtimestamp']]['label']);
     }
     $this->assertDatabaseCount('algorithmic_label_sets', 1);
+});
+
+it('rebuilds age-limited label caches and ignores later changes to the model lifetime', function () {
+    IntelligenceFixtures::candles();
+    $until = now()->getTimestampMs();
+    $builder = app(AlgorithmicLabelBuilder::class);
+    $first = $builder->build('kraken', 'BTC/USD', '1m', $until);
+    $legacyProfile = hash('sha256', json_encode([
+        'action_version' => AlgorithmicLabelSets::ACTION_VERSION,
+        'outcome_version' => SemanticLabels::VERSION,
+        'lookback' => (int) config('intelligence.lookback'),
+        'minimum_pivot_distance_observations' => (int) config('intelligence.min_horizon_distance_observations'),
+        'taker_fee' => app(PublishedTakerFee::class)->for('kraken', 'BTC/USD'),
+    ], JSON_THROW_ON_ERROR));
+    DB::table('algorithmic_label_sets')->where('label_set_id', $first['label_set_id'])
+        ->update(['profile_sha256' => $legacyProfile]);
+
+    $rebuilt = $builder->build('kraken', 'BTC/USD', '1m', $until);
+    config(['intelligence.max_model_age_days' => 1]);
+    $reused = $builder->build('kraken', 'BTC/USD', '1m', $until);
+
+    expect($rebuilt['label_set_id'])->not->toBe($first['label_set_id'])
+        ->and($reused['label_set_id'])->toBe($rebuilt['label_set_id']);
+    $this->assertDatabaseCount('algorithmic_label_sets', 2);
 });

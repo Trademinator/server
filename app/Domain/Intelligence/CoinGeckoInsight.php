@@ -74,8 +74,6 @@ final class CoinGeckoInsight
             return ['bundle' => [...$bundle, 'status' => 'insufficient_context_history']];
         }
 
-        $limit = max($minimum, (int) config('intelligence.coingecko_insight.max_snapshots', 2400));
-        $unique = array_slice($unique, -$limit);
         $cut = (int) floor(count($unique) * 0.8);
         $pretrain = array_slice($unique, 0, $cut);
         $keys = $this->selectKeys($pretrain);

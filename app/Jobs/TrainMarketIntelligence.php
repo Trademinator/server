@@ -6,6 +6,7 @@ use App\Domain\Intelligence\IntelligenceNotReady;
 use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\KnnSchemaFallback;
 use App\Domain\Intelligence\KnowledgeRequestJournal;
+use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\Intelligence\TrainingRuntime;
@@ -44,7 +45,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
     {
         $schema = $this->schema ?? (string) config('intelligence.schema');
 
-        return ModelStore::marketKey($this->exchange, $this->symbol, $this->period).':'.$this->week.':'.$schema.':'.IntelligenceTrainer::VERSION.':'.KnnSchemaFallback::VERSION;
+        return ModelStore::marketKey($this->exchange, $this->symbol, $this->period).':'.$this->week.':'.$schema.':'.IntelligenceTrainer::VERSION.':'.KnnSchemaFallback::VERSION.':'.KnowledgeWindow::TRAINING_POLICY;
     }
 
     public function displayName(): string
@@ -64,6 +65,13 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
             if (Cache::has($key)) {
                 return;
             }
+            if (str_starts_with($this->week, 'expired:')) {
+                $report = app(ModelStore::class)->currentReport($this->exchange, $this->symbol, $this->period);
+                if ($report !== null
+                    && (int) ($report['trained_as_of_ms'] ?? 0) > KnowledgeWindow::fromMs(now()->getTimestampMs())) {
+                    return;
+                }
+            }
             app(ActionLog::class)->write('intelligence.training.started', [
                 'exchange' => $this->exchange, 'symbol' => $this->symbol, 'period' => $this->period,
                 'job_id' => $this->job?->uuid(), 'queue' => $this->job?->getQueue() ?? config('intelligence.queue'),
@@ -75,7 +83,7 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
                 $journal = app(KnowledgeRequestJournal::class);
                 $journal->request($this->exchange, $this->symbol, $this->period, 'snapshot');
                 $journal->request($this->exchange, $this->symbol, $this->period, 'ai');
-                BuildOwnerDatasetSnapshot::dispatch($this->exchange, $this->symbol, $this->period, true)
+                BuildOwnerDatasetSnapshot::dispatch($this->exchange, $this->symbol, $this->period, true, $this->schema)
                     ->onQueue((string) config('intelligence.queue'));
                 Cache::put($key, true, now()->addDays(14));
 

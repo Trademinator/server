@@ -96,13 +96,6 @@ final class IntelligenceReadiness
         if ($history['gaps'] > 0) {
             $data['issues'][] = 'The feature window contains gaps. The training builder must verify continuous source candles before these rows can be used.';
         }
-        $earliestRequired = $history['as_of_ms'];
-        for ($i = 0; $i < $minimum + $horizon - 1; $i++) {
-            $earliestRequired = $this->timeframe->previous($earliestRequired, $period);
-        }
-        if ($earliestRequired < KnowledgeWindow::fromMs($history['as_of_ms'])) {
-            $data['issues'][] = 'The configured INTELLIGENCE_MAX_MODEL_AGE_DAYS window is too short for the minimum history requirement at this candle period; increase the number of days.';
-        }
         $skipped = $data['source']['skipped'] ?? [];
         if (($skipped['gaps'] ?? 0) + ($skipped['missing_source'] ?? 0) > 0) {
             $data['issues'][] = 'The last training dataset excluded rows with missing or nonconsecutive source candles. Repair or backfill the source history.';
@@ -115,20 +108,20 @@ final class IntelligenceReadiness
         } elseif ($remaining === 0) {
             $data['eta_note'] = 'Enough potential history is present to attempt training now. Source checks, pattern exclusions and validation still have to pass.';
         } elseif ($history['sampled']) {
-            $data['eta_note'] = 'ETA unavailable: only recent feature rows were checked. Older rows in the age window may already satisfy the history requirement; the training build checks the full window.';
+            $data['eta_note'] = 'ETA unavailable: only recent feature rows were checked. Older stored rows may already satisfy the history requirement; training checks all available eligible history.';
         } else {
             $eta = $history['latest_ms'];
             for ($i = 0; $i < $remaining; $i++) {
                 $eta = $this->timeframe->next($eta, $period);
             }
             $data['eta'] = CarbonImmutable::createFromTimestampMs(max($eta, now()->getTimestampMs()))->utc();
-            $data['eta_note'] = 'Earliest data estimate at one usable row per '.$period.' candle. Assumes continuous collection and complete features; backfills may shorten it. Source checks and pattern exclusions may extend it. Training and validation time are additional.';
+            $data['eta_note'] = 'Live-collection estimate only, at one usable row per '.$period.' candle. Existing historical candles can be backfilled and used immediately; there is no requirement to wait for this date. Source checks, feature completeness and validation still apply.';
         }
 
         return $data;
     }
 
-    /** Bounded display estimate only. Training still uses every eligible row in the age window. */
+    /** Bounded display estimate only. Training uses every eligible row in the available history. */
     private function history(string $exchange, string $symbol, string $period, array $keys, int $horizon, ?MarketFeature $latest): array
     {
         $now = now()->getTimestampMs();
@@ -148,7 +141,7 @@ final class IntelligenceReadiness
         $result['missing_keys'] = array_values(array_filter($keys, fn (string $key): bool => ($latestPayload['features'][$key] ?? null) === null));
         $query = MarketFeature::query()->where('exchange', $exchange)->where('symbol', $symbol)->where('period', $period)
             ->where('version', FeatureEngine::VERSION)->where('microtimestamp', '<=', $asOfMs)
-            ->whereBetween('available_at_ms', [KnowledgeWindow::fromMs($asOfMs), $now]);
+            ->whereBetween('available_at_ms', [KnowledgeWindow::trainingFromMs(), $now]);
         $result['closed'] = (clone $query)->count();
         $features = $query->orderByDesc('available_at_ms')->orderByDesc('microtimestamp')
             ->limit(self::HISTORY_SAMPLE_SIZE)->get(['feature_id', 'microtimestamp', 'available_at_ms', 'payload'])

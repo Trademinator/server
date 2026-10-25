@@ -140,7 +140,13 @@
                     <dt>Action K</dt><dd>{{ $report['action_k'] ?? 'No eligible value' }}</dd>
                     <dt>Shared knowledge rows</dt><dd>{{ \App\Helpers\Decimal::format($report['knowledge_rows']) }} retained examples</dd>
                     @if (isset($report['training_data']['window']))
-                        <dt>History window</dt><dd>{{ \App\Helpers\Decimal::format($report['training_data']['window']['days']) }} days, starting <x-display-time :value="$report['training_data']['window']['from_ms']" unit="milliseconds" /></dd>
+                        <dt>History window</dt><dd>
+                            @if (($report['training_data']['window']['policy'] ?? null) === \App\Domain\Intelligence\KnowledgeWindow::TRAINING_POLICY)
+                                All available eligible history
+                            @else
+                                {{ \App\Helpers\Decimal::format($report['training_data']['window']['days']) }} days, starting <x-display-time :value="$report['training_data']['window']['from_ms']" unit="milliseconds" />
+                            @endif
+                        </dd>
                     @endif
                     <dt>Training cutoff</dt><dd><x-display-time :value="$report['trained_as_of_ms']" unit="milliseconds" /></dd>
                     @if ($report['holdout'])

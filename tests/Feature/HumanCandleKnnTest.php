@@ -226,7 +226,7 @@ it('filters unauthorized, future, disputed and incompatible annotations and coun
     expect(app(HumanCandleKnn::class)->train($manifest, config('intelligence.knn'), microtime(true) + 30)['bundle']['samples'])->toBe(0);
 });
 
-it('uses the shared age window without limiting retained human examples', function () {
+it('retains all eligible human examples independently of model expiration', function () {
     $manifest = IntelligenceFixtures::snapshot(300, period: '1h');
     $this->travelTo('2024-01-14 00:00:00 UTC');
     config(['intelligence.max_model_age_days' => 10]);
@@ -236,7 +236,7 @@ it('uses the shared age window without limiting retained human examples', functi
     }
     $bundle = app(HumanCandleKnn::class)->train($manifest, config('intelligence.knn'), microtime(true) + 30)['bundle'];
     $eligible = array_values(array_filter($rows, fn ($row) => $row['decision_at_ms'] >= $bundle['window']['from_ms']));
-    expect($bundle['knowledge_rows'])->toBe(count($eligible))->and($bundle['knowledge_rows'])->toBeLessThan(300)
+    expect($bundle['knowledge_rows'])->toBe(count($eligible))->and($bundle['knowledge_rows'])->toBe(300)
         ->and($bundle['knowledge'][0]['decision_at_ms'])->toBe($eligible[0]['decision_at_ms']);
     config(['intelligence.max_model_age_days' => 14]);
     $all = app(HumanCandleKnn::class)->train($manifest, config('intelligence.knn'), microtime(true) + 30)['bundle'];

@@ -47,13 +47,14 @@ These entries cover the scheduler, collection and M2 features. M4 training also 
 | `trademinator:prune-portable-archives` | Daily at 04:40, application timezone | Delete expired multipart import/export staging files and database transfer metadata; permanent archives and hot candles are unaffected. |
 | `trademinator:dispatch-market-features` | Every minute | Reconcile feature work for subscribed markets with new completed candles or source-history corrections; successful live ingestion also requests the necessary feature update. |
 | `trademinator:collect-market-context` | Hourly | Resolve pending subscription-driven CoinGecko mappings and collect timestamped market context. |
-| `trademinator:dispatch-market-intelligence` | Monday at 04:00, application timezone | Queue one intelligence build per subscribed market and selected period; each build auto-labels the full model-age window once, feeds Action KNN, derives d/H, then trains Outcome KNN when at least 30 valid d observations exist. |
+| `trademinator:dispatch-market-intelligence` | Monday at 04:00, application timezone | Queue one intelligence build per subscribed market and selected period; each build auto-labels all available history once, feeds Action KNN, derives d/H, then trains Outcome KNN when at least 30 valid d observations exist. |
+| `trademinator:dispatch-market-intelligence --expired` | Hourly | Queue relearning for subscribed selected-period models at their maximum age (14 days by default), with unique jobs and one retry generation per model per day. |
 | `trademinator:dispatch-lead-lag` | Daily at 03:45, application timezone | Reevaluate lead/lag and downstream KNN/pattern intelligence for overlapping shared markets. |
 | `trademinator:refresh-exchanges` | Daily at 03:20, application timezone | Inspect installed CCXT source, refresh access classifications and add missing exchange rows while preserving existing data. |
 
 The schedule source of truth is `routes/console.php`; this document must be updated in the same change whenever that schedule changes.
 
-The weekly intelligence build is also the canonical scheduled Action auto-label / horizon reevaluation. It reads up to `INTELLIGENCE_MAX_MODEL_AGE_DAYS`, uses all valid distances in that window, never crosses a candle gap, and requires at least 30 valid opposite-pivot distances before publishing H. No second d/H cron is required.
+The weekly intelligence build is also the canonical scheduled Action auto-label / horizon reevaluation. It reads all available history, uses every valid distance, never crosses a candle gap, and requires at least 30 valid opposite-pivot distances before publishing H. No second d/H cron is required.
 
 ## Queue and cache requirements
 
@@ -86,10 +87,10 @@ Candle workers install only the requested instrument into CCXT's market indexes,
 | `default` | Live ingestion uses a 90-period window; period selection uses the recent 250-candle sample plus boundary allowance. Explicit queued synchronization processes one configured page per job and preserves its queue/connection on continuation. |
 | `features` | Feature replay streams 500 source candles at a time and writes batches of 100, retaining only indicator state and a 30-day close-price buffer. |
 | `history` | At most five 90-candle requests per pass, with transactional progress checkpoints and the existing 45-second work budget. |
-| `intelligence` | Feature replay uses the same streaming path. Training and retained KNN knowledge use every eligible example within `INTELLIGENCE_MAX_MODEL_AGE_DAYS` of the build cutoff; there is no row-count cap. Longer windows increase model memory and fitting time; application and worker time budgets still apply. Human-review snapshots and their chart payloads are read 25 at a time. |
+| `intelligence` | Feature replay uses the same streaming path. Training and retained KNN knowledge use every eligible example from all available history; there is no history-age or row-count cap. Larger histories increase model memory and fitting time; application and worker time budgets still apply. Human-review snapshots and their chart payloads are read 25 at a time. |
 | `signals` | One pending recorder per actively subscribed market loads its model and recent feature window, then processes up to six new completed source candles. Its worker runs independently of training. |
 
-After deploying these changes, update the configured queue cron commands and add the dedicated signals worker. Inspect `php artisan queue:failed` and the corresponding worker log if a job fails. Keep ingestion batches bounded and size the intelligence age window and worker resources together. These budgets are not a benchmark of every exchange adapter or a guarantee about production RSS.
+After deploying these changes, update the configured queue cron commands and add the dedicated signals worker. Inspect `php artisan queue:failed` and the corresponding worker log if a job fails. Keep ingestion batches bounded and size worker resources for the available training history. These budgets are not a benchmark of every exchange adapter or a guarantee about production RSS.
 
 ## Deployment checks
 

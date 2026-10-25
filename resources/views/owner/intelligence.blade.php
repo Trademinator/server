@@ -67,7 +67,13 @@
                                                     <tr><th scope="row">d frequencies</th><td>@forelse(($analysis['distance_frequencies'] ?? []) as $distance => $frequency)<code>d={{ $distance }} → {{ $frequency }}</code>@if(! $loop->last) · @endif @empty — @endforelse</td></tr>
                                                     <tr><th scope="row">H</th><td>{{ $analysis['horizon'] ?? 'Unavailable' }} <small>{{ $analysis['status'] ?? 'unknown' }}</small></td></tr>
                                                     <tr><th scope="row">K<sub>O</sub> / K<sub>A</sub></th><td>Outcome {{ $model->summary['k'] ?? '—' }} ({{ $model->summary['outcome']['algorithmic']['selection']['k_min'] ?? '—' }}–{{ $model->summary['outcome']['algorithmic']['selection']['k_max'] ?? '—' }}) · Action {{ $model->summary['action_k'] ?? '—' }} ({{ $model->summary['action']['algorithmic']['selection']['k_min'] ?? '—' }}–{{ $model->summary['action']['algorithmic']['selection']['k_max'] ?? '—' }})</td></tr>
-                                                    <tr><th scope="row">History window</th><td><x-display-time :value="$analysis['from_ms'] ?? null" unit="milliseconds" /> → <x-display-time :value="$analysis['as_of_ms'] ?? null" unit="milliseconds" /> · max {{ $analysis['max_history_days'] ?? '—' }} days</td></tr>
+                                                    <tr><th scope="row">History window</th><td>
+                                                        @if (($analysis['history_policy'] ?? null) === \App\Domain\Intelligence\KnowledgeWindow::TRAINING_POLICY)
+                                                            All available eligible history through <x-display-time :value="$analysis['as_of_ms'] ?? null" unit="milliseconds" />
+                                                        @else
+                                                            <x-display-time :value="$analysis['from_ms'] ?? null" unit="milliseconds" /> → <x-display-time :value="$analysis['as_of_ms'] ?? null" unit="milliseconds" /> · max {{ $analysis['max_history_days'] ?? '—' }} days
+                                                        @endif
+                                                    </td></tr>
                                                 </tbody>
                                             </table>
                                         </div>

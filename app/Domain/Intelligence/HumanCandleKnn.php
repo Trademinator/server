@@ -30,7 +30,7 @@ final class HumanCandleKnn
             'keys' => [], 'input_keys' => $keys, 'influence' => false, 'samples' => 0,
             'validation_target' => 'human_candle_annotations', 'evaluation_mode' => 'retrospective_chronological_research',
             'annotation_cutoff_ms' => now()->getTimestampMs(), 'settings' => $settings,
-            'window' => KnowledgeWindow::metadata($manifest['as_of_ms']),
+            'window' => KnowledgeWindow::trainingMetadata($manifest['as_of_ms']),
             'minimum_samples' => config('human_training.candle_min_samples')];
         if ($keys === []) {
             return ['bundle' => [...$bundle, 'status' => 'no_technical_features']];
@@ -172,7 +172,7 @@ final class HumanCandleKnn
         $rows = $this->opinions($manifest, $keys, now()->getTimestampMs(), $deadline, $progress, $diagnostics);
 
         return ['annotation_policy' => HumanCandleProjection::VERSION, 'input_keys' => $keys,
-            'window' => KnowledgeWindow::metadata($manifest['as_of_ms']),
+            'window' => KnowledgeWindow::trainingMetadata($manifest['as_of_ms']),
             'samples' => count($rows), 'class_counts' => $this->counts($rows),
             'minimum_samples' => config('human_training.candle_min_samples'),
             'annotation_diagnostics' => $diagnostics, 'validation_performed' => false];
@@ -206,7 +206,7 @@ final class HumanCandleKnn
         $diagnostics['recorded_snapshots'] = $before;
         $filters = [
             'snapshot_version' => fn ($query) => $query->where('version', HumanTraining::VERSION),
-            'outside_window' => fn ($query) => $query->whereBetween('decision_at_ms', [KnowledgeWindow::fromMs($manifest['as_of_ms']), $manifest['as_of_ms']]),
+            'outside_window' => fn ($query) => $query->whereBetween('decision_at_ms', [KnowledgeWindow::trainingFromMs(), $manifest['as_of_ms']]),
             'unauthorized_trainer' => fn ($query) => $query->whereHas('candleLabels', fn ($labels) => $labels->whereIn('trainer_id', $trainers)),
             'after_annotation_cutoff' => fn ($query) => $query->whereHas('candleLabels', fn ($labels) => $labels
                 ->whereIn('trainer_id', $trainers)->where('updated_at', '<=', $cutoff)),

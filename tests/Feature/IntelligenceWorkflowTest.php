@@ -1,18 +1,23 @@
 <?php
 
+use App\Domain\Intelligence\AlgorithmicLabelBuilder;
 use App\Domain\Intelligence\IntelligenceTrainer;
+use App\Domain\Intelligence\KnowledgeRequestJournal;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\Research\DatasetSnapshotBuilder;
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\FeatureSchema;
 use App\Domain\Research\SemanticLabels;
+use App\Jobs\BuildOwnerDatasetSnapshot;
 use App\Jobs\TrainMarketIntelligence;
 use App\Models\Exchange;
 use App\Models\Market;
 use App\Models\MarketFeed;
 use App\Models\MarketSubscription;
 use App\Models\User;
+use App\Repositories\TickerRepository;
+use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -344,6 +349,88 @@ it('requires an explicit force request to rebuild previously published market pe
         ->expectsOutput('--all requires --force.')->assertFailed();
 
     Queue::assertNothingPushed();
+});
+
+it('queues expired subscribed models at fourteen days once per daily retry generation', function () {
+    $this->travelTo('2024-01-20 12:00:00 UTC');
+    config(['queue.default' => 'database', 'intelligence.max_model_age_days' => 14]);
+    $manifest = IntelligenceFixtures::snapshot();
+    $exchange = Exchange::query()->create(['name' => 'Kraken', 'class' => 'kraken', 'config' => '{}']);
+    $models = [];
+    foreach (['BTC/USD' => 0, 'ETH/USD' => -1, 'LTC/USD' => 1, 'XRP/USD' => -1] as $symbol => $offset) {
+        $market = Market::query()->create(['exchange_id' => $exchange->exchange_id, 'symbol' => $symbol, 'tick_size' => '0.01']);
+        MarketFeed::query()->create(['market_id' => $market->market_id, 'selected_period' => '4h', 'status' => 'active']);
+        foreach (User::factory()->count(2)->create() as $user) {
+            MarketSubscription::query()->create(['user_id' => $user->user_id, 'market_id' => $market->market_id,
+                'active' => $symbol !== 'XRP/USD']);
+        }
+        $id = (string) Str::uuid7();
+        $key = ModelStore::marketKey('kraken', $symbol, '4h');
+        $models[$symbol] = $id;
+        DB::table('intelligence_models')->insert([
+            'model_id' => $id, 'dataset_id' => $manifest['dataset_id'], 'market_key' => $key,
+            'status' => 'ready', 'sha256' => str_repeat('0', 64), 'created_at' => now(),
+            'report' => json_encode(['model_id' => $id, 'exchange' => 'kraken', 'symbol' => $symbol, 'period' => '4h',
+                'trained_as_of_ms' => now()->subDays(14)->getTimestampMs() + $offset,
+                'schema_selection' => ['requested_schema' => 'technical']]),
+        ]);
+        DB::table('intelligence_heads')->insert(['market_key' => $key, 'model_id' => $id, 'updated_at' => now()]);
+    }
+    Queue::fake([TrainMarketIntelligence::class]);
+
+    $this->artisan('trademinator:dispatch-market-intelligence', ['--expired' => true])->assertSuccessful();
+    $this->artisan('trademinator:dispatch-market-intelligence', ['--expired' => true])->assertSuccessful();
+
+    $jobs = Queue::pushed(TrainMarketIntelligence::class);
+    expect($jobs->pluck('symbol')->sort()->values()->all())->toBe(['BTC/USD', 'ETH/USD'])
+        ->and($jobs->pluck('schema')->unique()->all())->toBe(['technical']);
+    foreach ($jobs as $job) {
+        expect($job->week)->toBe('expired:'.$models[$job->symbol].':2024-01-20');
+    }
+});
+
+it('rejects combining expiration checks with manual force requests', function () {
+    Queue::fake();
+
+    $this->artisan('trademinator:dispatch-market-intelligence', ['--expired' => true, '--force' => true])
+        ->expectsOutput('--expired cannot be combined with --force or --all.')->assertFailed();
+
+    Queue::assertNothingPushed();
+});
+
+it('preserves the requested schema across queued snapshot creation and relearning', function () {
+    $this->travelTo('2024-01-01 02:00:00 UTC');
+    IntelligenceFixtures::candles();
+    config(['intelligence.schema' => 'core']);
+    Queue::fake([BuildOwnerDatasetSnapshot::class, TrainMarketIntelligence::class]);
+    $job = new TrainMarketIntelligence('kraken', 'BTC/USD', '1m', 'schema-rebuild', 'enhanced');
+    $job->setJob(new SyncJob(app(), json_encode([
+        'uuid' => (string) Str::uuid7(), 'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
+    ]), 'database', 'intelligence'));
+
+    $job->handle(app(MarketIntelligence::class));
+    $snapshot = Queue::pushed(BuildOwnerDatasetSnapshot::class)->sole();
+    app(AlgorithmicLabelBuilder::class)
+        ->build('kraken', 'BTC/USD', '1m', $snapshot->requestedAsOfMs);
+    $snapshot->handle(app(DatasetSnapshotBuilder::class), app(TickerRepository::class),
+        app(KnowledgeRequestJournal::class));
+
+    Queue::assertPushed(TrainMarketIntelligence::class, function (TrainMarketIntelligence $trained): bool {
+        return $trained->schema === 'enhanced'
+            && app(DatasetStore::class)->manifest($trained->snapshotDataset)['schema'] === 'enhanced';
+    });
+});
+
+it('skips queued expiration work when another build has already replaced the expired model', function () {
+    $this->travelTo('2024-01-01 04:10:00 UTC');
+    $manifest = IntelligenceFixtures::snapshot();
+    app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
+    $job = new TrainMarketIntelligence('kraken', 'BTC/USD', '1m', 'expired:previous:2024-01-01');
+
+    $job->handle(app(MarketIntelligence::class));
+
+    $this->assertDatabaseCount('intelligence_models', 1);
+    $this->assertDatabaseCount('research_datasets', 1);
 });
 
 it('rebuilds after a completed weekly generation and keeps forced job retries idempotent', function () {

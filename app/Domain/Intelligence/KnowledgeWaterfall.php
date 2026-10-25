@@ -41,7 +41,7 @@ final class KnowledgeWaterfall
             ->where('market_id', $marketId)->where('period', $period)
             ->first(['history_revision', 'trained_revision']);
         $historyDirty = $history !== null && (int) $history->history_revision > (int) $history->trained_revision;
-        $windowStart = KnowledgeWindow::fromMs($nowMs);
+        $windowStart = KnowledgeWindow::trainingFromMs();
         $unresolvedGaps = $marketId === null ? 0 : DB::table('candle_gap_repairs')
             ->where('market_id', $marketId)->where('period', $period)
             ->where('status', '!=', 'resolved')->where('to_ms', '>', $windowStart)->count();

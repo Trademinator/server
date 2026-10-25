@@ -7,11 +7,11 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('trains a bounded independent Rubix forest on distinct past context and reports probabilities', function (): void {
+it('retains all eligible distinct context observations despite a legacy snapshot cap', function (): void {
     config([
         'intelligence.coingecko_insight.enabled' => true,
         'intelligence.coingecko_insight.min_snapshots' => 80,
-        'intelligence.coingecko_insight.max_snapshots' => 500,
+        'intelligence.coingecko_insight.max_snapshots' => 80,
         'intelligence.coingecko_insight.min_holdout' => 20,
         'intelligence.coingecko_insight.trees' => 12,
         'intelligence.coingecko_insight.depth' => 5,

@@ -2,6 +2,7 @@
 
 namespace App\Domain\MarketData;
 
+use App\Domain\Intelligence\TrainingRequirements;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -15,11 +16,9 @@ final class HistoryDepth
         }
 
         $timeframe = new CandleTimeframe;
-        $candles = max(1, min(10_000,
-            (int) config('intelligence.knn.min_train_size')
-            + (int) config('intelligence.knn.test_size')
-            + (int) config('intelligence.lookback')
-            + (int) config('intelligence.horizon')));
+        $horizon = max(1, (int) config('intelligence.horizon'));
+        $candles = TrainingRequirements::minimumRows(config('intelligence.knn'), $horizon, true)
+            + max(1, (int) config('intelligence.lookback')) + $horizon;
         $start = $untilMs;
         for ($i = 0; $i < $candles && $start > 0; $i++) {
             $previous = $timeframe->previous($start, $period);

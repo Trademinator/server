@@ -14,16 +14,19 @@ use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /** A single research dataset is processed by one bounded worker at a time. */
-final class TrainIntelligenceTournament implements ShouldQueue, ShouldBeUnique
+final class TrainIntelligenceTournament implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 2;
+
     public int $timeout = 900;
+
     public int $uniqueFor = 7200;
+
     public array $backoff = [120, 300];
 
-    public function __construct(public string $datasetId, public int $maxRows = 1200)
+    public function __construct(public string $datasetId, public int $maxRows = ResearchTournament::DEFAULT_MAX_ROWS)
     {
         $this->onQueue((string) config('intelligence.tournament.queue', 'tournament'));
     }

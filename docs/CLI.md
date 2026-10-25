@@ -650,7 +650,7 @@ Build/validate intelligence for one market immediately from existing data. Creat
 | `period` | Required | Supported candle timeframe, for example `15m` or `1h`. `1m` and `1M` are different. |
 | `--dataset` | New snapshot | Existing compatible semantic dataset UUID. Mutually exclusive with date selection and non-default schema. |
 | `--schema` | `core` | New snapshot input schema: `core`, `technical`, or `full`. |
-| `--from` | Configured recent-history window | Inclusive decision-time start; clamped by the configured model-age window. |
+| `--from` | All available eligible history | Optional inclusive decision-time start for an explicitly bounded build; model expiration does not restrict it. |
 | `--to` | Training cutoff | Inclusive decision-time end, bounded by the effective cutoff. |
 | `--as-of` | Before newest closed feature | Outcome-availability cutoff, capped at now; research UTC date/millisecond format. |
 
@@ -694,7 +694,7 @@ Description: Run Action auto-labeling and publish shared Outcome/Action diagnost
 
 Run the exact Action auto-label / horizon analysis used by weekly intelligence training without publishing a model. With no arguments it analyzes every active subscribed market with a selected period. Supplying only `exchange` limits the run to that exchange; supplying `exchange symbol` limits it to one pair.
 
-The analysis reads all available history inside `INTELLIGENCE_MAX_MODEL_AGE_DAYS`, splits history at candle gaps, and auto-labels each contiguous run independently. Every valid consecutive opposite BUY/SELL pivot distance contributes to `d`. At least 30 valid `d` observations are required for an Outcome horizon; 30 is a minimum, never a cap. When valid, `H = round(sum(d * frequency) / sum(frequency))`. The same finalized Action labels are the algorithmic Action KNN targets.
+The analysis reads all available history without an age limit, splits history at candle gaps, and auto-labels each contiguous run independently. Every valid consecutive opposite BUY/SELL pivot distance contributes to `d`. At least 30 valid `d` observations are required for an Outcome horizon; 30 is a minimum, never a cap. When valid, `H = round(sum(d * frequency) / sum(frequency))`. The same finalized Action labels are the algorithmic Action KNN targets.
 
 Examples:
 
@@ -1307,7 +1307,7 @@ Fetching today's CoinGecko data cannot reconstruct yesterday's context. Do not a
 
 ### Reading intelligence readiness
 
-A finished build is not the same as a validated model. Read the reported status, validation evidence, freshness and abstention reasons. `INTELLIGENCE_MAX_MODEL_AGE_DAYS` is a history/expiry window, **not a mandatory waiting period**. An insufficient-human-label reason requires eligible submitted candle labels; collecting more automatic candles alone does not create them. Unsubmitted browser labels are not training rows.
+A finished build is not the same as a validated model. Read the reported status, validation evidence, freshness and abstention reasons. `INTELLIGENCE_MAX_MODEL_AGE_DAYS` controls model expiration only, **not a training-history limit or mandatory waiting period**. The hourly `trademinator:dispatch-market-intelligence --expired` check queues relearning at expiration. Historical backfill can supply months of 4h candles immediately; source availability, completed labels and validation determine readiness. An insufficient-human-label reason requires eligible submitted candle labels; collecting more automatic candles alone does not create them. Unsubmitted browser labels are not training rows.
 
 `optional budget exhausted` identifies an optional training-stage budget limit, not a missing-candle count. Gap repair, more labels and more execution time address different causes. Each optional learner or Human Training policy receives a fresh `INTELLIGENCE_MAX_SECONDS` allowance. Intelligence jobs derive their hard timeout from all enabled algorithm and parameter runs, dataset construction, and cleanup time. See [worker budgets and logging](CRONTABS.md#m4-intelligence-workers). Explicit command success does not override any validation gate.
 

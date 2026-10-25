@@ -57,14 +57,15 @@ final class IntelligenceTrainer
             throw new InvalidArgumentException('Knowledge cutoff cannot be in the future.');
         }
 
-        $window = KnowledgeWindow::metadata($manifest['as_of_ms']);
+        KnowledgeWindow::days();
+        $window = KnowledgeWindow::trainingMetadata($manifest['as_of_ms']);
         $snapshotRows = count($datasetRows);
         $ageExcluded = 0;
         $rows = TrainingRows::from($this->projectRows($datasetRows, $manifest, $window['from_ms'], $ageExcluded,
             $preparationDeadline));
         $this->checkDeadline($preparationDeadline, 'Intelligence row preparation');
         if (count($rows) === 0) {
-            throw new InvalidArgumentException('No eligible history within INTELLIGENCE_MAX_MODEL_AGE_DAYS.');
+            throw new InvalidArgumentException('No eligible history in the frozen training dataset.');
         }
 
         $rowAudit = ['input_rows' => count($rows), 'unique_rows' => count($rows), 'duplicates' => 0];

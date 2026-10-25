@@ -4,6 +4,7 @@ namespace App\Domain\Intelligence;
 
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\FeatureSchema;
+use Composer\InstalledVersions;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Rubix\ML\Classifiers\ClassificationTree;
@@ -12,9 +13,10 @@ use Rubix\ML\Classifiers\MultilayerPerceptron;
 use Rubix\ML\Classifiers\RandomForest;
 use Rubix\ML\Datasets\Labeled;
 use Rubix\ML\Datasets\Unlabeled;
+use Rubix\ML\NeuralNet\ActivationFunctions\ReLU;
 use Rubix\ML\NeuralNet\Layers\Activation;
 use Rubix\ML\NeuralNet\Layers\Dense;
-use Rubix\ML\NeuralNet\ActivationFunctions\ReLU;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
@@ -24,11 +26,16 @@ use Throwable;
 final class ResearchTournament
 {
     public const VERSION = 'rubix-research-tournament-v2.3-validated';
+
+    public const HISTORY_DAYS = 30;
+
+    public const DEFAULT_MAX_ROWS = 2400;
+
     public const CANDIDATES = ['weighted_knn', 'decision_tree', 'random_forest', 'neural_network'];
 
     public function __construct(private DatasetStore $datasets) {}
 
-    public function run(string $datasetId, int $maxRows = 1200, bool $isolate = false): array
+    public function run(string $datasetId, int $maxRows = self::DEFAULT_MAX_ROWS, bool $isolate = false): array
     {
         if ($maxRows < 100 || $maxRows > 4000) {
             throw new InvalidArgumentException('Tournament sample cap must be between 100 and 4000.');
@@ -38,9 +45,34 @@ final class ResearchTournament
             'outcome' => ['schema' => $manifest['schema']]])) {
             throw new InvalidArgumentException('Tournament requires a current feature schema.');
         }
+        // A bounded, chronologically spaced sample spans the available 30-day history.
+        // Taking only the newest maxRows would shrink a 1m tournament to ~40h.
+        $asOfMs = (int) $manifest['as_of_ms'];
+        $fromMs = max(0, $asOfMs - self::HISTORY_DAYS * 86_400_000);
+        $eligibleCount = 0;
+        foreach ($dataset->slice(0, count($dataset)) as $row) {
+            $decisionAt = (int) $row['decision_at_ms'];
+            if ($decisionAt >= $fromMs && $decisionAt <= $asOfMs) {
+                $eligibleCount++;
+            }
+        }
+        $sampleCount = min($maxRows, $eligibleCount);
+        $selected = [];
+        $position = 0;
+        foreach ($dataset->slice(0, count($dataset)) as $row) {
+            $decisionAt = (int) $row['decision_at_ms'];
+            if ($decisionAt < $fromMs || $decisionAt > $asOfMs) {
+                continue;
+            }
+            if ($sampleCount > 0
+                && intdiv($position * $sampleCount, $eligibleCount)
+                    !== intdiv(($position + 1) * $sampleCount, $eligibleCount)) {
+                $selected[] = $row;
+            }
+            $position++;
+        }
         $rows = [];
-        // All candidates see the exact same chronological tail of the frozen dataset.
-        foreach ($dataset->slice(max(0, count($dataset) - $maxRows), $maxRows) as $row) {
+        foreach ($selected as $row) {
             $vector = NormalizedVector::from($row['vector'], $manifest['keys']);
             $rows[] = ['feature_weights' => $row['feature_weights'] ?? [], 'decision_at_ms' => $row['decision_at_ms'],
                 'label_available_at_ms' => $row['label_available_at_ms'],
@@ -55,12 +87,13 @@ final class ResearchTournament
             $tasks[$task] = $this->evaluateTask($rows, $task, $classes, $isolate);
         }
         $report = [
-            'version' => self::VERSION, 'rubix_version' => \Composer\InstalledVersions::getPrettyVersion('rubix/ml'),
+            'version' => self::VERSION, 'rubix_version' => InstalledVersions::getPrettyVersion('rubix/ml'),
             'status' => 'research_only', 'dataset_id' => $datasetId,
             'exchange' => $manifest['exchange'], 'symbol' => $manifest['symbol'], 'period' => $manifest['period'],
             'schema' => $manifest['schema'], 'source_rows' => count($dataset),
             'sampled_rows' => count($rows), 'sample_limit' => $maxRows,
-            'sample_policy' => 'chronological_tail_same_for_all_candidates',
+            'history_days' => self::HISTORY_DAYS, 'history_from_ms' => $fromMs, 'history_as_of_ms' => $asOfMs,
+            'sample_policy' => 'uniform_30_day_history_same_for_all_candidates',
             'selection' => 'research_ranking_only_no_production_promotion',
             'tasks' => $tasks, 'generated_at' => now()->toIso8601String(),
         ];
@@ -77,8 +110,7 @@ final class ResearchTournament
     private function evaluateTask(array $rows, string $task, array $classes, bool $isolate): array
     {
         $timeKey = $task === 'action' ? 'action_label_available_at_ms' : 'label_available_at_ms';
-        $rows = array_values(array_filter($rows, static fn (array $row): bool =>
-            in_array($row[$task], $classes, true) &&
+        $rows = array_values(array_filter($rows, static fn (array $row): bool => in_array($row[$task], $classes, true) &&
             $row[$timeKey] > $row['decision_at_ms']));
         $count = count($rows);
         $cut = (int) floor($count * 0.8);
@@ -98,7 +130,9 @@ final class ResearchTournament
         for ($i = 0; $i < 3; $i++) {
             $foldEnd = $warmup + $step * $i;
             $foldTest = array_slice($train, $foldEnd, $step);
-            if ($foldTest === []) continue;
+            if ($foldTest === []) {
+                continue;
+            }
             $foldCutoff = $foldTest[0]['decision_at_ms'];
             $foldTraining = array_values(array_filter(array_slice($train, 0, $foldEnd),
                 static fn (array $row): bool => $row[$timeKey] < $foldCutoff));
@@ -124,21 +158,37 @@ final class ResearchTournament
             $minimum = $scores ? min($scores) : 0;
             $directional = array_sum(array_column($evaluated, 'directional_predictions'));
             $reasons = [];
-            if (count($evaluated) !== 3) $reasons[] = 'incomplete_walk_forward';
-            if ($mean < ($task === 'outcome' ? 0.25 : 0.55)) $reasons[] = 'low_validation_quality';
-            if ($minimum < ($task === 'outcome' ? 0.15 : 0.45)) $reasons[] = 'unstable_fold_quality';
-            if ($coverage < 0.10) $reasons[] = 'low_validation_coverage';
-            if ($task === 'action' && $directional < 5) $reasons[] = 'insufficient_directional_predictions';
+            if (count($evaluated) !== 3) {
+                $reasons[] = 'incomplete_walk_forward';
+            }
+            if ($mean < ($task === 'outcome' ? 0.25 : 0.55)) {
+                $reasons[] = 'low_validation_quality';
+            }
+            if ($minimum < ($task === 'outcome' ? 0.15 : 0.45)) {
+                $reasons[] = 'unstable_fold_quality';
+            }
+            if ($coverage < 0.10) {
+                $reasons[] = 'low_validation_coverage';
+            }
+            if ($task === 'action' && $directional < 5) {
+                $reasons[] = 'insufficient_directional_predictions';
+            }
             // Conservative interval discourages high precision based on a handful of BUY/SELL calls.
             $directionalCorrect = array_sum(array_column($evaluated, 'directional_correct'));
             $wilsonLower = $this->wilsonLower($directionalCorrect, $directional);
-            if ($task === 'action' && $wilsonLower < 0.45) $reasons[] = 'directional_wilson_lower_bound';
+            if ($task === 'action' && $wilsonLower < 0.45) {
+                $reasons[] = 'directional_wilson_lower_bound';
+            }
             $referenceScores = array_column($foldBaselines, 'score');
             $reference = $referenceScores ? array_sum($referenceScores) / count($referenceScores) : 0.0;
-            if ($mean <= $reference + 0.01) $reasons[] = 'below_walk_forward_baseline';
+            if ($mean <= $reference + 0.01) {
+                $reasons[] = 'below_walk_forward_baseline';
+            }
             $calibration = $this->calibration($folds);
             $calibrationError = $this->calibrationError($calibration);
-            if ($calibrationError !== null && $calibrationError > 0.30) $reasons[] = 'poor_probability_calibration';
+            if ($calibrationError !== null && $calibrationError > 0.30) {
+                $reasons[] = 'poor_probability_calibration';
+            }
             // Holdout confirms a preselected research champion, never selects one.
             $validationEligible = $reasons === [];
             $holdoutPassed = $holdout['status'] === 'evaluated'
@@ -156,14 +206,14 @@ final class ResearchTournament
                 'research_rank_score' => $mean];
         }
         $ranked = array_filter($output['candidates'], static fn (array $r): bool => $r['validation_eligible']);
-        uasort($ranked, static fn (array $a, array $b): int =>
-            ($b['research_rank_score'] <=> $a['research_rank_score'])
+        uasort($ranked, static fn (array $a, array $b): int => ($b['research_rank_score'] <=> $a['research_rank_score'])
             ?: ($b['walk_forward_min'] <=> $a['walk_forward_min']));
         $output['validation_leader'] = array_key_first($ranked);
         $selected = $output['validation_leader'];
         $output['research_leader'] = $selected !== null
             && ($output['candidates'][$selected]['holdout_confirmed'] ?? false) ? $selected : null;
         $output['selection_policy'] = 'walk_forward_selection_final_holdout_confirmation_only';
+
         return $output;
     }
 
@@ -182,6 +232,7 @@ final class ResearchTournament
         $dominant = array_key_first($directions);
         // Majority-direction prediction precision within the chronological training window.
         $directionalCount = array_sum($directions);
+
         return ['majority_class' => $majority, 'macro_f1' => $macro,
             'directional_class' => $dominant,
             'directional_precision' => $directionalCount ? ($directions[$dominant] ?? 0) / $directionalCount : 0.0,
@@ -193,7 +244,9 @@ final class ResearchTournament
     private function calibration(array $folds): array
     {
         $bins = [];
-        foreach ([0, 1, 2, 3, 4] as $bin) $bins[$bin] = ['n' => 0, 'correct' => 0, 'sum_confidence' => 0.0];
+        foreach ([0, 1, 2, 3, 4] as $bin) {
+            $bins[$bin] = ['n' => 0, 'correct' => 0, 'sum_confidence' => 0.0];
+        }
         foreach ($folds as $fold) {
             foreach (($fold['trace'] ?? []) as $point) {
                 $confidence = max(0.0, min(1.0, (float) ($point['confidence'] ?? 0)));
@@ -203,6 +256,7 @@ final class ResearchTournament
                 $bins[$index]['sum_confidence'] += $confidence;
             }
         }
+
         return array_map(static fn ($item) => ['samples' => $item['n'],
             'accuracy' => $item['n'] ? $item['correct'] / $item['n'] : null,
             'mean_confidence' => $item['n'] ? $item['sum_confidence'] / $item['n'] : null], $bins);
@@ -230,6 +284,7 @@ final class ResearchTournament
             $precision = $tp / count($testing);
             $score = (2 * $precision / (1 + $precision)) / count($classes);
         }
+
         return ['class' => $class, 'score' => $score, 'samples' => count($testing)];
     }
 
@@ -237,21 +292,29 @@ final class ResearchTournament
     private function calibrationError(array $bins): ?float
     {
         $n = array_sum(array_column($bins, 'samples'));
-        if ($n === 0) return null;
+        if ($n === 0) {
+            return null;
+        }
         $error = 0.0;
         foreach ($bins as $bin) {
-            if (!$bin['samples']) continue;
+            if (! $bin['samples']) {
+                continue;
+            }
             $error += $bin['samples'] / $n * abs($bin['accuracy'] - $bin['mean_confidence']);
         }
+
         return $error;
     }
 
     private function wilsonLower(int $successes, int $count): float
     {
-        if ($count === 0) return 0.0;
+        if ($count === 0) {
+            return 0.0;
+        }
         $p = $successes / $count;
         $z = 1.959963984540054;
         $d = 1 + $z * $z / $count;
+
         return max(0.0, ($p + $z * $z / (2 * $count)
             - $z * sqrt(($p * (1 - $p) + $z * $z / (4 * $count)) / $count)) / $d);
     }
@@ -261,13 +324,16 @@ final class ResearchTournament
         if (! in_array($name, self::CANDIDATES, true) || ! in_array($task, ['action', 'outcome'], true)) {
             throw new InvalidArgumentException('Invalid tournament candidate.');
         }
+
         return $this->candidate($train, $test, $task, $classes, $name);
     }
 
     private function evaluateCandidate(array $train, array $test, string $task, array $classes,
         string $name, bool $isolate): array
     {
-        if (! $isolate) return $this->candidate($train, $test, $task, $classes, $name);
+        if (! $isolate) {
+            return $this->candidate($train, $test, $task, $classes, $name);
+        }
         $file = tempnam(sys_get_temp_dir(), 'tm-candidate-');
         if ($file === false) {
             return ['status' => 'failed', 'reason' => 'temporary_file_unavailable',
@@ -280,7 +346,7 @@ final class ResearchTournament
             if (file_put_contents($file, $payload, LOCK_EX) !== strlen($payload)) {
                 throw new \RuntimeException('Incomplete candidate input.');
             }
-            $process = new \Symfony\Component\Process\Process([
+            $process = new Process([
                 PHP_BINARY, '-d', 'memory_limit=512M',
                 base_path('tools/tournament-candidate.php'), $file, hash('sha256', $payload),
             ], base_path(), null, null, 140);
@@ -293,6 +359,7 @@ final class ResearchTournament
             if (! is_array($result) || ! isset($result['status'])) {
                 throw new \RuntimeException('Invalid isolated candidate output.');
             }
+
             return $result;
         } catch (Throwable $error) {
             return ['status' => 'failed', 'reason' => 'subprocess_error: '.get_class($error),
@@ -319,21 +386,26 @@ final class ResearchTournament
                     if ($severity === E_USER_WARNING && str_contains($message, 'Tensor C extension is not loaded')) {
                         return true;
                     }
+
                     return false;
                 });
             }
             try {
-            $model = match ($name) {
-                'weighted_knn' => new KNearestNeighbors(min(9, count($train)), true),
-                'decision_tree' => new ClassificationTree(8, 6),
-                'random_forest' => new RandomForest(new ClassificationTree(8, 6), 12, 0.7, false),
-                'neural_network' => new MultilayerPerceptron(
-                    [new Dense(12), new Activation(new ReLU()), new Dense(8), new Activation(new ReLU())],
-                    batchSize: 32, epochs: 12, window: 3),
-            };
-            if ($name !== 'weighted_knn') $model->train(new Labeled($samples, $labels));
+                $model = match ($name) {
+                    'weighted_knn' => new KNearestNeighbors(min(9, count($train)), true),
+                    'decision_tree' => new ClassificationTree(8, 6),
+                    'random_forest' => new RandomForest(new ClassificationTree(8, 6), 12, 0.7, false),
+                    'neural_network' => new MultilayerPerceptron(
+                        [new Dense(12), new Activation(new ReLU), new Dense(8), new Activation(new ReLU)],
+                        batchSize: 32, epochs: 12, window: 3),
+                };
+                if ($name !== 'weighted_knn') {
+                    $model->train(new Labeled($samples, $labels));
+                }
             } finally {
-                if ($name === 'neural_network' && ! extension_loaded('tensor')) restore_error_handler();
+                if ($name === 'neural_network' && ! extension_loaded('tensor')) {
+                    restore_error_handler();
+                }
             }
             unset($samples, $labels);
             $confusion = array_fill_keys($classes, array_fill_keys($classes, 0));
@@ -386,7 +458,9 @@ final class ResearchTournament
                         'actual' => $row[$task], 'predicted' => $prediction,
                         'confidence' => $confidence, 'supported' => $accepted,
                         'reason' => $accepted ? 'supported' : 'weak_consensus'];
-                    if (count($trace) > 180) array_shift($trace);
+                    if (count($trace) > 180) {
+                        array_shift($trace);
+                    }
                 }
             }
             $f1 = [];
@@ -402,6 +476,7 @@ final class ResearchTournament
             $directionalPrecision = $directional ? $directionalCorrect / $directional : 0.0;
             $coverage = $validPredictions ? $supported / $validPredictions : 0.0;
             $score = $task === 'outcome' ? $macroF1 : $directionalPrecision;
+
             return ['status' => 'evaluated', 'score' => $score, 'macro_f1' => $macroF1,
                 'directional_precision' => $task === 'action' ? $directionalPrecision : null,
                 'directional_predictions' => $directional, 'directional_correct' => $directionalCorrect,

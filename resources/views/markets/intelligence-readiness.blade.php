@@ -20,7 +20,7 @@
         <x-intelligence-progress :label="$progress['history']['sampled'] ? 'Potential training rows (checked sample)' : 'Potential training rows now (estimate)'" :value="$progress['history']['potential']" :target="$progress['minimum']" native />
         <p class="guide-help">{{ \App\Helpers\Decimal::format($progress['history']['closed']) }} current-version closed feature rows in the recent build window. Of the {{ \App\Helpers\Decimal::format($progress['history']['checked']) }} rows checked, {{ \App\Helpers\Decimal::format($progress['history']['complete']) }} contain every selected feature. {{ \App\Helpers\Decimal::format($progress['history']['immature']) }} complete rows are reserved for inference or still waiting for their {{ $progress['horizon'] }}-candle outcome.</p>
         @if ($progress['history']['sampled'])
-            <p class="guide-help">Only the latest {{ \App\Helpers\Decimal::format($progress['history']['checked']) }} rows were checked for this estimate. Older eligible rows are also available to training, which uses the full age window.</p>
+            <p class="guide-help">Only the latest {{ \App\Helpers\Decimal::format($progress['history']['checked']) }} rows were checked for this estimate. Older eligible rows are also available to training, which uses all available eligible history.</p>
         @endif
         <p class="guide-help">Potential rows are counted before source-candle checks, semantic warm-up, pattern and lead/lag exclusions. The actual model counts below come from the last training run.</p>
         @if ($progress['history']['latest_ms'])

@@ -4,7 +4,6 @@ return [
     'enabled' => env('LEAD_LAG_ENABLED', true),
     'daily_refresh' => env('LEAD_LAG_DAILY_REFRESH', true),
     'max_peers' => 8,
-    'max_bars' => 6000,
     'max_lag' => 6,
     'min_samples' => 160,
     'min_block_rows' => 30,

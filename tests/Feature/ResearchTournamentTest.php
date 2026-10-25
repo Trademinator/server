@@ -46,3 +46,13 @@ it('isolates candidate training into bounded PHP subprocesses without changing p
     expect($report['tasks']['action']['candidates']['decision_tree']['status'])->toBe('evaluated', json_encode($report['tasks']['action']['candidates']['decision_tree']));
     $this->assertDatabaseCount('intelligence_heads', 0);
 });
+
+it('limits the tournament to the last 30 days of its frozen dataset without changing the model expiration', function () {
+    $manifest = IntelligenceFixtures::snapshot(125);
+    $report = app(ResearchTournament::class)->run($manifest['dataset_id'], 120);
+
+    expect($report['history_days'])->toBe(30)
+        ->and($report['history_as_of_ms'])->toBe($manifest['as_of_ms'])
+        ->and($report['history_from_ms'])->toBe(max(0, $manifest['as_of_ms'] - 30 * 86_400_000))
+        ->and($report['sample_limit'])->toBe(120);
+});

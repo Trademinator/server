@@ -29,7 +29,7 @@ final class DerivedMarketHistory
             throw new InvalidArgumentException('Derived period must be a larger exact multiple of its base period.');
         }
         $asOfMs = min($asOfMs ?? now()->getTimestampMs(), now()->getTimestampMs());
-        $fromMs ??= max(0, KnowledgeWindow::fromMs($asOfMs) - 60 * $targetMs);
+        $fromMs ??= KnowledgeWindow::trainingFromMs();
         if ($fromMs < 0 || $fromMs > $asOfMs) {
             throw new InvalidArgumentException('Invalid derivation range.');
         }

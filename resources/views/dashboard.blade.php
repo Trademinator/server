@@ -129,7 +129,7 @@
                     <div class="dashboard-stat">
                         <h3>1. Usable history</h3>
                         @if ($progress['history'])<x-intelligence-progress :label="$progress['history']['sampled'] ? 'Potential training rows (checked sample)' : 'Potential training rows'" :value="$progress['history']['potential']" :target="$progress['minimum']" native />
-                            @if ($progress['history']['sampled'])<p class="guide-help">Checked the latest {{ \App\Helpers\Decimal::format($progress['history']['checked']) }} of {{ \App\Helpers\Decimal::format($progress['history']['closed']) }} rows in the age window. Older eligible rows are also available to training.</p>@endif
+                            @if ($progress['history']['sampled'])<p class="guide-help">Checked the latest {{ \App\Helpers\Decimal::format($progress['history']['checked']) }} of {{ \App\Helpers\Decimal::format($progress['history']['closed']) }} rows in the available history. Older eligible rows are also available to training.</p>@endif
                         @else<p>Waiting for a selected candle period and complete features.</p>@endif
                         <p class="guide-help">Estimate before source checks and model-specific exclusions.</p>
                     </div>

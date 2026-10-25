@@ -33,7 +33,7 @@ final class AlgorithmicLabelBuilder
         $skipped = ['gaps' => 0, 'immature' => 0, 'warmup' => 0];
         if ($horizon !== null) {
             $labeler = new SemanticLabels($horizon, $lookback);
-            $fromMs = KnowledgeWindow::fromMs($asOfMs);
+            $fromMs = KnowledgeWindow::trainingFromMs();
             for ($i = 0; $i < $lookback; $i++) {
                 $fromMs = max(0, $this->timeframe->previous($fromMs, $period));
             }
@@ -53,6 +53,7 @@ final class AlgorithmicLabelBuilder
                 $previous = $timestamp;
                 if (count($window) < $lookback + $horizon) {
                     $skipped['warmup']++;
+
                     continue;
                 }
                 $past = array_slice($window, 0, $lookback);
@@ -62,7 +63,7 @@ final class AlgorithmicLabelBuilder
                 foreach ($future as $source) {
                     $available = max($available, CandleProvenance::availableAt($source, $period));
                 }
-                if ($available <= $asOfMs && $this->timeframe->next($first['microtimestamp'], $period) >= KnowledgeWindow::fromMs($asOfMs)) {
+                if ($available <= $asOfMs && $this->timeframe->next($first['microtimestamp'], $period) >= KnowledgeWindow::trainingFromMs()) {
                     $result = $labeler->label($past, $future);
                     $outcomes[$first['microtimestamp']] = [
                         'label' => $result['action'],

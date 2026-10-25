@@ -25,7 +25,7 @@ $settings = [
     'min_horizon_distance_observations' => 30,
     // Fresh allowance for one algorithm/parameter run, not the whole pipeline.
     'max_seconds' => $algorithmSeconds,
-    // Both the training history window and the published model's maximum age.
+    // Model expiration only. Production training retains all available eligible history.
     'max_model_age_days' => (int) env('INTELLIGENCE_MAX_MODEL_AGE_DAYS', 14),
     'knowledge_warning_minutes' => max(1, (int) env('INTELLIGENCE_KNOWLEDGE_WARNING_MINUTES', 30)),
     'max_signal_age_periods' => (int) env('INTELLIGENCE_MAX_SIGNAL_AGE_PERIODS', 2),
@@ -63,7 +63,6 @@ $settings = [
         'influence_enabled' => env('INTELLIGENCE_COINGECKO_INFLUENCE_ENABLED', false),
         'max_weight' => (float) env('INTELLIGENCE_COINGECKO_MAX_WEIGHT', 0.15),
         'min_snapshots' => (int) env('INTELLIGENCE_COINGECKO_MIN_SNAPSHOTS', 192),
-        'max_snapshots' => (int) env('INTELLIGENCE_COINGECKO_MAX_SNAPSHOTS', 2400),
         'min_holdout' => (int) env('INTELLIGENCE_COINGECKO_MIN_HOLDOUT', 32),
         'min_f1_improvement' => (float) env('INTELLIGENCE_COINGECKO_MIN_F1_IMPROVEMENT', 0.02),
         'trees' => (int) env('INTELLIGENCE_COINGECKO_TREES', 24),

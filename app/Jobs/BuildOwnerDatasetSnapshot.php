@@ -30,6 +30,8 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
 
     public ?int $requestedAsOfMs = null;
 
+    public ?string $schema = null;
+
     public int $timeout;
 
     public int $uniqueFor = 86400;
@@ -43,7 +45,9 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
         public readonly string $symbol,
         public readonly string $period,
         public readonly bool $trainAfter = false,
+        ?string $schema = null,
     ) {
+        $this->schema = $schema;
         // Freeze the request cutoff in the serialized queue payload so releases
         // cannot chase newly collected candles indefinitely.
         $this->requestedAsOfMs = now()->getTimestampMs();
@@ -105,14 +109,14 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
         $manifest = $builder->build(
             $this->exchange, $this->symbol, $this->period,
             new SemanticLabels((int) config('intelligence.horizon'), (int) config('intelligence.lookback')),
-            (string) config('intelligence.schema'),
-            fromMs: KnowledgeWindow::fromMs($asOfMs), toMs: $asOfMs, asOfMs: $asOfMs,
+            $this->schema ?? (string) config('intelligence.schema'),
+            fromMs: KnowledgeWindow::trainingFromMs(), toMs: $asOfMs, asOfMs: $asOfMs,
         );
         $journal->markSatisfied($this->exchange, $this->symbol, $this->period, 'snapshot', (int) $manifest['as_of_ms']);
         if ($this->trainAfter || $journal->outstanding(
             $this->exchange, $this->symbol, $this->period, 'ai') > 0) {
             $job = new TrainMarketIntelligence($this->exchange, $this->symbol, $this->period,
-                'owner:'.Str::uuid7());
+                'owner:'.Str::uuid7(), $this->schema ?? (string) config('intelligence.schema'));
             $job->snapshotDataset = (string) $manifest['dataset_id'];
             dispatch($job->onQueue((string) config('intelligence.queue')));
         }

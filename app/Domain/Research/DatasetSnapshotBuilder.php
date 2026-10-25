@@ -48,7 +48,7 @@ final class DatasetSnapshotBuilder
         $toMs = min($toMs ?? $asOfMs, $asOfMs);
         $fromMs ??= 0;
         if ($definition instanceof SemanticLabels) {
-            $fromMs = max($fromMs, KnowledgeWindow::fromMs($asOfMs));
+            $fromMs = max($fromMs, KnowledgeWindow::trainingFromMs());
         }
         if ($exchange === '' || $symbol === '' || $fromMs < 0 || $fromMs > $toMs) {
             throw new InvalidArgumentException('Invalid market or decision-time range.');

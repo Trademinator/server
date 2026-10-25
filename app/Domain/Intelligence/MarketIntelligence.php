@@ -57,7 +57,7 @@ final class MarketIntelligence
         ];
         if ($generation !== null) {
             $generation = hash('sha256', $generation.'|'.FeatureSchema::VERSION.'|'.KnnSchemaFallback::VERSION
-                .'|'.IntelligenceTrainer::VERSION.'|rubix:'.\Rubix\ML\VERSION);
+                .'|'.IntelligenceTrainer::VERSION.'|'.KnowledgeWindow::TRAINING_POLICY.'|rubix:'.\Rubix\ML\VERSION);
         }
         $buildPerformance['started_at'] ??= now()->toIso8601String();
         $buildPerformance['started_monotonic_ns'] = hrtime(true);
@@ -88,7 +88,7 @@ final class MarketIntelligence
                 }
                 $asOfMs = min($asOfMs ?? $latest->microtimestamp, now()->getTimestampMs());
                 $toMs = min($toMs ?? $asOfMs, $asOfMs);
-                $fromMs = max($fromMs ?? 0, KnowledgeWindow::fromMs($asOfMs));
+                $fromMs ??= KnowledgeWindow::trainingFromMs();
                 // H is only a seed here. DatasetSnapshotBuilder replaces it with the
                 // frequency-weighted Action-pivot horizon before labeling rows.
                 $definition = new SemanticLabels(config('intelligence.horizon'), config('intelligence.lookback'));
@@ -182,7 +182,7 @@ final class MarketIntelligence
         if (! FeatureSchema::modelCompatible($model)) {
             return [...WeightedKnn::abstain('model_schema_outdated'), ...$context];
         }
-        if ($model['trained_as_of_ms'] < KnowledgeWindow::fromMs($asOfMs)) {
+        if ($model['trained_as_of_ms'] <= KnowledgeWindow::fromMs($asOfMs)) {
             return [...WeightedKnn::abstain('stale_model'), ...$context];
         }
         $features = MarketFeature::query()->where('exchange', $exchange)->where('symbol', $symbol)->where('period', $period)

@@ -44,7 +44,7 @@ final class LeadLagIntelligence
         $preparationDeadline = TrainingRuntime::algorithmDeadline($deadline);
         $this->assertWithinDeadline($preparationDeadline);
         $cutoff = $rows[(int) floor(count($rows) * 0.4)]['decision_at_ms'] - 1;
-        $from = max(KnowledgeWindow::fromMs($manifest['as_of_ms']), $cutoff - $settings['max_bars'] * $step);
+        $from = KnowledgeWindow::trainingFromMs();
         $follower = $this->series->load($manifest['exchange'], $manifest['symbol'], $manifest['period'], $from, $cutoff);
         $this->assertWithinDeadline($preparationDeadline);
         $peers = MarketFeed::query()->with('market.exchange')->whereNotNull('selected_period')

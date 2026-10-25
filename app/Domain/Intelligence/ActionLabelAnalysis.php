@@ -24,7 +24,7 @@ final class ActionLabelAnalysis
         app(ActionLog::class)->write('intelligence.action_labels.started', [
             ...$fields, 'memory_bytes' => memory_get_usage(true),
         ]);
-        $fromMs = KnowledgeWindow::fromMs($asOfMs);
+        $fromMs = KnowledgeWindow::trainingFromMs();
         $fee = $this->takerFees->for($exchange, $symbol);
         if ($fee === null) {
             throw new InvalidArgumentException('Published taker fee is unavailable for Action auto-labeling.');
@@ -125,7 +125,8 @@ final class ActionLabelAnalysis
             'action_counts' => $actionCounts,
             'from_ms' => $fromMs,
             'as_of_ms' => $asOfMs,
-            'max_history_days' => KnowledgeWindow::days(),
+            'max_history_days' => null,
+            'history_policy' => KnowledgeWindow::TRAINING_POLICY,
             'taker_fee' => $fee,
             '_action_labels' => $actionLabels,
             '_action_available_at_ms' => $actionAvailability,
