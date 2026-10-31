@@ -447,3 +447,38 @@ it('shares subscriber demand across tournament dataset training and its shadow m
         ->and($this->managedQueue->pop('testing')->uuid())->toBe($ids['BTC/USD'][0])
         ->and($this->managedQueue->pop('testing')->uuid())->toBe($ids['BTC/USD'][1]);
 });
+
+it('bounds each reservation by its declared job timeout instead of the aggregate training budget', function (int $timeout, int $reservation) {
+    config(['queue.connections.long-budget-test' => ['driver' => 'managed-test', 'connection' => 'isolated',
+        'queue' => 'testing', 'retry_after' => 40277700]]);
+    $queue = Queue::connection('long-budget-test');
+    $job = new AnalyzeMarketAutoLabels('kraken', 'ETH/USD', '1m', 'bounded-labels');
+    $job->timeout = $timeout;
+    $queue->push($job, '', 'testing');
+
+    $reserved = $queue->pop('testing');
+
+    expect((int) $queue->getConnection()->zscore($queue->key('testing').':reserved', $reserved->getReservedJob()))
+        ->toBe(now()->timestamp + $reservation);
+    $this->travel($reservation - 1)->seconds();
+    expect($queue->pop('testing'))->toBeNull();
+    $this->travel(2)->seconds();
+    expect($queue->pop('testing')->uuid())->toBe($reserved->uuid());
+})->with([
+    'short feature budget' => [600, 900],
+    'legacy label budget' => [900, 1200],
+    'full training budget' => [40277400, 40277700],
+    'unbounded timeout retains connection fallback' => [0, 40277700],
+]);
+
+it('reserves a new label job for both configured algorithm budgets and marks timeouts terminal', function () {
+    config(['intelligence.max_seconds' => 86400]);
+    $this->managedQueue->push(new AnalyzeMarketAutoLabels('kraken', 'ETH/USD', '1m', 'new-labels'), '', 'testing');
+
+    $reserved = $this->managedQueue->pop('testing');
+
+    expect($reserved->timeout())->toBe(173400);
+    expect($reserved->shouldFailOnTimeout())->toBeTrue();
+    expect((int) $this->managedQueue->getConnection()->zscore($this->managedQueue->key('testing').':reserved', $reserved->getReservedJob()))
+        ->toBe(now()->timestamp + 173700);
+});

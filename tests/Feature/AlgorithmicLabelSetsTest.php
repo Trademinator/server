@@ -48,7 +48,8 @@ it('freezes labels independently of M2 features and reuses identical immutable r
 });
 
 it('keeps semantic label outcomes stable when a feature dataset uses a frozen set', function () {
-    IntelligenceFixtures::candles();
+    $this->travelTo('2024-01-02 00:00:00 UTC');
+    IntelligenceFixtures::candles(700);
     $until = now()->getTimestampMs();
     $set = app(AlgorithmicLabelBuilder::class)->build('kraken', 'BTC/USD', '1m', $until);
     $snapshot = app(DatasetSnapshotBuilder::class)->build('kraken', 'BTC/USD', '1m',

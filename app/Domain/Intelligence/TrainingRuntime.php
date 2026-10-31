@@ -101,6 +101,12 @@ final class TrainingRuntime
         )['job_timeout'];
     }
 
+    public static function labelJobTimeout(): int
+    {
+        // Action and Outcome each need their own configured algorithm budget.
+        return max(900, (int) ceil(2 * self::algorithmSeconds() + 600));
+    }
+
     public static function lockSeconds(): int
     {
         return self::leaseSeconds(

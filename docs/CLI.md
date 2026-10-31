@@ -92,6 +92,7 @@ Each link contains the exact signature, parameter meanings, execution/side-effec
 | Models and signals | [`trademinator:signal`](#trademinatorsignal) |
 | Models and signals | [`trademinator:dispatch-market-signals`](#trademinatordispatch-market-signals) |
 | Models and signals | [`trademinator:recover-signal-queue`](#trademinatorrecover-signal-queue) |
+| Models and signals | [`trademinator:recover-label-queue`](#trademinatorrecover-label-queue) |
 | Models and signals | [`trademinator:model-info`](#trademinatormodel-info) |
 | Models and signals | [`trademinator:analyze-validation-gates`](#trademinatoranalyze-validation-gates) |
 | Human training | [`trademinator:human-candle-audit`](#trademinatorhuman-candle-audit) |
@@ -709,16 +710,21 @@ This command is diagnostic/manual auto-label execution only. Use `trademinator:k
 
 ## trademinator:dispatch-market-intelligence
 
-Signature: `trademinator:dispatch-market-intelligence {--force : Create a fresh build generation, even if this week was already built or scheduling is disabled} {--all : With --force, also rebuild every previously published market and period}`
+Signature: `trademinator:dispatch-market-intelligence {--force : Create a fresh build generation, even if this week was already built or scheduling is disabled} {--expired : Queue subscribed selected-period models that have reached their maximum age} {--all : With --force, also rebuild every previously published market and period}`
 
-Description: Queue weekly KNN and pattern training once per subscribed market and selected period
+Description: Queue weekly or expired-model training for subscribed markets and selected periods
 
 Queue training for all active subscribed feeds with selected periods on `INTELLIGENCE_QUEUE` (default `intelligence`). Requires enabled intelligence and a persistent queue. Uses the current weekly generation key; already completed generations are not a force-rebuild target. This command only dispatches; set the fallback `--timeout` on the worker command. Training jobs carry a timeout calculated from all enabled algorithm and parameter runs; it takes precedence over the worker's timeout fallback. See [training and queue budgets](CRONTABS.md#m4-intelligence-workers).
 
-Parameters: none beyond standard Artisan options.
+| Option | Default | Effect |
+| --- | --- | --- |
+| `--force` | Off | Request a fresh generation even if the weekly build is complete or scheduling is disabled. |
+| `--expired` | Off | Queue subscribed selected-period heads whose training cutoff has reached the model age limit. Cannot be combined with `--force` or `--all`. Training uses all available eligible history. |
+| `--all` | Off | With `--force`, include every previously published market and period. |
 
 ```bash
 php artisan trademinator:dispatch-market-intelligence
+php artisan trademinator:dispatch-market-intelligence --expired
 ```
 
 Implementation: [`DispatchMarketIntelligence.php`](../app/Console/Commands/DispatchMarketIntelligence.php).
@@ -741,14 +747,14 @@ Implementation: [`DispatchLeadLagIntelligence.php`](../app/Console/Commands/Disp
 
 ## trademinator:tournament
 
-Signature: `trademinator:tournament {dataset? : Frozen research dataset UUID, omitted with --all} {--max-rows=1200 : Shared chronological sample cap between 100 and 4000} {--all : Queue each currently published market dataset}`
+Signature: `trademinator:tournament {dataset? : Frozen research dataset UUID, omitted with --all} {--max-rows=2400 : Maximum candles within the latest 30 dataset days (100 to 4000)} {--all : Queue each currently published market dataset}`
 
 Description: Queue research-only Rubix Outcome and Action tournaments on the dedicated tournament queue
 
-Dispatch one unique queue job per dataset to the dedicated tournament queue. Each worker runs Rubix weighted KNN, Classification Tree, Random Forest and Multilayer Perceptron sequentially for Outcome and Action. Results are research-only and do not affect production signals. Use a separate one-worker tournament queue consumer under a 512 MB PHP limit. Use:
+Dispatch one unique queue job per dataset to the dedicated tournament queue. Each worker runs Rubix weighted KNN, Classification Tree, Random Forest and Multilayer Perceptron sequentially for Outcome and Action. Evaluation uses the latest 30 dataset days, with at most 2400 candles by default; `--max-rows` accepts 100 to 4000. This evaluation limit does not cap production training history. Results are research-only and do not affect production signals. Use a separate one-worker tournament queue consumer under a 512 MB PHP limit. Use:
 
-    php -d memory_limit=512M artisan trademinator:tournament DATASET_UUID --max-rows=1200
-    php -d memory_limit=512M artisan trademinator:tournament --all --max-rows=1200
+    php -d memory_limit=512M artisan trademinator:tournament DATASET_UUID --max-rows=2400
+    php -d memory_limit=512M artisan trademinator:tournament --all --max-rows=2400
 
 Drain those jobs with `php -d memory_limit=512M artisan trademinator:queue-work redis --queue=tournament --slot=1 --stop-when-empty --max-time=50 --timeout=900 --memory=384 --tries=2`. Match `--queue` to `INTELLIGENCE_TOURNAMENT_QUEUE` when customized; the [research worker cron](CRONTABS.md#research-tournament-worker) also drains shadow work.
 
@@ -856,6 +862,28 @@ php artisan trademinator:recover-signal-queue --apply --workers-stopped
 If inspection or ownership checks fail, review the message and rerun the dry run before applying. Redis and database updates are separate stores; after an interrupted or uncertain apply, retain the printed backup and rerun inspection to reconcile current state. Resume the separate intelligence and signals cron consumers only after recovery succeeds. See [CRONTABS.md](CRONTABS.md#m42-dashboard-recording-and-discovery) for their connection, timeout and lock paths.
 
 Implementation: [`RecoverSignalQueue.php`](../app/Console/Commands/RecoverSignalQueue.php).
+
+## trademinator:recover-label-queue
+
+Signature: `trademinator:recover-label-queue {exchange : Exchange class, for example binance} {symbol : Exact market symbol, for example XRP/USDC} {period : Candle period, for example 1m} {--apply : Back up, refresh label timeouts, and requeue stopped reservations} {--workers-stopped : Confirm ALL intelligence workers, including unmanaged workers, are stopped on EVERY host}`
+
+Description: Inspect or recover auto-label jobs for one market without discarding queued work
+
+Without options, report matching waiting, delayed and reserved label jobs without changing them. Match the exact exchange, symbol and candle period. Recovery requires the managed Redis intelligence queue and worker registry on the same non-cluster Redis connection, with Redis serialization and compression disabled. Inspection is bounded to 20000 queue payloads.
+
+Apply the patch on every worker host. Before using `--apply --workers-stopped`, stop all intelligence workers, including unmanaged workers, on every host and prevent cron or supervisors from restarting them. The command acquires the shared maintenance guard and local legacy guard and checks registered workers. A live worker slot blocks recovery even when `--workers-stopped` is supplied.
+
+Apply mode writes a private JSONL backup under `storage/app/private/label-queue-recovery/` before atomically updating matching payloads. It refreshes serialized label timeouts and checkpoint continuation settings, preserves attempt counts as evidence, and removes the attempt-count limit so cooperative releases can continue. Genuine exceptions remain limited to three; a hard timeout no longer forces immediate terminal failure. Legacy jobs without a cutoff freeze it at their queue creation timestamp. It requeues matching stopped reservations, preserves delayed job schedules, and retains IDs, cutoffs, dispatch-lock ownership and unrelated work. A queue change during inspection aborts the update. Repeating a completed recovery without intervening queue activity makes no further changes.
+
+```bash
+php -d memory_limit=512M artisan trademinator:recover-label-queue binance 'XRP/USDC' 1m
+# After reviewing the report and stopping intelligence workers on every host:
+php -d memory_limit=512M artisan trademinator:recover-label-queue binance 'XRP/USDC' 1m --apply --workers-stopped
+```
+
+After recovery succeeds, restart the intelligence workers with the patched code. The command does not run training or move the current model head. Newly reserved jobs with an explicit positive timeout receive that timeout plus 300 seconds, rather than the aggregate training reservation. Existing reservations for other markets remain unchanged; inspect and recover those markets separately if required.
+
+Implementation: [`RecoverLabelQueue.php`](../app/Console/Commands/RecoverLabelQueue.php).
 
 ## trademinator:model-info
 

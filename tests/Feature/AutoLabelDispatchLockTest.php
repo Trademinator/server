@@ -74,3 +74,33 @@ it('passes snapshot label dispatch ownership to the job and coalesces the next a
     Bus::assertDispatched(AnalyzeMarketAutoLabels::class, fn (AnalyzeMarketAutoLabels $labels): bool => $labels->dispatchLockOwner !== null
         && Cache::restoreLock($labels->cacheKey.':lock', $labels->dispatchLockOwner)->isOwnedByCurrentProcess());
 });
+
+it('keeps snapshot label dispatch exclusive beyond the old twenty minute lease', function () {
+    config(['intelligence.max_seconds' => 86400]);
+    $this->freezeTime();
+    IntelligenceFixtures::feature(0, 0.5);
+    Bus::fake([AnalyzeMarketAutoLabels::class]);
+    $job = new BuildOwnerDatasetSnapshot('kraken', 'BTC/USD', '1m');
+    $job->handle(app(DatasetSnapshotBuilder::class), app(TickerRepository::class), app(KnowledgeRequestJournal::class));
+    $this->travel(21)->minutes();
+
+    $job->handle(app(DatasetSnapshotBuilder::class), app(TickerRepository::class), app(KnowledgeRequestJournal::class));
+
+    Bus::assertDispatchedTimes(AnalyzeMarketAutoLabels::class, 1);
+});
+
+it('records terminal label failures in the pipeline journal and releases its own dispatch lease', function () {
+    $key = 'test:terminal-label';
+    app(KnowledgeRequestJournal::class)->request('kraken', 'BTC/USD', '1m', 'labels', 1000);
+    $lock = Cache::lock($key.':lock', AnalyzeMarketAutoLabels::lockSeconds());
+    $lock->get();
+    $job = new AnalyzeMarketAutoLabels('kraken', 'BTC/USD', '1m', $key, 1000);
+    $job->dispatchLockOwner = $lock->owner();
+
+    $job->failed(new RuntimeException('Auto-label job timed out.'));
+
+    $this->assertDatabaseHas('knowledge_stage_requests', ['exchange' => 'kraken', 'symbol' => 'BTC/USD',
+        'period' => '1m', 'stage' => 'labels', 'status' => 'failed', 'error' => 'Auto-label job timed out.']);
+    expect(Cache::lock($key.':lock')->isLocked())->toBeFalse();
+    expect(Cache::get($key.':error'))->toBe('Auto-label job timed out.');
+});

@@ -78,7 +78,7 @@ class CandleTrainingController extends Controller
         $key = 'trademinator:action-auto-label:'.hash('sha256', implode('|', [
             $manifest['exchange'], $manifest['symbol'], $manifest['period'],
         ]));
-        $lock = Cache::lock($key.':lock', 3600);
+        $lock = Cache::lock($key.':lock', AnalyzeMarketAutoLabels::lockSeconds());
         if (! $lock->get()) {
             return response()->json(['message' => 'Auto-labelling is already queued or running.'], 409);
         }

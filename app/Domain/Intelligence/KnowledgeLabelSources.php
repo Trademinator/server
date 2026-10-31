@@ -2,6 +2,7 @@
 
 namespace App\Domain\Intelligence;
 
+use App\Domain\Research\SemanticLabels;
 use Illuminate\Support\Facades\DB;
 
 /** Distinguishes availability of the four labeling sources from model readiness. */
@@ -12,11 +13,10 @@ final class KnowledgeLabelSources
     {
         $scope = compact('exchange', 'symbol', 'period');
         $latest = DB::table('algorithmic_label_sets')->where($scope)
-            ->where('history_revision', app(AlgorithmicLabelSets::class)->revision($exchange, $symbol, $period))
             ->where('action_version', AlgorithmicLabelSets::ACTION_VERSION)
-            ->where('outcome_version', \App\Domain\Research\SemanticLabels::VERSION)
+            ->where('outcome_version', SemanticLabels::VERSION)
             ->where('profile_sha256', app(AlgorithmicLabelSets::class)->profile($exchange, $symbol))
-            ->orderByDesc('as_of_ms')->first();
+            ->orderByDesc('as_of_ms')->first(['as_of_ms']);
         $set = $latest === null ? null : app(AlgorithmicLabelSets::class)
             ->find($exchange, $symbol, $period, (int) $latest->as_of_ms);
         $actionRows = count($set['action_labels'] ?? []);

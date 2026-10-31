@@ -4,6 +4,7 @@ use App\Domain\Features\FeatureBuilder;
 use App\Domain\Intelligence\BackfillIntelligence;
 use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\KnnSchemaFallback;
+use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\MarketData\ExchangeMetadata;
@@ -33,6 +34,7 @@ function backfillExpectedGeneration(string $id, int $revision): string
         .'|'.FeatureSchema::VERSION
         .'|'.KnnSchemaFallback::VERSION
         .'|'.IntelligenceTrainer::VERSION
+        .'|'.KnowledgeWindow::TRAINING_POLICY
         .'|rubix:'.\Rubix\ML\VERSION);
 }
 
@@ -136,21 +138,23 @@ it('coalesces successful imports into a feature rebuild followed by one fresh KN
     Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 2);
 });
 
-it('rebuilds after a successful backfill even when the weekly generation is already complete', function () {
+it('builds a fresh candidate after backfill even when the weekly generation is already complete', function () {
     $this->travelTo('2024-01-10 00:00:00 UTC');
     backfillTrainingFeed();
     app(FeatureBuilder::class)->build('kraken', 'BTC/USD', '1h');
     (new TrainMarketIntelligence('kraken', 'BTC/USD', '1h', '2024-01-08'))->handle(app(MarketIntelligence::class));
-    $weekly = app(ModelStore::class)->current('kraken', 'BTC/USD', '1h');
+    $weekly = DB::table('intelligence_models')->sole();
+    $this->assertDatabaseEmpty('intelligence_heads');
     Bus::fake([BackfillMarketHistory::class, RebuildBackfilledIntelligence::class]);
 
     $id = importTrainingHistory();
     runBackfillTrainingStep($id);
     runBackfillTrainingStep($id);
 
-    $current = app(ModelStore::class)->current('kraken', 'BTC/USD', '1h');
-    expect($current['model_id'])->not->toBe($weekly['model_id']);
-    expect($current['generation_key'])->toBe(backfillExpectedGeneration($id, 1));
+    $candidate = DB::table('intelligence_models')->where('generation_key', backfillExpectedGeneration($id, 1))->sole();
+    expect($candidate->model_id)->not->toBe($weekly->model_id);
+    expect($candidate->status)->toBe('abstaining');
+    $this->assertDatabaseEmpty('intelligence_heads');
     $this->assertDatabaseCount('intelligence_models', 2);
     Bus::assertDispatchedTimes(RebuildBackfilledIntelligence::class, 2);
 });

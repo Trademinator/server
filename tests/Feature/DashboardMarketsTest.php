@@ -32,6 +32,7 @@ function dashboardModel(MarketSubscription $subscription, array $overrides = [])
     DB::table('intelligence_models')->insert(['model_id' => $model, 'dataset_id' => $dataset, 'market_key' => $key,
         'status' => 'ready', 'sha256' => str_repeat('0', 64), 'created_at' => now(),
         'report' => json_encode(array_replace(['model_id' => $model, 'dataset_id' => $dataset, 'status' => 'ready',
+            'exchange' => $market->exchange->class, 'symbol' => $market->symbol, 'period' => $market->feed->selected_period,
             'validation_version' => IntelligenceTrainer::VERSION, 'trained_as_of_ms' => now()->getTimestampMs(),
             'rubix_ml_major' => \Rubix\ML\VERSION,
             'keys' => $keys, 'training_data' => ['schema' => 'core'],

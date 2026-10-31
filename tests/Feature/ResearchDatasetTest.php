@@ -10,6 +10,7 @@ use App\Models\MarketFeature;
 use App\Models\Ticker;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
@@ -214,15 +215,19 @@ it('preserves the candle sequence and label boundaries across feature pages with
     }
 });
 
-it('keeps its owned feature lock for a complete algorithm allowance and releases it after publication', function () {
+it('renews its short feature lease across checkpoints and releases it after publication', function () {
     $this->travelTo('2024-01-02 00:00:00 UTC');
-    config(['intelligence.max_seconds' => 14400, 'intelligence.job_timeout' => 15000]);
+    config(['research.checkpoint_rows' => 10]);
     seedResearchHistory();
     $name = 'trademinator:features:'.hash('sha256', 'kraken|BTC/USD|1m');
     $protectedDuringPublication = null;
+    $checkpoints = 0;
+    Event::listen('knowledge.checkpoint.saved', function () use (&$checkpoints): void {
+        $checkpoints++;
+        $this->travel(60)->seconds();
+    });
     DB::listen(function ($query) use ($name, &$protectedDuringPublication): void {
         if (str_starts_with(strtolower(ltrim($query->sql)), 'insert') && str_contains($query->sql, 'research_datasets')) {
-            $this->travel(14400)->seconds();
             $contender = Cache::lock($name, 60);
             $protectedDuringPublication = ! $contender->get();
             if (! $protectedDuringPublication) {
@@ -231,9 +236,14 @@ it('keeps its owned feature lock for a complete algorithm allowance and releases
         }
     });
 
-    $manifest = buildResearchSnapshot();
+    try {
+        $manifest = buildResearchSnapshot();
+    } finally {
+        Event::forget('knowledge.checkpoint.saved');
+    }
 
     expect($manifest['rows'])->toBe(61);
+    expect($checkpoints)->toBeGreaterThan(2);
     expect($protectedDuringPublication)->toBeTrue();
     $next = Cache::lock($name, 60);
     try {

@@ -5,6 +5,7 @@ namespace App\Domain\Intelligence;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\Operations\ActionLog;
 use App\Repositories\TickerRepository;
+use Closure;
 use InvalidArgumentException;
 
 final class ActionLabelAnalysis
@@ -18,7 +19,7 @@ final class ActionLabelAnalysis
         private CandleTimeframe $timeframe,
     ) {}
 
-    public function analyze(string $exchange, string $symbol, string $period, int $asOfMs): array
+    public function analyze(string $exchange, string $symbol, string $period, int $asOfMs, ?Closure $emit = null): array
     {
         $fields = ['exchange' => $exchange, 'symbol' => $symbol, 'period' => $period, 'stage' => 'action_labeling'];
         app(ActionLog::class)->write('intelligence.action_labels.started', [
@@ -39,21 +40,23 @@ final class ActionLabelAnalysis
         $gaps = 0;
         $runs = 0;
         $previous = null;
-        $run = [];
+        $run = $emit === null ? [] : new ActionCandleBuffer;
 
         $consume = function () use (
             &$run, &$runs, &$actionLabels, &$actionAvailability, &$actionCounts,
-            &$frequencies, &$pivotCount, $fee, $period, $fields
+            &$frequencies, &$pivotCount, $fee, $period, $fields, $emit
         ): void {
-            if ($run === []) {
+            if (count($run) === 0) {
                 return;
             }
             $runs++;
             app(ActionLog::class)->write('intelligence.action_labels.run', [
                 ...$fields, 'rows' => count($run), 'memory_bytes' => memory_get_usage(true),
             ]);
-            $summary = $this->summarizeRun($run, $fee, $period, $actionLabels, $actionAvailability);
-            $run = [];
+            $summary = $emit === null
+                ? $this->summarizeRun($run, $fee, $period, $actionLabels, $actionAvailability)
+                : $this->streamRun($run, $fee, $period, $emit);
+            $run = $emit === null ? [] : new ActionCandleBuffer;
             foreach ($actionCounts as $action => $_) {
                 $actionCounts[$action] += $summary['action_counts'][$action];
             }
@@ -65,6 +68,9 @@ final class ActionLabelAnalysis
 
         foreach ($this->tickers->streamHistory($exchange, $symbol, $period, $fromMs, $asOfMs) as $timestamp => $candle) {
             $timestamp = (int) $timestamp;
+            if ($candles % 1024 === 0) {
+                TrainingRuntime::heartbeat();
+            }
             if ($previous !== null && $this->timeframe->next($previous, $period) !== $timestamp) {
                 $consume();
                 $gaps++;
@@ -75,6 +81,17 @@ final class ActionLabelAnalysis
         }
         $consume();
 
+        return $this->diagnostics(compact('frequencies', 'actionCounts', 'pivotCount', 'candles', 'gaps', 'runs',
+            'actionLabels', 'actionAvailability'), $asOfMs, $fee);
+    }
+
+    private function diagnostics(array $state, int $asOfMs, float $fee): array
+    {
+        ['frequencies' => $frequencies, 'actionCounts' => $actionCounts, 'pivotCount' => $pivotCount,
+            'candles' => $candles, 'gaps' => $gaps, 'runs' => $runs] = $state;
+        $actionLabels = $state['actionLabels'] ?? [];
+        $actionAvailability = $state['actionAvailability'] ?? [];
+        $fromMs = KnowledgeWindow::trainingFromMs();
         ksort($frequencies, SORT_NUMERIC);
         $observations = array_sum($frequencies);
         $weighted = 0;
@@ -133,11 +150,161 @@ final class ActionLabelAnalysis
         ];
     }
 
+    /** Resume source ingestion, each Action pass, and chronological emission independently. */
+    public function analyzeResumable(string $exchange, string $symbol, string $period, int $asOfMs,
+        Closure $emit, BuildCheckpoint $checkpoint): array
+    {
+        $fee = $this->takerFees->for($exchange, $symbol);
+        if ($fee === null) {
+            throw new InvalidArgumentException('Published taker fee is unavailable for Action auto-labeling.');
+        }
+        $checkpoint->state['analysis'] ??= ['frequencies' => [],
+            'actionCounts' => ['buy' => 0, 'hold' => 0, 'sell' => 0],
+            'pivotCount' => 0, 'candles' => 0, 'gaps' => 0, 'runs' => 0, 'previous' => null];
+        $state = &$checkpoint->state['analysis'];
+        $run = new ActionCandleBuffer($checkpoint);
+        while ($checkpoint->state['stage'] !== 'actions_done') {
+            if ($checkpoint->state['stage'] === 'action_read') {
+                $complete = true;
+                foreach ($this->tickers->streamHistory($exchange, $symbol, $period,
+                    $state['previous'] === null ? KnowledgeWindow::trainingFromMs() : $state['previous'] + 1, $asOfMs) as $timestamp => $candle) {
+                    $timestamp = (int) $timestamp;
+                    if ($state['previous'] !== null && $this->timeframe->next($state['previous'], $period) !== $timestamp) {
+                        if (count($run) > 0) {
+                            $complete = false;
+                            break;
+                        }
+                        $state['gaps']++;
+                    }
+                    $run[] = $this->labels->compact($candle, $timestamp);
+                    $state['previous'] = $timestamp;
+                    $state['candles']++;
+                    $checkpoint->state['processed'] = $state['candles'];
+                    if ($checkpoint->due()) {
+                        $checkpoint->save();
+                    }
+                }
+                $state['source_complete'] = $complete;
+                $checkpoint->state['stage'] = count($run) > 0 ? 'action_passes' : 'actions_done';
+                $checkpoint->state['action_pass'] = 0;
+                $checkpoint->state['action_pass_state'] = [];
+                $checkpoint->save();
+            }
+            if ($checkpoint->state['stage'] === 'action_passes') {
+                $this->labels->labelInPlace($run, $fee, $checkpoint);
+                $state['emission'] = ['scan' => 0, 'segment' => 0, 'previous' => null, 'until' => null, 'available' => null];
+                $checkpoint->state['stage'] = 'action_emit';
+                $checkpoint->save();
+            }
+            if ($checkpoint->state['stage'] === 'action_emit') {
+                $cursor = &$state['emission'];
+                while (true) {
+                    if ($cursor['until'] !== null) {
+                        while ($cursor['segment'] < $cursor['until']) {
+                            $row = $run[$cursor['segment']++];
+                            $action = $row['action'] ?? null;
+                            if (in_array($action, ['buy', 'hold', 'sell'], true)) {
+                                $state['actionCounts'][$action]++;
+                                $emit($row['microtimestamp'], $action === 'hold' ? 'hodl' : $action, $cursor['available']);
+                            }
+                            if ($checkpoint->due()) {
+                                $checkpoint->save();
+                            }
+                        }
+                        $cursor['until'] = null;
+                    }
+                    if ($cursor['scan'] >= count($run)) {
+                        if ($cursor['segment'] < count($run)) {
+                            $cursor['until'] = count($run);
+                            $cursor['available'] = null;
+
+                            continue;
+                        }
+                        break;
+                    }
+                    $index = $cursor['scan']++;
+                    $row = $run[$index];
+                    $action = $row['action'] ?? null;
+                    if (in_array($action, ['buy', 'sell'], true)) {
+                        $state['pivotCount']++;
+                        $cursor['until'] = $index;
+                        $cursor['available'] = null;
+                        if ($cursor['previous'] !== null) {
+                            if ($cursor['previous']['action'] === $action) {
+                                throw new InvalidArgumentException('Finalized Action pivots must alternate before deriving Outcome horizon.');
+                            }
+                            $distance = $index - $cursor['previous']['index'];
+                            $state['frequencies'][$distance] = ($state['frequencies'][$distance] ?? 0) + 1;
+                            $cursor['available'] = $this->timeframe->next($row['microtimestamp'], $period);
+                        }
+                        $cursor['previous'] = ['index' => $index, 'action' => $action];
+                    }
+                    if ($checkpoint->due()) {
+                        $checkpoint->save();
+                    }
+                }
+                $state['runs']++;
+                unset($state['emission']);
+                $checkpoint->state['stage'] = $state['source_complete'] ? 'actions_done' : 'action_read';
+                $run = new ActionCandleBuffer($checkpoint, restore: false);
+                $checkpoint->save();
+            }
+        }
+        $checkpoint->onSave('action-candles', null);
+
+        return $this->diagnostics($state, $asOfMs, $fee);
+    }
+
     public static function publicDiagnostics(array $analysis): array
     {
         unset($analysis['_action_labels'], $analysis['_action_available_at_ms']);
 
         return $analysis;
+    }
+
+    /** Emit complete swings chronologically without retaining a pending timestamp list. */
+    private function streamRun(ActionCandleBuffer $run, float $fee, string $period, Closure $emit): array
+    {
+        $this->labels->labelInPlace($run, $fee);
+        $counts = ['buy' => 0, 'hold' => 0, 'sell' => 0];
+        $frequencies = [];
+        $previous = null;
+        $segmentStart = 0;
+        $pivots = 0;
+        $emitSegment = function (int $until, ?int $availableAt) use ($run, $emit, &$segmentStart, &$counts): void {
+            for (; $segmentStart < $until; $segmentStart++) {
+                $row = $run[$segmentStart];
+                $action = $row['action'] ?? null;
+                if (in_array($action, ['buy', 'hold', 'sell'], true)) {
+                    $counts[$action]++;
+                    $emit($row['microtimestamp'], $action === 'hold' ? 'hodl' : $action, $availableAt);
+                }
+            }
+        };
+        foreach ($run as $index => $row) {
+            if ($index % 1024 === 0) {
+                TrainingRuntime::heartbeat();
+            }
+            $action = $row['action'] ?? null;
+            if (! in_array($action, ['buy', 'sell'], true)) {
+                continue;
+            }
+            $pivots++;
+            if ($previous === null) {
+                $emitSegment($index, null);
+            } else {
+                if ($previous['action'] === $action) {
+                    throw new InvalidArgumentException('Finalized Action pivots must alternate before deriving Outcome horizon.');
+                }
+                $distance = $index - $previous['index'];
+                $frequencies[$distance] = ($frequencies[$distance] ?? 0) + 1;
+                $emitSegment($index, $this->timeframe->next($row['microtimestamp'], $period));
+            }
+            $previous = ['index' => $index, 'action' => $action];
+        }
+        $emitSegment(count($run), null);
+
+        return ['action_counts' => $counts, 'distance_frequencies' => $frequencies, 'pivot_count' => $pivots];
     }
 
     private function summarizeRun(array &$labelled, float $fee, string $period,

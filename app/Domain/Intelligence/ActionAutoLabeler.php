@@ -47,21 +47,32 @@ final class ActionAutoLabeler
     }
 
     /** Mutate an owned context without retaining a second full candle array. */
-    public function labelInPlace(array &$tickers, float $takerFee): void
+    public function labelInPlace(array|ActionCandleBuffer &$tickers, float $takerFee, ?BuildCheckpoint $checkpoint = null): void
     {
-        if ($tickers === []) {
+        if (count($tickers) === 0) {
             return;
         }
-        $this->candle_auto_mark_hold_candidates($tickers);
-        $this->mark_all_blacks_and_whites($tickers);
-        $this->remove_consequitive_actions($tickers);
-        $this->remove_unprofitable_transactions($tickers, $takerFee);
-        $this->remove_zigzags($tickers, $takerFee);
-        $this->find_new_bottoms($tickers);
-        $this->remove_consequitive_actions($tickers);
-        $this->hodl_all_dojis($tickers);
-        $this->hodl_middle_chains($tickers);
-        $this->unlabel_endpoints($tickers);
+        $passes = ['candle_auto_mark_hold_candidates', 'mark_all_blacks_and_whites',
+            'remove_consequitive_actions', 'remove_unprofitable_transactions', 'remove_zigzags',
+            'find_new_bottoms', 'remove_consequitive_actions', 'hodl_all_dojis', 'hodl_middle_chains', 'unlabel_endpoints'];
+        foreach ($passes as $index => $method) {
+            if ($index < ($checkpoint?->state['action_pass'] ?? 0)) {
+                continue;
+            }
+            $cursor = $checkpoint === null ? null : new ActionLabelCursor($checkpoint);
+            if (in_array($method, ['remove_unprofitable_transactions', 'remove_zigzags'], true)) {
+                $this->$method($tickers, $takerFee, $cursor);
+            } elseif ($method === 'unlabel_endpoints') {
+                $this->$method($tickers);
+            } else {
+                $this->$method($tickers, $cursor);
+            }
+            if ($checkpoint !== null) {
+                $checkpoint->state['action_pass'] = $index + 1;
+                $checkpoint->state['action_pass_state'] = [];
+                $checkpoint->save();
+            }
+        }
     }
 
     public function horizon(array $labelled): int

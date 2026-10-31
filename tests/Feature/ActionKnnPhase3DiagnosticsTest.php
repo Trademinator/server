@@ -4,6 +4,9 @@ use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\KnnTuner;
 use App\Domain\Intelligence\ModelStore;
 use App\Domain\Intelligence\WeightedKnn;
+use App\Models\Exchange;
+use App\Models\Market;
+use App\Models\MarketFeed;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -95,6 +98,9 @@ it('shows Outcome and Action failures separately, with HOLD and abstention diagn
     config(['operations.owner_uuid' => $owner->user_id]);
     $this->withSession(['auth.password_confirmed_at' => time()]);
     $model = phase3PersistedModel();
+    $exchange = Exchange::query()->create(['name' => 'Bitso', 'class' => 'bitso', 'config' => '{}']);
+    $market = Market::query()->create(['exchange_id' => $exchange->getKey(), 'symbol' => 'ATOM/USD', 'tick_size' => '0.01']);
+    MarketFeed::query()->create(['market_id' => $market->getKey(), 'selected_period' => '15m']);
 
     $this->actingAs($owner)->get(route('owner.intelligence'))
         ->assertOk()->assertSee('Outcome / Action KNN holdout diagnostics')

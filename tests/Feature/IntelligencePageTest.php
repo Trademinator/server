@@ -1,11 +1,13 @@
 <?php
 
 use App\Domain\Intelligence\IntelligenceTrainer;
+use App\Domain\Intelligence\ModelStore;
 use App\Models\Exchange;
 use App\Models\Market;
 use App\Models\MarketFeed;
 use App\Models\MarketSubscription;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Tests\Support\IntelligenceFixtures;
@@ -52,7 +54,7 @@ it('shows same-pair peer exchanges and a subscribe action for an unfollowed peer
         ->assertSee('Subscribe to BTC/USD');
 });
 
-it('renders actual history counts and failed validation requirements for an abstaining model', function () {
+it('renders actual history counts and failed validation requirements for a legacy abstaining head', function () {
     $this->travelTo('2024-01-01 04:10:00 UTC');
     $path = sys_get_temp_dir().'/trademinator-page-'.Str::uuid7();
     config(['research.path' => $path.'/research', 'intelligence.path' => $path.'/models',
@@ -65,7 +67,15 @@ it('renders actual history counts and failed validation requirements for an abst
     $subscription = MarketSubscription::query()->create(['user_id' => $owner->user_id, 'market_id' => $market->market_id, 'active' => true]);
     try {
         $manifest = IntelligenceFixtures::snapshot(227);
-        app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
+        $report = app(IntelligenceTrainer::class)->train($manifest['dataset_id']);
+        expect($report['status'])->toBe('abstaining');
+        $this->assertDatabaseEmpty('intelligence_heads');
+        // Older deployments may retain an abstaining head. New failed builds
+        // stay candidates, so arrange that legacy state explicitly for the UI.
+        DB::table('intelligence_heads')->insert([
+            'market_key' => ModelStore::marketKey('kraken', 'BTC/USD', '1m'),
+            'model_id' => $report['model_id'], 'updated_at' => now(),
+        ]);
         IntelligenceFixtures::feature(249, 0.0);
 
         $response = $this->actingAs($owner)->get(route('markets.intelligence', $subscription->getKey()));

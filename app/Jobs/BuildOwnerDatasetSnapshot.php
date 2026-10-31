@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Domain\Features\FeatureEngine;
 use App\Domain\Intelligence\AlgorithmicLabelSets;
+use App\Domain\Intelligence\BuildPaused;
 use App\Domain\Intelligence\KnowledgeRequestJournal;
 use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\ModelStore;
@@ -17,7 +18,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 /** Owner-triggered immutable snapshot; does not train or promote any model. */
 final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
@@ -36,7 +36,7 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 86400;
 
-    public bool $failOnTimeout = true;
+    public bool $failOnTimeout = false;
 
     public array $backoff = [120, 600];
 
@@ -62,12 +62,9 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
 
     public function handle(DatasetSnapshotBuilder $builder, TickerRepository $tickers, KnowledgeRequestJournal $journal): void
     {
-        $asOfMs = $this->requestedAsOfMs ?? now()->getTimestampMs();
-        $latest = $tickers->latestTimestamp($this->exchange, $this->symbol, $this->period);
+        $asOfMs = $this->requestedAsOfMs ?? (int) (($this->job?->payload()['createdAt'] ?? now()->getTimestamp()) * 1000);
+        $latest = $tickers->latestClosedTimestamp($this->exchange, $this->symbol, $this->period, $asOfMs);
         $timeframe = new CandleTimeframe;
-        if ($latest !== null && $timeframe->next($latest, $this->period) > $asOfMs) {
-            $latest = $timeframe->previous($latest, $this->period);
-        }
         if ($latest === null || $latest < 0) {
             $journal->markBlocked($this->exchange, $this->symbol, $this->period, 'snapshot');
             $this->release(120);
@@ -81,7 +78,7 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
         if ($label === null) {
             $journal->request($this->exchange, $this->symbol, $this->period, 'labels', $targetMs);
             $cacheKey = 'trademinator:snapshot-labels:'.ModelStore::marketKey($this->exchange, $this->symbol, $this->period);
-            $lock = Cache::lock($cacheKey.':lock', 1200);
+            $lock = Cache::lock($cacheKey.':lock', AnalyzeMarketAutoLabels::lockSeconds());
             if ($lock->get()) {
                 $job = new AnalyzeMarketAutoLabels($this->exchange, $this->symbol, $this->period, $cacheKey, $asOfMs);
                 $job->dispatchLockOwner = $lock->owner();
@@ -106,17 +103,28 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
 
             return;
         }
-        $manifest = $builder->build(
-            $this->exchange, $this->symbol, $this->period,
-            new SemanticLabels((int) config('intelligence.horizon'), (int) config('intelligence.lookback')),
-            $this->schema ?? (string) config('intelligence.schema'),
-            fromMs: KnowledgeWindow::trainingFromMs(), toMs: $asOfMs, asOfMs: $asOfMs,
-        );
+        try {
+            $manifest = $builder->build(
+                $this->exchange, $this->symbol, $this->period,
+                new SemanticLabels((int) config('intelligence.horizon'), (int) config('intelligence.lookback')),
+                $this->schema ?? (string) config('intelligence.schema'),
+                fromMs: KnowledgeWindow::trainingFromMs(), toMs: $asOfMs, asOfMs: $asOfMs,
+                deadline: $this->job === null ? null : microtime(true) + min(
+                    (float) config('research.checkpoint_work_seconds', 240), max(1, $this->timeout - 60)),
+            );
+        } catch (BuildPaused $pause) {
+            if ($this->job === null) {
+                throw $pause;
+            }
+            $this->release(5);
+
+            return;
+        }
         $journal->markSatisfied($this->exchange, $this->symbol, $this->period, 'snapshot', (int) $manifest['as_of_ms']);
         if ($this->trainAfter || $journal->outstanding(
             $this->exchange, $this->symbol, $this->period, 'ai') > 0) {
             $job = new TrainMarketIntelligence($this->exchange, $this->symbol, $this->period,
-                'owner:'.Str::uuid7(), $this->schema ?? (string) config('intelligence.schema'));
+                'snapshot:'.$manifest['dataset_id'], $this->schema ?? (string) config('intelligence.schema'));
             $job->snapshotDataset = (string) $manifest['dataset_id'];
             dispatch($job->onQueue((string) config('intelligence.queue')));
         }

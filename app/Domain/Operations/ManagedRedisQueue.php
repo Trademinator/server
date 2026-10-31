@@ -180,13 +180,23 @@ redis.call('incr', KEYS[6])
 return {ARGV[2], reserved}
 LUA, 6, $key, $key.':reserved', $key.':notify', $this->controlKey($queue, 'version'),
                 $this->controlKey($queue, 'manual'), $this->controlKey($queue, 'claimed'),
-                $snapshot['version'], $raw, $row['uuid'], $this->availableAt($this->retryAfter));
+                $snapshot['version'], $raw, $row['uuid'], $this->reservationExpiresAt($raw));
             if (is_array($result) && count($result) === 2) {
                 return $result;
             }
         }
 
         throw new RuntimeException('Queue order changed during selection; the worker will retry without claiming stale work.');
+    }
+
+    private function reservationExpiresAt(string $raw): int
+    {
+        $timeout = json_decode($raw, true)['timeout'] ?? null;
+
+        // Laravel gives an explicit job timeout precedence over --timeout. Do
+        // not lend short jobs the aggregate budget for every training stage.
+        // Jobs with no bounded timeout retain the connection's safe fallback.
+        return $this->availableAt(is_int($timeout) && $timeout > 0 ? $timeout + 300 : $this->retryAfter);
     }
 
     public function deleteAndRelease($queue, $job, $delay)

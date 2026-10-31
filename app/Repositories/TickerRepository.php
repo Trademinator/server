@@ -245,6 +245,41 @@ class TickerRepository extends BaseRepository
         return $latest;
     }
 
+    /** Latest actual candle closed at a frozen cutoff, including cold-only history. */
+    public function latestClosedTimestamp(string $exchange, string $symbol, string $period, int $asOfMs): ?int
+    {
+        $timeframe = new CandleTimeframe;
+        $before = $asOfMs;
+        do {
+            $timestamp = Ticker::query()->where(compact('exchange', 'symbol', 'period'))
+                ->where('microtimestamp', '<', $before)->max('microtimestamp');
+            $latest = $timestamp === null ? null : (int) $timestamp;
+            $before = $latest;
+        } while ($latest !== null && $timeframe->next($latest, $period) > $asOfMs);
+
+        if (config('archive.enabled')) {
+            $archives = DB::table('archive_catalog')->where('logical_type', 'tickers')
+                ->where('verification_state', 'verified')->where(compact('exchange', 'symbol', 'period'))
+                ->where('range_start_ms', '<', $asOfMs)->where('range_end_ms', '>', $latest ?? -1)
+                ->orderByDesc('range_end_ms')->lazy();
+            foreach ($archives as $archive) {
+                // Catalog bounds cover calendar partitions, not actual candle
+                // timestamps. Read the latest relevant partition for gaps.
+                foreach ($this->streamHistory($exchange, $symbol, $period,
+                    max(($latest ?? -1) + 1, (int) $archive->range_start_ms), min($asOfMs - 1, (int) $archive->range_end_ms)) as $timestamp => $candle) {
+                    if ($timeframe->next((int) $timestamp, $period) <= $asOfMs) {
+                        $latest = (int) $timestamp;
+                    }
+                }
+                if ($latest !== null && $latest >= (int) $archive->range_start_ms) {
+                    break;
+                }
+            }
+        }
+
+        return $latest;
+    }
+
     /**
      * Recursive metadata-only discovery, from the first stored candle through
      * the last closed slot. No history payloads are read for database-only feeds.

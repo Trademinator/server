@@ -8,6 +8,8 @@ use App\Domain\Intelligence\ActionLabelAnalysis;
 use App\Domain\Intelligence\ActionLabelReportStore;
 use App\Domain\Intelligence\AlgorithmicLabelBuilder;
 use App\Domain\Intelligence\AlgorithmicLabelSets;
+use App\Domain\Intelligence\BuildCheckpoint;
+use App\Domain\Intelligence\BuildPaused;
 use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\PatternCatalog;
 use App\Domain\Intelligence\TrainingRuntime;
@@ -39,7 +41,7 @@ final class DatasetSnapshotBuilder
      */
     public function build(string $exchange, string $symbol, string $period, LabelDefinition|SemanticLabels $definition,
         string $schema = 'core', array $custom = [], ?int $fromMs = null, ?int $toMs = null, ?int $asOfMs = null,
-        ?string $featureLockOwner = null): array
+        ?string $featureLockOwner = null, ?float $deadline = null): array
     {
         $keys = FeatureSchema::keys($schema, $custom);
         $timeframe = new CandleTimeframe;
@@ -53,14 +55,13 @@ final class DatasetSnapshotBuilder
         if ($exchange === '' || $symbol === '' || $fromMs < 0 || $fromMs > $toMs) {
             throw new InvalidArgumentException('Invalid market or decision-time range.');
         }
-        $id = (string) Str::uuid7();
-        $directory = $this->store->directory($id);
-        $temporary = $directory.'.tmp';
+        $checkpoint = null;
+        $temporary = $directory = null;
         // Share M2's lock: a snapshot must not capture a partially rebuilt feature series.
         $lockName = 'trademinator:features:'.hash('sha256', "$exchange|$symbol|$period");
         $borrowedLock = $featureLockOwner !== null;
         $lock = $borrowedLock ? Cache::restoreLock($lockName, $featureLockOwner)
-            : Cache::lock($lockName, TrainingRuntime::lockSeconds());
+            : Cache::lock($lockName, BuildCheckpoint::LEASE_SECONDS);
         if ($borrowedLock) {
             // Never reacquire or release a parent's lock. A token alone is not
             // permission: it must still own the lock for this exact market.
@@ -68,24 +69,73 @@ final class DatasetSnapshotBuilder
                 throw new RuntimeException('Feature lock ownership was lost before building the dataset. Retry the history rebuild.');
             }
         } elseif (! $lock->get()) {
-            throw new RuntimeException('Features or a dataset are already being built for this market and period. Retry after that build finishes.');
+            throw new BuildPaused('Features or a dataset are already being built for this market and period. Retry after that build finishes.');
         }
         $file = null;
         $started = microtime(true);
         try {
-            TrainingRuntime::registerLock($lock);
+            if ($borrowedLock) {
+                TrainingRuntime::registerLock($lock);
+            } else {
+                TrainingRuntime::registerLease('snapshot-features:'.$lock->owner(),
+                    fn (): bool => $lock->refresh(BuildCheckpoint::LEASE_SECONDS)
+                        || $lock->refresh(BuildCheckpoint::LEASE_SECONDS + 1));
+            }
+            $checkpoint = new BuildCheckpoint(['kind' => 'snapshot', 'exchange' => $exchange, 'symbol' => $symbol,
+                'period' => $period, 'as_of_ms' => $asOfMs, 'from_ms' => $fromMs, 'to_ms' => $toMs,
+                'schema' => $schema, 'keys' => $keys, 'definition' => $definition->metadata(),
+                'profile' => $this->labelSets->profile($exchange, $symbol),
+                'implementation' => BuildCheckpoint::implementation('snapshot')], $deadline);
+            $revision = $this->labelSets->revision($exchange, $symbol, $period);
+            $featureHash = $this->featureFingerprint($exchange, $symbol, $period, $fromMs, $toMs);
+            if ($checkpoint->state !== [] && ($checkpoint->state['feature_hash'] !== $featureHash
+                || ! $this->labelSets->unchangedThrough($exchange, $symbol, $period, $asOfMs,
+                    $checkpoint->state['revision'], $revision))) {
+                $checkpoint->reset();
+            }
+            if ($checkpoint->state === []) {
+                $checkpoint->state = ['stage' => 'snapshot_rows', 'id' => (string) Str::uuid7(),
+                    'feature_hash' => $featureHash, 'revision' => $revision, 'output_chunks' => 0];
+                $checkpoint->save(false);
+            }
+            $id = $checkpoint->state['id'];
+            if (DB::table('research_datasets')->where('dataset_id', $id)->exists()) {
+                return $this->store->manifest($id);
+            }
+            $directory = $this->store->directory($id);
+            $temporary = $directory.'.tmp.'.Str::uuid7();
             if (! mkdir($temporary, 0700, true)) {
                 throw new RuntimeException('Cannot create private dataset directory.');
             }
-            $file = fopen($temporary.'/rows.jsonl', 'xb');
+            $file = fopen($temporary.'/rows.jsonl', 'x+b');
             if ($file === false) {
                 throw new RuntimeException('Cannot create dataset rows.');
             }
-            // Every page observes the same source snapshot, including live candle corrections.
-            if (DB::transactionLevel() === 0 && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
-                DB::statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            $hash = hash_init('sha256');
+            $restored = 0;
+            foreach ($checkpoint->chunks('snapshot-rows') as $bytes) {
+                DatasetStore::write($file, $bytes);
+                hash_update($hash, $bytes);
+                $restored++;
             }
-            $manifest = DB::transaction(function () use ($exchange, $symbol, $period, $definition, $schema, $keys, $fromMs, $toMs, $asOfMs, $id, $directory, $temporary, $file, $timeframe, $started, $lock) {
+            if ($restored !== $checkpoint->state['output_chunks']) {
+                throw new RuntimeException('Snapshot checkpoint chunk count mismatch.');
+            }
+            $savedOffset = ftell($file);
+            $checkpoint->onSave('snapshot-rows', function () use ($checkpoint, $file, &$savedOffset): void {
+                $end = ftell($file);
+                if ($end > $savedOffset) {
+                    fseek($file, $savedOffset);
+                    $bytes = stream_get_contents($file, $end - $savedOffset);
+                    if ($bytes === false || strlen($bytes) !== $end - $savedOffset) {
+                        throw new RuntimeException('Cannot save snapshot checkpoint rows.');
+                    }
+                    $checkpoint->put('snapshot-rows', $checkpoint->state['output_chunks']++, $bytes);
+                    $savedOffset = $end;
+                }
+            });
+            // Each committed batch is guarded by the history ledger. Feature writes share the held lock.
+            $manifest = (function () use ($exchange, $symbol, $period, $definition, $schema, $keys, $fromMs, $toMs, $asOfMs, $id, $directory, $temporary, $file, $timeframe, $started, $lock, $checkpoint, $hash, $deadline) {
                 $query = MarketFeature::query()->where('exchange', $exchange)->where('symbol', $symbol)->where('period', $period)
                     ->where('version', FeatureEngine::VERSION)->whereBetween('available_at_ms', [$fromMs, $toMs])->orderBy('microtimestamp');
                 $first = (clone $query)->first();
@@ -102,7 +152,7 @@ final class DatasetSnapshotBuilder
                     if ($set === null) {
                         // Non-orchestrated CLI callers still receive a safe, on-demand build.
                         $set = app(AlgorithmicLabelBuilder::class)
-                            ->build($exchange, $symbol, $period, $asOfMs);
+                            ->build($exchange, $symbol, $period, $asOfMs, deadline: $deadline);
                     }
                     $algorithmicActions = $set['action_labels'];
                     $algorithmicActionAvailability = $set['action_available_at_ms'];
@@ -116,38 +166,58 @@ final class DatasetSnapshotBuilder
                     unset($set);
                 }
 
-                $candles = $this->tickers->streamHistory(
-                    $exchange, $symbol, $period, (int) $first->microtimestamp, $asOfMs
-                );
+                $checkpoint->state['snapshot'] ??= [
+                    'window' => [], 'past' => [], 'pattern_history' => [], 'source_through' => null,
+                    'feature_through' => null, 'counts' => array_fill_keys(['missing_features', 'missing_source', 'gaps', 'immature', 'unavailable_evidence'], 0),
+                    'reconstruction' => ['rows_using_reconstructed_history' => 0, 'rows_with_reconstructed_candle' => 0, 'methods' => []],
+                    'labels' => array_fill_keys($definition instanceof SemanticLabels ? SemanticLabels::OUTCOMES : ['buy', 'sell', 'hodl'], 0),
+                    'count' => 0, 'first_decision' => null, 'last_decision' => null,
+                ];
+                $saved = &$checkpoint->state['snapshot'];
+                $window = &$saved['window'];
+                $past = &$saved['past'];
+                $patternHistory = &$saved['pattern_history'];
+                $counts = &$saved['counts'];
+                $reconstruction = &$saved['reconstruction'];
+                $labels = &$saved['labels'];
+                $count = &$saved['count'];
+                $firstDecision = &$saved['first_decision'];
+                $lastDecision = &$saved['last_decision'];
+                $candles = $this->tickers->streamHistory($exchange, $symbol, $period,
+                    $saved['source_through'] === null ? (int) $first->microtimestamp : $saved['source_through'] + 1, $asOfMs);
                 $candles->rewind();
-                $window = [];
-                $past = $patternHistory = [];
                 $history = null;
                 if ($definition instanceof SemanticLabels && $outcomeAvailable) {
                     $historyStart = (int) $first->microtimestamp;
                     for ($i = 1; $i < $definition->lookback; $i++) {
                         $historyStart = max(0, $timeframe->previous($historyStart, $period));
                     }
+                    if ($past !== []) {
+                        $historyStart = $past[array_key_last($past)]['microtimestamp'] + 1;
+                    }
                     $history = $this->tickers->streamHistory($exchange, $symbol, $period, $historyStart, $asOfMs);
                     $history->rewind();
+                    $counts['semantic_warmup'] ??= 0;
                 }
-                $counts = array_fill_keys(['missing_features', 'missing_source', 'gaps', 'immature', 'unavailable_evidence'], 0);
-                $reconstruction = ['rows_using_reconstructed_history' => 0, 'rows_with_reconstructed_candle' => 0, 'methods' => []];
-                if ($definition instanceof SemanticLabels && $outcomeAvailable) {
-                    $counts['semantic_warmup'] = 0;
+                if ($saved['feature_through'] !== null) {
+                    $query->where('microtimestamp', '>', $saved['feature_through']);
                 }
-                $labels = array_fill_keys($definition instanceof SemanticLabels ? SemanticLabels::OUTCOMES : ['buy', 'sell', 'hodl'], 0);
-                $hash = hash_init('sha256');
-                $count = 0;
-                $firstDecision = $lastDecision = null;
+                $attemptFeatures = 0;
                 foreach ($query->lazyById(500, column: 'microtimestamp', alias: 'microtimestamp') as $feature) {
                     TrainingRuntime::heartbeat();
+                    if ($checkpoint->due()) {
+                        $this->validateRevision($checkpoint, $exchange, $symbol, $period, $asOfMs);
+                        $checkpoint->save();
+                    }
                     $maxSeconds = config('research.dataset_max_seconds', 540);
-                    if (microtime(true) - $started > $maxSeconds) {
-                        throw new RuntimeException('Dataset build exceeded '.$maxSeconds.' seconds; use a smaller date range or increase RESEARCH_DATASET_MAX_SECONDS.');
+                    if ($attemptFeatures++ > 0 && microtime(true) - $started > $maxSeconds) {
+                        $checkpoint->save(false);
+                        throw new BuildPaused('Snapshot progress saved at its per-attempt time limit.');
                     }
                     $payload = $feature->payload;
                     $timestamp = $feature->microtimestamp;
+                    $saved['feature_through'] = $timestamp;
+                    $checkpoint->state['processed'] = ($checkpoint->state['processed'] ?? 0) + 1;
                     $decision = $timeframe->next($timestamp, $period);
                     if (($payload['version'] ?? null) !== FeatureEngine::VERSION
                         || ($payload['microtimestamp'] ?? null) !== $timestamp
@@ -223,12 +293,14 @@ final class DatasetSnapshotBuilder
                     }
                     $window = array_values(array_filter($window, fn ($bar) => $bar['microtimestamp'] >= $timestamp));
                     while ($candles->valid() && (int) $candles->key() < $timestamp) {
+                        $saved['source_through'] = (int) $candles->key();
                         $candles->next();
                     }
                     while (count($window) <= $definition->horizon && $candles->valid()) {
                         $raw = $candles->current();
                         $raw['microtimestamp'] = (int) $candles->key();
                         $window[] = $raw;
+                        $saved['source_through'] = $raw['microtimestamp'];
                         $candles->next();
                     }
                     if (($window[0]['microtimestamp'] ?? null) !== $timestamp) {
@@ -337,6 +409,8 @@ final class DatasetSnapshotBuilder
                         throw new RuntimeException('Dataset exceeds research.max_rows; choose a smaller --from/--to range.');
                     }
                 }
+                $this->validateRevision($checkpoint, $exchange, $symbol, $period, $asOfMs);
+                $checkpoint->save(false);
                 if ($count === 0) {
                     throw new RuntimeException('No eligible labelled rows: '.json_encode($counts).'. Collect more history or choose a schema with available features.');
                 }
@@ -363,18 +437,34 @@ final class DatasetSnapshotBuilder
                 if (! $lock->isOwnedByCurrentProcess()) {
                     throw new RuntimeException('Feature lock ownership was lost before publishing the dataset.');
                 }
-                if (file_put_contents($temporary.'/manifest.json', $json) !== strlen($json) || ! rename($temporary, $directory)) {
-                    throw new RuntimeException('Could not publish dataset snapshot.');
-                }
-                DB::table('research_datasets')->insert(['dataset_id' => $id, 'manifest' => json_encode($manifest, JSON_THROW_ON_ERROR), 'created_at' => now()]);
-                // Publish atomically with the immutable dataset record. Never
-                // replace a more recent CLI or intelligence-build analysis.
-                if ($actionDiagnostics !== null) {
-                    $this->actionReports->publish($exchange, $symbol, $period, $actionDiagnostics, $id);
-                }
+                DB::transaction(function () use ($checkpoint, $temporary, $directory, $json, $id, $manifest,
+                    $exchange, $symbol, $period, $asOfMs, $actionDiagnostics): void {
+                    $checkpoint->save(false);
+                    $this->validateRevision($checkpoint, $exchange, $symbol, $period, $asOfMs, lock: true);
+                    // A crash after rename but before DB commit may leave this build's unpublished directory.
+                    if (is_dir($directory)) {
+                        foreach (['rows.jsonl', 'manifest.json'] as $name) {
+                            if (is_file($directory.'/'.$name)) {
+                                unlink($directory.'/'.$name);
+                            }
+                        }
+                        rmdir($directory);
+                    }
+                    if (file_put_contents($temporary.'/manifest.json', $json) !== strlen($json) || ! rename($temporary, $directory)) {
+                        throw new RuntimeException('Could not publish dataset snapshot.');
+                    }
+                    DB::table('research_datasets')->insert(['dataset_id' => $id, 'manifest' => json_encode($manifest, JSON_THROW_ON_ERROR), 'created_at' => now()]);
+                    if ($actionDiagnostics !== null) {
+                        $this->actionReports->publish($exchange, $symbol, $period, $actionDiagnostics, $id);
+                    }
+                    $checkpoint->onSave('snapshot-rows', null);
+                    $checkpoint->state['stage'] = 'snapshot_complete';
+                    $checkpoint->save(false);
+                    $checkpoint->clearStream('snapshot-rows');
+                });
 
                 return $manifest;
-            });
+            })();
 
             app(ActionLog::class)->write('dataset.saved', ['dataset_id' => $id,
                 'exchange' => $exchange, 'symbol' => $symbol, 'period' => $period,
@@ -382,7 +472,10 @@ final class DatasetSnapshotBuilder
 
             return $manifest;
         } catch (Throwable $error) {
-            foreach ([$temporary, $directory] as $path) {
+            foreach ([$temporary] as $path) {
+                if ($path === null) {
+                    continue;
+                }
                 foreach (['rows.jsonl', 'manifest.json'] as $name) {
                     if (is_file($path.'/'.$name)) {
                         unlink($path.'/'.$name);
@@ -397,11 +490,43 @@ final class DatasetSnapshotBuilder
             if (is_resource($file)) {
                 fclose($file);
             }
-            TrainingRuntime::unregisterLock($lock);
-            if (! $borrowedLock) {
+            $checkpoint?->close();
+            if ($borrowedLock) {
+                TrainingRuntime::unregisterLock($lock);
+            } else {
+                TrainingRuntime::unregisterLease('snapshot-features:'.$lock->owner());
                 $lock->release();
             }
         }
+    }
+
+    private function validateRevision(BuildCheckpoint $checkpoint, string $exchange, string $symbol, string $period, int $asOfMs, bool $lock = false): void
+    {
+        $revision = $lock
+            ? (int) (DB::table('market_history_backfills as history')
+                ->join('markets', 'markets.market_id', '=', 'history.market_id')
+                ->join('exchanges', 'exchanges.exchange_id', '=', 'markets.exchange_id')
+                ->where('exchanges.class', $exchange)->where('markets.symbol', $symbol)->where('history.period', $period)
+                ->lockForUpdate()->get(['history.history_revision'])->max('history_revision') ?? 0)
+            : $this->labelSets->revision($exchange, $symbol, $period);
+        if (! $this->labelSets->unchangedThrough($exchange, $symbol, $period, $asOfMs,
+            $checkpoint->state['revision'], $revision)) {
+            throw new RuntimeException('Candle history changed during snapshot generation; retry the build.');
+        }
+    }
+
+    /** Compare actual eligible feature content across attempts, including insertions and deletions. */
+    private function featureFingerprint(string $exchange, string $symbol, string $period, int $fromMs, int $toMs): string
+    {
+        $hash = hash_init('sha256');
+        foreach (MarketFeature::query()->where(compact('exchange', 'symbol', 'period'))
+            ->where('version', FeatureEngine::VERSION)->whereBetween('available_at_ms', [$fromMs, $toMs])
+            ->lazyById(256, 'microtimestamp') as $row) {
+            TrainingRuntime::heartbeat();
+            hash_update($hash, BuildCheckpoint::encode([$row->getKey(), $row->microtimestamp, $row->available_at_ms, $row->payload])."\n");
+        }
+
+        return hash_final($hash);
     }
 
     private function validateCandle(array $bar): void
