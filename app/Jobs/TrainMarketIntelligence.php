@@ -83,7 +83,8 @@ final class TrainMarketIntelligence implements ShouldBeUnique, ShouldQueue
                 $journal = app(KnowledgeRequestJournal::class);
                 $journal->request($this->exchange, $this->symbol, $this->period, 'snapshot');
                 $journal->request($this->exchange, $this->symbol, $this->period, 'ai');
-                BuildOwnerDatasetSnapshot::dispatch($this->exchange, $this->symbol, $this->period, true, $this->schema)
+                BuildOwnerDatasetSnapshot::dispatch($this->exchange, $this->symbol, $this->period, true, $this->schema,
+                    hash('sha256', $this->uniqueId()))
                     ->onQueue((string) config('intelligence.queue'));
                 Cache::put($key, true, now()->addDays(14));
 
