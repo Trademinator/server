@@ -27,6 +27,12 @@ return [
             'source' => 'https://crypto.com/exchange/document/fees-limits',
             'note' => 'Crypto.com Exchange Level 1 base spot taker fee without CRO balance is 0.50%; account volume/CRO discounts may reduce the actual fee.',
         ],
+        'poloniex' => [
+            'rate' => 0.002,
+            'reviewed_at' => '2026-11-05',
+            'source' => 'https://www.poloniex.com/fee',
+            'note' => 'Poloniex VIP 0 spot maker/taker fee is 0.20%; VIP tiers and TRX/HTX deductions may reduce the actual fee.',
+        ],
         'kraken' => [
             'rate' => 0.008,
             'reviewed_at' => '2026-10-02',

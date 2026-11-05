@@ -39,6 +39,9 @@ it('uses the highest known taker fee for conservative training and economic eval
         ->and(MarketCatalog::takerFee(null, 'cryptocom'))->toBe(0.005)
         ->and(MarketCatalog::takerFee('0.0026', 'kraken'))->toBe(0.008)
         ->and(MarketCatalog::takerFee(null, 'kraken'))->toBe(0.008)
+        ->and(MarketCatalog::takerFee('0.0015', 'poloniex'))->toBe(0.002)
+        ->and(MarketCatalog::takerFee(null, 'poloniex'))->toBe(0.002)
+        ->and(MarketCatalog::takerFee('0.003', 'poloniex'))->toBe(0.003)
         ->and(MarketCatalog::takerFee('0.01', 'kraken'))->toBe(0.01);
 });
 
