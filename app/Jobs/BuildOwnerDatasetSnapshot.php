@@ -32,6 +32,8 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
 
     public ?string $schema = null;
 
+    public ?string $generation = null;
+
     public int $timeout;
 
     public int $uniqueFor = 86400;
@@ -46,8 +48,10 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
         public readonly string $period,
         public readonly bool $trainAfter = false,
         ?string $schema = null,
+        ?string $generation = null,
     ) {
         $this->schema = $schema;
+        $this->generation = $generation;
         // Freeze the request cutoff in the serialized queue payload so releases
         // cannot chase newly collected candles indefinitely.
         $this->requestedAsOfMs = now()->getTimestampMs();
@@ -111,6 +115,7 @@ final class BuildOwnerDatasetSnapshot implements ShouldBeUnique, ShouldQueue
                 fromMs: KnowledgeWindow::trainingFromMs(), toMs: $asOfMs, asOfMs: $asOfMs,
                 deadline: $this->job === null ? null : microtime(true) + min(
                     (float) config('research.checkpoint_work_seconds', 240), max(1, $this->timeout - 60)),
+                generation: $this->generation,
             );
         } catch (BuildPaused $pause) {
             if ($this->job === null) {

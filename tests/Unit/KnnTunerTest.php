@@ -111,10 +111,16 @@ it('preserves Action selection when independent K voting exceeds one candidates 
 it('rejects Action tuning when one K accumulates too much time across folds', function () {
     $settings = array_replace(tuningSettings(), ['min_train_size' => 10]);
     $knn = new WeightedKnn;
-    $rows = $knn->prepareRows(tuningRows(80));
     $time = 0.0;
+    $rows = TrainingRows::from($knn->prepareRows(tuningRows(180)))
+        ->map(static function (array $row) use (&$time): array {
+            // Simulate work, independently of how often the tuner checks its clock.
+            $time += 0.5;
+
+            return $row;
+        });
     $clock = static function () use (&$time): float {
-        return $time++;
+        return $time;
     };
 
     expect(fn () => (new KnnTuner($knn, $clock))->tunePrepared($rows, $settings, 10000.0, candidateSeconds: 150.0))

@@ -2,6 +2,8 @@
 
 namespace App\Domain\Intelligence;
 
+use Closure;
+use Generator;
 use InvalidArgumentException;
 use Rubix\ML\Classifiers\KNearestNeighbors;
 use Rubix\ML\Datasets\Labeled;
@@ -11,6 +13,8 @@ use Rubix\ML\Datasets\Unlabeled;
 final class WeightedKnn
 {
     private const SEARCH_BLOCK_ROWS = 1024;
+
+    private const QUERY_BATCH_ROWS = 32;
 
     public function __construct(
         public readonly float $maxDistance = 0.25,
@@ -99,7 +103,7 @@ final class WeightedKnn
         }
         $vector = $this->prepareVector($vector);
         $weights = $this->prepareWeights($weights, count($vector), 'Query');
-        $prepared = (function () use ($rows): \Generator {
+        $prepared = (function () use ($rows): Generator {
             foreach ($rows as $row) {
                 yield $this->prepareRows([$row])[0];
             }
@@ -117,7 +121,7 @@ final class WeightedKnn
         if ($weights !== [] && count($weights) !== $dimensions) {
             throw new InvalidArgumentException('Query feature weights do not match the vector.');
         }
-        $eligible = (function () use ($rows, $dimensions, $asOfMs): \Generator {
+        $eligible = (function () use ($rows, $dimensions, $asOfMs): Generator {
             foreach ($rows as $row) {
                 if (count($row['vector']) !== $dimensions) {
                     throw new InvalidArgumentException('Knowledge feature dimensions do not match.');
@@ -129,6 +133,122 @@ final class WeightedKnn
         })();
 
         return $this->rubixNeighbors($eligible, $vector, $k, $weights);
+    }
+
+    /**
+     * Reuse each decoded training block across a bounded batch of queries.
+     * Every query retains its own historical cutoff, weights and exact top K.
+     *
+     * @param  Closure(): void|null  $checkpoint
+     * @param  Closure(int, int, int): void|null  $progress  Completed queries, batch size, scanned training rows.
+     * @return Generator<int, array{row: array, neighbors: array}>
+     */
+    public function neighborBatchesPrepared(array|TrainingRows $rows, iterable $queries, int $k,
+        ?Closure $checkpoint = null, ?Closure $progress = null): Generator
+    {
+        if ($k < 1) {
+            throw new InvalidArgumentException('K and feature count must be positive.');
+        }
+        $processed = 0;
+        foreach ($this->queryBatches($queries) as $batch) {
+            $progress?->__invoke($processed, count($batch), 0);
+            $nearest = $this->searchBatch($rows, $batch, $k, $checkpoint,
+                static fn (int $scanned) => $progress?->__invoke($processed, count($batch), $scanned));
+            foreach ($batch as $index => $row) {
+                yield ['row' => $row, 'neighbors' => $nearest[$index]];
+                $processed++;
+            }
+            $progress?->__invoke($processed, 0, count($rows));
+        }
+    }
+
+    /** @return Generator<int, list<array>> */
+    private function queryBatches(iterable $queries): Generator
+    {
+        $batch = [];
+        foreach ($queries as $row) {
+            $batch[] = $row;
+            if (count($batch) === self::QUERY_BATCH_ROWS) {
+                yield $batch;
+                $batch = [];
+            }
+        }
+        if ($batch !== []) {
+            yield $batch;
+        }
+    }
+
+    /** @return list<list<array{distance: float, label: string, decision_at_ms: int}>> */
+    private function searchBatch(iterable $rows, array $queries, int $k, ?Closure $checkpoint, Closure $progress): array
+    {
+        $dimensions = count($queries[0]['vector']);
+        $vectors = $cutoffs = [];
+        foreach ($queries as $row) {
+            if ($dimensions === 0 || count($row['vector']) !== $dimensions) {
+                throw new InvalidArgumentException('KNN feature dimensions do not match.');
+            }
+            $weights = $row['feature_weights'] ?? [];
+            if ($weights !== [] && count($weights) !== $dimensions) {
+                throw new InvalidArgumentException('Query feature weights do not match the vector.');
+            }
+            $vectors[] = [...$row['vector'], ...($weights ?: array_fill(0, $dimensions, 1.0))];
+            $cutoffs[] = $row['decision_at_ms'];
+        }
+        $nearest = array_fill(0, count($queries), []);
+        $samples = $metadata = [];
+        $offset = 0;
+        $rubix = new RubixNearestNeighbors($k, true, new RubixWeightedRms);
+        foreach ($rows as $row) {
+            if (count($row['vector']) !== $dimensions) {
+                throw new InvalidArgumentException('Knowledge feature dimensions do not match.');
+            }
+            $samples[] = [...$row['vector'], ...($row['feature_weights'] ?? array_fill(0, $dimensions, 1.0))];
+            $metadata[] = ['label' => $row['label'], 'decision_at_ms' => $row['decision_at_ms'],
+                'label_available_at_ms' => $row['label_available_at_ms']];
+            if (count($samples) === self::SEARCH_BLOCK_ROWS) {
+                $this->searchBatchBlock($rubix, $samples, $metadata, $vectors, $cutoffs, $k, $offset, $nearest);
+                $offset += count($samples);
+                $samples = $metadata = [];
+                $checkpoint?->__invoke();
+                $progress($offset);
+            }
+        }
+        if ($samples !== []) {
+            $this->searchBatchBlock($rubix, $samples, $metadata, $vectors, $cutoffs, $k, $offset, $nearest);
+            $offset += count($samples);
+            $checkpoint?->__invoke();
+            $progress($offset);
+        }
+        foreach ($nearest as &$neighbors) {
+            foreach ($neighbors as &$neighbor) {
+                unset($neighbor['ordinal']);
+            }
+            unset($neighbor);
+        }
+        unset($neighbors);
+
+        return $nearest;
+    }
+
+    private function searchBatchBlock(RubixNearestNeighbors $rubix, array $samples, array $metadata,
+        array $queries, array $cutoffs, int $k, int $offset, array &$nearest): void
+    {
+        $availableBy = max(max(array_column($metadata, 'decision_at_ms')),
+            max(array_column($metadata, 'label_available_at_ms')));
+        foreach ($queries as $index => $query) {
+            $eligible = $samples;
+            $eligibleMetadata = $metadata;
+            if ($cutoffs[$index] <= $availableBy) {
+                $eligible = $eligibleMetadata = [];
+                foreach ($metadata as $position => $row) {
+                    if ($row['decision_at_ms'] < $cutoffs[$index] && $row['label_available_at_ms'] < $cutoffs[$index]) {
+                        $eligible[] = $samples[$position];
+                        $eligibleMetadata[] = [...$row, 'ordinal' => $offset + $position];
+                    }
+                }
+            }
+            $this->mergeBlockNeighbors($rubix, $eligible, $eligibleMetadata, $query, $k, $offset, $nearest[$index]);
+        }
     }
 
     private function rubixNeighbors(iterable $rows, array $vector, int $k, array $weights): array
@@ -170,17 +290,51 @@ final class WeightedKnn
     private function mergeBlockNeighbors(RubixNearestNeighbors $rubix, array $samples, array $metadata,
         array $query, int $k, int $offset, array &$nearest): void
     {
+        $block = [];
         $rubix->attach($samples);
         foreach ($rubix->locate($query) as $entry) {
             if ($entry['distance'] <= $this->maxDistance) {
                 $record = $metadata[$entry['index']];
-                $nearest[] = ['distance' => $entry['distance'], 'label' => $record['label'],
-                    'decision_at_ms' => $record['decision_at_ms'], 'ordinal' => $offset + $entry['index']];
+                $block[] = ['distance' => $entry['distance'], 'label' => $record['label'],
+                    'decision_at_ms' => $record['decision_at_ms'], 'ordinal' => $record['ordinal'] ?? $offset + $entry['index']];
             }
         }
         $rubix->attach([]);
-        usort($nearest, static fn (array $a, array $b): int => [$a['distance'], $a['ordinal']] <=> [$b['distance'], $b['ordinal']]);
-        $nearest = array_slice($nearest, 0, $k);
+        if ($block === []) {
+            return;
+        }
+        if ($nearest === []) {
+            $nearest = $block;
+
+            return;
+        }
+
+        // locate() sorts by distance and block index; metadata ordinals increase
+        // with that index. Merge both sorted lists without re-sorting old neighbors.
+        $merged = [];
+        $left = $right = 0;
+        $leftCount = count($nearest);
+        $rightCount = count($block);
+        while (count($merged) < $k && ($left < $leftCount || $right < $rightCount)) {
+            if ($left >= $leftCount) {
+                $merged[] = $block[$right++];
+
+                continue;
+            }
+            if ($right >= $rightCount) {
+                $merged[] = $nearest[$left++];
+
+                continue;
+            }
+            $order = ($nearest[$left]['distance'] <=> $block[$right]['distance'])
+                ?: ($nearest[$left]['ordinal'] <=> $block[$right]['ordinal']);
+            if ($order <= 0) {
+                $merged[] = $nearest[$left++];
+            } else {
+                $merged[] = $block[$right++];
+            }
+        }
+        $nearest = $merged;
     }
 
     /** Rubix 3.1 owns the weighted classification distribution. */

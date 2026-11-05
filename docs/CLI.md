@@ -83,6 +83,7 @@ Each link contains the exact signature, parameter meanings, execution/side-effec
 | Features and external context | [`trademinator:refresh-market-discovery`](#trademinatorrefresh-market-discovery) |
 | Research datasets and backtests | [`trademinator:build-dataset`](#trademinatorbuild-dataset) |
 | Research datasets and backtests | [`trademinator:dataset-info`](#trademinatordataset-info) |
+| Research datasets and backtests | [`trademinator:recover-research-datasets`](#trademinatorrecover-research-datasets) |
 | Research datasets and backtests | [`trademinator:backtest`](#trademinatorbacktest) |
 | Models and signals | [`trademinator:knn-build`](#trademinatorknn-build) |
 | Models and signals | [`trademinator:compact-model`](#trademinatorcompact-model) |
@@ -577,6 +578,26 @@ php artisan trademinator:dataset-info DATASET_UUID
 ```
 
 Implementation: [`InspectResearchDataset.php`](../app/Console/Commands/InspectResearchDataset.php).
+
+## trademinator:recover-research-datasets
+
+Signature: `trademinator:recover-research-datasets {--apply : Restore missing/mismatched manifest.json files only when rows.jsonl still matches the DB manifest} {--human-only : Inspect only datasets referenced by immutable human-training snapshots}`
+
+Description: Audit missing research artifacts and safely restore recoverable dataset manifests
+
+Audit research dataset artifacts against their durable database manifests. By default this command is read-only. `--apply` repairs only a missing or mismatched `manifest.json` when the existing `rows.jsonl` still matches the database manifest row count and SHA-256. It never recreates missing or invalid row artifacts and never deletes stale database records.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `--apply` | Off | Restore `manifest.json` only for checksum-valid `rows.jsonl` artifacts. |
+| `--human-only` | Off | Inspect only dataset IDs referenced by immutable human-training snapshots. |
+
+```bash
+php artisan trademinator:recover-research-datasets --human-only
+php artisan trademinator:recover-research-datasets --human-only --apply
+```
+
+Implementation: [`RecoverResearchDatasets.php`](../app/Console/Commands/RecoverResearchDatasets.php).
 
 ## trademinator:backtest
 

@@ -116,7 +116,7 @@ final class MarketIntelligence
                 }
                 $manifest = $this->datasets->build($exchange, $symbol, $period, $definition, $schema,
                     fromMs: (int) $fromMs, toMs: $toMs, asOfMs: $asOfMs,
-                    featureLockOwner: $featureLockOwner);
+                    featureLockOwner: $featureLockOwner, generation: $generation);
                 $dataset = $manifest['dataset_id'];
             }
 

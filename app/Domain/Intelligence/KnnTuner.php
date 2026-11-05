@@ -56,15 +56,15 @@ final class KnnTuner
         }
 
         $folds = [];
+        $progress = new KnnTrainingProgress('action_knn_tuning');
         foreach ((new WalkForward)->rowFolds($rows, $trainSize, $settings['test_size'], $settings['gap'], true, null) as $fold) {
             $training = $fold['train'];
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
-            foreach ($fold['test'] as $row) {
-                $budget->checkpointShared();
-                $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $maximum,
-                    $row['decision_at_ms'], $row['feature_weights'] ?? []);
+            $progress->fold($fold['fold'], count($training), count($fold['test']));
+            foreach ($this->knn->neighborBatchesPrepared($training, $fold['test'], $maximum,
+                $budget->checkpointShared(...), $progress->search(...)) as ['row' => $row, 'neighbors' => $neighbors]) {
                 $budget->checkpointShared();
                 foreach ($accumulators as $k => &$accumulator) {
                     $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), $fold['fold']);
@@ -100,6 +100,7 @@ final class KnnTuner
             'candidates' => array_values($reports), 'selection' => 'wilson_lower_then_semantic_precision_confidence_stability',
             'reason' => $reason];
         $budget->checkpointShared();
+        $progress->finish();
 
         return $result;
     }
@@ -110,15 +111,16 @@ final class KnnTuner
         $rows = TrainingRows::from($rows);
         $accumulator = $this->newAccumulator($k);
         $folds = [];
+        $progress = new KnnTrainingProgress('action_knn_walk_forward');
         foreach ((new WalkForward)->rowFolds($rows, $settings['min_train_size'], $settings['test_size'], $settings['gap'], true, null) as $fold) {
             $training = $fold['train'];
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
-            foreach ($fold['test'] as $row) {
+            $progress->fold($fold['fold'], count($training), count($fold['test']));
+            foreach ($this->knn->neighborBatchesPrepared($training, $fold['test'], $k,
+                $budget->checkpointShared(...), $progress->search(...)) as ['row' => $row, 'neighbors' => $neighbors]) {
                 $budget->checkpointShared();
-                $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $k,
-                    $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), $fold['fold']);
                 $budget->checkpointShared();
             }
@@ -127,6 +129,7 @@ final class KnnTuner
 
         $result = ['report' => $this->finishAccumulator($accumulator, $settings), 'folds' => $folds];
         $budget->checkpointShared();
+        $progress->finish();
 
         return $result;
     }
@@ -143,10 +146,11 @@ final class KnnTuner
     {
         $budget = new KnnCandidateBudget($deadline, null, 'KNN evaluation time budget exceeded.', $this->clock);
         $accumulator = $this->newAccumulator($k);
-        foreach ($test as $row) {
+        $progress = new KnnTrainingProgress('action_knn_holdout');
+        $progress->fold(1, count($training), count($test));
+        foreach ($this->knn->neighborBatchesPrepared($training, $test, $k,
+            $budget->checkpointShared(...), $progress->search(...)) as ['row' => $row, 'neighbors' => $neighbors]) {
             $budget->checkpointShared();
-            $neighbors = $this->knn->neighborsPrepared($training, $row['vector'], $k,
-                $row['decision_at_ms'], $row['feature_weights'] ?? []);
             $this->accumulate($accumulator, $row, $this->knn->vote($neighbors, $k), 1);
             $accumulator['trace'][] = [
                 'decision_at_ms' => $row['decision_at_ms'],
@@ -170,6 +174,7 @@ final class KnnTuner
         $result = [...$this->finishAccumulator($accumulator, $settings),
             'trace' => $accumulator['trace']];
         $budget->checkpointShared();
+        $progress->finish();
 
         return $result;
     }
