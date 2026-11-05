@@ -3,6 +3,7 @@
 use App\Domain\Intelligence\NormalizedVector;
 use App\Domain\Intelligence\RubixNearestNeighbors;
 use App\Domain\Intelligence\RubixWeightedRms;
+use App\Domain\Intelligence\TrainingRows;
 use App\Domain\Intelligence\WeightedKnn;
 use Symfony\Component\Process\Process;
 
@@ -252,3 +253,110 @@ PHP;
     expect($result)->toMatchArray(['seen' => 50000, 'neighbors' => 65, 'nearest_decision_at_ms' => 50000]);
     expect($result['peak_bytes'])->toBeLessThan(64 * 1024 * 1024);
 });
+
+it('preserves full Rubix neighbors for batched queries with individual cutoffs and weights', function (int $k, float $maxDistance, bool $spooled) {
+    $knn = new WeightedKnn($maxDistance, 1, 0.5);
+    $rows = [];
+    for ($i = 0; $i < 2071; $i++) {
+        $row = [
+            'vector' => [($i % 17) / 16, (($i * 7) % 19) / 18, (($i * 11) % 13) / 12],
+            'label' => ['buy', 'hodl', 'sell'][$i % 3],
+            'decision_at_ms' => $i + 1,
+            'label_available_at_ms' => $i % 29 === 0 ? 4000 : $i + 2,
+        ];
+        if ($i % 7 !== 0) {
+            $row['feature_weights'] = $i % 23 === 0 ? [0.0, 0.0, 0.0] : [1.0, 0.25, 0.5];
+        }
+        $rows[] = $row;
+    }
+    $prepared = $knn->prepareRows($rows);
+    $training = $spooled ? TrainingRows::from($prepared) : $prepared;
+    $queries = [];
+    for ($i = 0; $i < 35; $i++) {
+        $query = ['vector' => [0.5, ($i % 5) / 4, 0.25],
+            'decision_at_ms' => [1, 1024, 1025, 2052, 5000][$i % 5]];
+        if ($i % 9 !== 0) {
+            $query['feature_weights'] = $i % 11 === 0 ? [0.0, 0.0, 0.0] : [1.0, 0.5, 0.25];
+        }
+        $queries[] = $query;
+    }
+
+    $actual = iterator_to_array($knn->neighborBatchesPrepared($training, $queries, $k), false);
+    expect(count($actual))->toBe(count($queries));
+    foreach ($queries as $index => $query) {
+        $eligible = array_values(array_filter($prepared, static fn (array $row): bool => $row['decision_at_ms'] < $query['decision_at_ms']
+            && $row['label_available_at_ms'] < $query['decision_at_ms']));
+        $reference = new RubixNearestNeighbors($k, true, new RubixWeightedRms);
+        $reference->attach(array_map(static fn (array $row): array => [...$row['vector'], ...($row['feature_weights'] ?? [1.0, 1.0, 1.0])], $eligible));
+        $weights = $query['feature_weights'] ?? [];
+        $expected = [];
+        foreach ($reference->locate([...$query['vector'], ...($weights ?: [1.0, 1.0, 1.0])]) as $entry) {
+            if ($entry['distance'] <= $maxDistance) {
+                $row = $eligible[$entry['index']];
+                $expected[] = ['distance' => $entry['distance'], 'label' => $row['label'],
+                    'decision_at_ms' => $row['decision_at_ms']];
+            }
+        }
+
+        expect($actual[$index])->toBe(['row' => $query, 'neighbors' => $expected]);
+        expect($knn->neighborsPrepared($training, $query['vector'], $k, $query['decision_at_ms'], $weights))
+            ->toBe($expected);
+    }
+})->with([
+    'small neighborhood with spooled rows' => [5, 1.0, true],
+    'ordinary neighborhood with array rows' => [65, 1.0, false],
+    'distance-limited spooled rows' => [65, 0.25, true],
+    'more neighbors than all history' => [2200, 1.0, false],
+]);
+
+it('keeps original first-seen ties across batched block boundaries and strict label cutoffs', function () {
+    $rows = [];
+    for ($i = 0; $i < 2300; $i++) {
+        $rows[] = ['vector' => [0.9], 'label' => 'sell',
+            'decision_at_ms' => $i + 1, 'label_available_at_ms' => $i + 2];
+    }
+    foreach ([0, 1022, 1023, 1025, 2047, 2048] as $index) {
+        $rows[$index]['vector'] = [0.1];
+        $rows[$index]['label'] = 'buy';
+    }
+    $rows[0]['label_available_at_ms'] = 3000;
+    $queries = array_map(static fn (int $cutoff): array => ['vector' => [0.1], 'decision_at_ms' => $cutoff], [3000, 3001, 1025]);
+    $knn = new WeightedKnn(0.25, 1, 0.5);
+    $actual = iterator_to_array($knn->neighborBatchesPrepared($knn->prepareRows($rows), $queries, 3), false);
+
+    expect(array_column($actual, 'neighbors'))->toBe([
+        [
+            ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1023],
+            ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1024],
+            ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1026],
+        ],
+        [
+            ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1],
+            ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1023],
+            ['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1024],
+        ],
+        [['distance' => 0.0, 'label' => 'buy', 'decision_at_ms' => 1023]],
+    ]);
+});
+
+it('returns each batched query with empty neighbors when no evidence is eligible', function (array $rows) {
+    $knn = new WeightedKnn(0.25, 1, 0.5);
+    $query = ['vector' => [0.0], 'decision_at_ms' => 10];
+    $actual = iterator_to_array($knn->neighborBatchesPrepared($knn->prepareRows($rows), [$query], 5), false);
+
+    expect($actual)->toBe([['row' => $query, 'neighbors' => []]]);
+    expect(iterator_to_array($knn->neighborBatchesPrepared($rows, [], 5), false))->toBe([]);
+})->with([
+    'empty history' => [[]],
+    'unavailable labels and future decisions' => [[
+        ['vector' => [0.0], 'label' => 'buy', 'decision_at_ms' => 1, 'label_available_at_ms' => 10],
+        ['vector' => [0.0], 'label' => 'buy', 'decision_at_ms' => 10, 'label_available_at_ms' => 11],
+    ]],
+    'zero effective feature weights produce NaN distance' => [[
+        ['vector' => [0.0], 'feature_weights' => [0.0], 'label' => 'buy',
+            'decision_at_ms' => 1, 'label_available_at_ms' => 2],
+    ]],
+    'history beyond the distance limit' => [[
+        ['vector' => [1.0], 'label' => 'buy', 'decision_at_ms' => 1, 'label_available_at_ms' => 2],
+    ]],
+]);

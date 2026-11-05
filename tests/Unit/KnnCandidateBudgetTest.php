@@ -80,3 +80,42 @@ it('rejects a run whose explicit deadline has already passed', function () {
     expect(fn () => new KnnCandidateBudget(1.0, 100.0, 'budget exceeded', static fn (): float => 2.0))
         ->toThrow(RuntimeException::class, 'budget exceeded');
 });
+
+it('identifies every exhausted limit without changing the original failure message prefix', function (
+    float $deadline,
+    ?float $allowance,
+    string $details,
+) {
+    $time = (object) ['now' => 0.0];
+    $budget = new KnnCandidateBudget($deadline, $allowance, 'budget exceeded', fn (): float => $time->now);
+    $time->now = 2.0;
+    $budget->checkpointShared();
+    $time->now = 6.0;
+
+    expect(fn () => $budget->checkpointCandidate(5))
+        ->toThrow(RuntimeException::class, 'budget exceeded '.$details);
+})->with([
+    'outer deadline' => [5.0, 10.0,
+        '[limits=outer_deadline; shared_seconds=2.000000; max_candidate_voting_seconds=4.000000; candidate_limit_seconds=10.000000; outer_remaining_seconds=-1.000000]'],
+    'candidate allowance' => [100.0, 5.0,
+        '[limits=candidate_budget; shared_seconds=2.000000; max_candidate_voting_seconds=4.000000; candidate_limit_seconds=5.000000; outer_remaining_seconds=94.000000]'],
+    'both limits' => [5.0, 5.0,
+        '[limits=outer_deadline,candidate_budget; shared_seconds=2.000000; max_candidate_voting_seconds=4.000000; candidate_limit_seconds=5.000000; outer_remaining_seconds=-1.000000]'],
+    'no candidate allowance' => [5.0, null,
+        '[limits=outer_deadline; shared_seconds=2.000000; max_candidate_voting_seconds=4.000000; candidate_limit_seconds=none; outer_remaining_seconds=-1.000000]'],
+]);
+
+it('allows work exactly at both limits before reporting a later overrun', function () {
+    $time = (object) ['now' => 0.0];
+    $budget = new KnnCandidateBudget(10.0, 10.0, 'budget exceeded', fn (): float => $time->now);
+    $time->now = 4.0;
+    $budget->checkpointShared();
+    $time->now = 10.0;
+
+    expect(fn () => $budget->checkpointCandidate(5))->not->toThrow(RuntimeException::class);
+
+    $time->now = 11.0;
+
+    expect(fn () => $budget->checkpointShared())
+        ->toThrow(RuntimeException::class, 'limits=outer_deadline,candidate_budget');
+});
