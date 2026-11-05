@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Features\ContextFeatures;
+use App\Domain\Features\FeatureEngine;
 use App\Domain\Intelligence\HumanCandleKnn;
 use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\MarketIntelligence;
@@ -12,6 +13,7 @@ use App\Domain\Research\DatasetStore;
 use App\Models\HumanCandleLabel;
 use App\Models\HumanTrainingSnapshot;
 use App\Models\MarketFeature;
+use App\Models\Ticker;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -250,4 +252,104 @@ it('does not silently hide a corrupt human snapshot behind the automatic fallbac
     DB::table('human_training_snapshots')->where('snapshot_id', $snapshot->snapshot_id)->update(['sha256' => str_repeat('0', 64)]);
     expect(fn () => app(IntelligenceTrainer::class)->train($manifest['dataset_id']))
         ->toThrow(LogicException::class, 'Human training snapshot checksum mismatch.');
+});
+
+it('uses an immutable human candle snapshot when its original dataset artifact is gone', function () {
+    config(['human_training.min_reviewers' => 1, 'human_training.min_agreement' => 1.0]);
+    $target = IntelligenceFixtures::snapshot(6);
+    [, $rows] = app(DatasetStore::class)->load($target['dataset_id']);
+    $row = $rows[0];
+    $source = [...$target, 'dataset_id' => (string) Str::uuid7()];
+    DB::table('research_datasets')->insert([
+        'dataset_id' => $source['dataset_id'],
+        'manifest' => json_encode($source, JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+    ]);
+
+    $bar = ['open' => '10', 'high' => '11', 'low' => '9', 'close' => '10', 'volume' => '1'];
+    foreach ([$row['microtimestamp'] - 60000, $row['microtimestamp']] as $timestamp) {
+        Ticker::query()->create([
+            'exchange' => $target['exchange'],
+            'symbol' => $target['symbol'],
+            'period' => $target['period'],
+            'microtimestamp' => $timestamp,
+            'payload' => json_encode($bar, JSON_THROW_ON_ERROR),
+        ]);
+    }
+    DB::table('market_features')->insert([
+        'feature_id' => (string) Str::uuid7(),
+        'exchange' => $target['exchange'],
+        'symbol' => $target['symbol'],
+        'period' => $target['period'],
+        'microtimestamp' => $row['microtimestamp'],
+        'available_at_ms' => $row['decision_at_ms'],
+        'version' => FeatureEngine::VERSION,
+        'payload' => json_encode([
+            'microtimestamp' => $row['microtimestamp'],
+            'available_at_ms' => $row['decision_at_ms'],
+            'version' => FeatureEngine::VERSION,
+            'close' => 10.0,
+            'features' => ['candle.body' => $row['vector'][0]],
+        ], JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $payload = array_replace(HumanTrainingSnapshot::factory()->make()->payload, [
+        'feature_version' => $source['feature_version'],
+        'normalization' => NormalizedVector::VERSION,
+        'exchange' => $source['exchange'],
+        'symbol' => $source['symbol'],
+        'period' => $source['period'],
+        'microtimestamp' => $row['microtimestamp'],
+        'decision_at_ms' => $row['decision_at_ms'],
+        'horizon_candles' => $source['label_definition']['horizon'],
+        'keys' => $source['keys'],
+        'vector' => NormalizedVector::from($row['vector'], $source['keys']),
+        'features' => array_combine($source['keys'], $row['vector']),
+        'feature_sha256' => $row['source']['feature_sha256'] ?? null,
+        'series' => [
+            ['time' => intdiv($row['microtimestamp'] - 60000, 1000), ...$bar],
+            ['time' => intdiv($row['microtimestamp'], 1000), ...$bar],
+        ],
+        'model_observation' => null,
+    ]);
+    $snapshot = HumanTrainingSnapshot::factory()->create([
+        'dataset_id' => $source['dataset_id'],
+        'payload' => $payload,
+        'market_key' => ModelStore::marketKey($source['exchange'], $source['symbol'], $source['period']),
+        'snapshot_key' => hash('sha256', (string) Str::uuid7()),
+    ]);
+    HumanCandleLabel::factory()->create([
+        'snapshot_id' => $snapshot->snapshot_id,
+        'trainer_id' => $this->trainer->user_id,
+        'action' => 'buy',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $audit = app(HumanCandleKnn::class)->audit($target, microtime(true) + 30);
+
+    expect($audit['samples'])->toBe(1)
+        ->and($audit['annotation_diagnostics']['source_dataset_fallbacks'])->toBe(1)
+        ->and($audit['annotation_diagnostics']['accepted_snapshots'])->toBe(1)
+        ->and($audit['annotation_diagnostics']['projected_candles'])->toBe(1);
+});
+
+it('does not use the missing-artifact fallback to hide an existing corrupt manifest', function () {
+    $target = IntelligenceFixtures::snapshot(6);
+    [, $rows] = app(DatasetStore::class)->load($target['dataset_id']);
+    $source = [...$target, 'dataset_id' => (string) Str::uuid7()];
+    DB::table('research_datasets')->insert([
+        'dataset_id' => $source['dataset_id'],
+        'manifest' => json_encode($source, JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+    ]);
+    $directory = app(DatasetStore::class)->directory($source['dataset_id']);
+    File::makeDirectory($directory, 0700, true);
+    file_put_contents($directory.'/manifest.json', '{}');
+    twoKnnAnnotation($source, $rows[0], $this->trainer, 'buy');
+
+    expect(fn () => app(HumanCandleKnn::class)->audit($target, microtime(true) + 30))
+        ->toThrow(RuntimeException::class, 'Dataset manifest is missing or does not match its database record.');
 });

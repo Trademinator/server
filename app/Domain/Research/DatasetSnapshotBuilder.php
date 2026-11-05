@@ -41,7 +41,7 @@ final class DatasetSnapshotBuilder
      */
     public function build(string $exchange, string $symbol, string $period, LabelDefinition|SemanticLabels $definition,
         string $schema = 'core', array $custom = [], ?int $fromMs = null, ?int $toMs = null, ?int $asOfMs = null,
-        ?string $featureLockOwner = null, ?float $deadline = null, ?string $generation = null): array
+        ?string $featureLockOwner = null, ?float $deadline = null): array
     {
         $keys = FeatureSchema::keys($schema, $custom);
         $timeframe = new CandleTimeframe;
@@ -84,7 +84,6 @@ final class DatasetSnapshotBuilder
             $checkpoint = new BuildCheckpoint(['kind' => 'snapshot', 'exchange' => $exchange, 'symbol' => $symbol,
                 'period' => $period, 'as_of_ms' => $asOfMs, 'from_ms' => $fromMs, 'to_ms' => $toMs,
                 'schema' => $schema, 'keys' => $keys, 'definition' => $definition->metadata(),
-                'generation' => $generation,
                 'profile' => $this->labelSets->profile($exchange, $symbol),
                 'implementation' => BuildCheckpoint::implementation('snapshot')], $deadline);
             $revision = $this->labelSets->revision($exchange, $symbol, $period);
@@ -454,17 +453,14 @@ final class DatasetSnapshotBuilder
                     if (file_put_contents($temporary.'/manifest.json', $json) !== strlen($json) || ! rename($temporary, $directory)) {
                         throw new RuntimeException('Could not publish dataset snapshot.');
                     }
-                    // Renew parent leases before publishing. A later ownership loss
-                    // must be handled outside this transaction, without rolling back
-                    // a replacement token along with the dataset.
-                    $checkpoint->onSave('snapshot-rows', null);
-                    $checkpoint->state['stage'] = 'snapshot_complete';
-                    $checkpoint->save(false);
-                    $checkpoint->clearStream('snapshot-rows');
                     DB::table('research_datasets')->insert(['dataset_id' => $id, 'manifest' => json_encode($manifest, JSON_THROW_ON_ERROR), 'created_at' => now()]);
                     if ($actionDiagnostics !== null) {
                         $this->actionReports->publish($exchange, $symbol, $period, $actionDiagnostics, $id);
                     }
+                    $checkpoint->onSave('snapshot-rows', null);
+                    $checkpoint->state['stage'] = 'snapshot_complete';
+                    $checkpoint->save(false);
+                    $checkpoint->clearStream('snapshot-rows');
                 });
 
                 return $manifest;
@@ -476,35 +472,17 @@ final class DatasetSnapshotBuilder
 
             return $manifest;
         } catch (Throwable $error) {
-            try {
-                $checkpoint?->onSave('snapshot-rows', null);
-                if (is_resource($file)) {
-                    $closing = $file;
-                    $file = null;
-                    // Close before unlinking so NFS does not retain our open rows file.
-                    fclose($closing);
+            foreach ([$temporary] as $path) {
+                if ($path === null) {
+                    continue;
                 }
-                if ($temporary !== null) {
-                    foreach (['rows.jsonl', 'manifest.json'] as $name) {
-                        if (is_file($temporary.'/'.$name)) {
-                            unlink($temporary.'/'.$name);
-                        }
-                    }
-                    if (is_dir($temporary)) {
-                        rmdir($temporary);
+                foreach (['rows.jsonl', 'manifest.json'] as $name) {
+                    if (is_file($path.'/'.$name)) {
+                        unlink($path.'/'.$name);
                     }
                 }
-            } catch (Throwable $cleanupError) {
-                try {
-                    $log = app(ActionLog::class);
-                    $log->write('dataset.cleanup.failed', [
-                        ...$log->exception($cleanupError),
-                        'dataset_id' => $checkpoint?->state['id'] ?? null,
-                        'exchange' => $exchange, 'symbol' => $symbol, 'period' => $period,
-                        'outcome' => 'failed',
-                    ]);
-                } catch (Throwable) {
-                    // Cleanup and logging must not replace the original failure or BuildPaused.
+                if (is_dir($path)) {
+                    rmdir($path);
                 }
             }
             throw $error;

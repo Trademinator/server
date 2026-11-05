@@ -30,7 +30,7 @@ afterEach(function () {
     File::deleteDirectory(dirname(config('research.path')));
 });
 
-function humanOutcomeOpinion(array $manifest, array $row, User $trainer, ?string $label = null): HumanTrainingSnapshot
+function humanOutcomeOpinion(array $manifest, array $row, User $trainer, ?string $label = null, ?string $datasetId = null): HumanTrainingSnapshot
 {
     $payload = array_replace(HumanTrainingSnapshot::factory()->make()->payload, [
         'version' => HumanTraining::VERSION,
@@ -47,7 +47,7 @@ function humanOutcomeOpinion(array $manifest, array $row, User $trainer, ?string
         'feature_sha256' => $row['source']['feature_sha256'] ?? null,
     ]);
     $snapshot = HumanTrainingSnapshot::factory()->create([
-        'dataset_id' => $manifest['dataset_id'],
+        'dataset_id' => $datasetId ?? $manifest['dataset_id'],
         'payload' => $payload,
         'market_key' => ModelStore::marketKey($manifest['exchange'], $manifest['symbol'], $manifest['period']),
         'snapshot_key' => hash('sha256', (string) Str::uuid7()),
@@ -128,7 +128,6 @@ it('disables Human Outcome influence when Trend Training is disabled', function 
         ->and($bundle['influence'])->toBeFalse();
 });
 
-
 it('trains independently from previously normalized directional snapshots', function () {
     $trainer = User::factory()->create();
     config(['operations.owner_uuid' => $trainer->user_id]);
@@ -163,4 +162,29 @@ it('trains independently from previously normalized directional snapshots', func
     foreach ($trained['bundle']['knowledge'] as $knowledge) {
         expect((float) $knowledge['vector'][0])->toBeIn([0.0, 0.5, 1.0]);
     }
+});
+
+it('keeps Human Outcome reviews usable when their historical dataset artifact is missing', function () {
+    $trainer = User::factory()->create();
+    config(['operations.owner_uuid' => $trainer->user_id]);
+    $target = IntelligenceFixtures::snapshot(6);
+    [, $rows] = app(DatasetStore::class)->load($target['dataset_id']);
+    $sourceId = (string) Str::uuid7();
+    $source = [...$target, 'dataset_id' => $sourceId];
+    DB::table('research_datasets')->insert([
+        'dataset_id' => $sourceId,
+        'manifest' => json_encode($source, JSON_THROW_ON_ERROR),
+        'created_at' => now(),
+    ]);
+
+    foreach ($rows as $row) {
+        humanOutcomeOpinion($source, $row, $trainer, datasetId: $sourceId);
+    }
+
+    $bundle = app(HumanGuidance::class)->train($target, config('intelligence.knn'), microtime(true) + 30)['bundle'];
+
+    expect($bundle['status'])->toBe('validated')
+        ->and($bundle['samples'])->toBe(6)
+        ->and($bundle['knowledge_rows'])->toBe(6)
+        ->and(is_dir(app(DatasetStore::class)->directory($sourceId)))->toBeFalse();
 });

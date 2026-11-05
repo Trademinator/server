@@ -120,50 +120,6 @@ it('resumes snapshot rows without duplicate output and reuses the completed data
     $this->assertDatabaseEmpty('knowledge_build_checkpoint_chunks');
 });
 
-it('preserves the snapshot error and saved rows when temporary cleanup fails', function () {
-    IntelligenceFixtures::candles(130);
-    $asOf = now()->getTimestampMs();
-    $builder = app(DatasetSnapshotBuilder::class);
-    $reference = $builder->build('kraken', 'BTC/USD', '1m', new SemanticLabels(2, 3), asOfMs: $asOf - 1);
-    $failure = new RuntimeException('fixture snapshot failure');
-    $temporary = null;
-    Event::listen('knowledge.checkpoint.saved', function (string $key, array $state) use ($failure, &$temporary): void {
-        if ($state['stage'] !== 'snapshot_rows' || ($state['snapshot']['count'] ?? 0) < 14) {
-            return;
-        }
-        $paths = glob(config('research.path').'/'.$state['id'].'.tmp.*', GLOB_ONLYDIR);
-        expect($paths)->toHaveCount(1);
-        $temporary = $paths[0];
-        file_put_contents($temporary.'/.cleanup-fixture', 'preserve unexpected files');
-        throw $failure;
-    });
-
-    $caught = null;
-    try {
-        $builder->build('kraken', 'BTC/USD', '1m', new SemanticLabels(2, 3), asOfMs: $asOf);
-    } catch (Throwable $error) {
-        $caught = $error;
-    }
-
-    expect($caught)->toBe($failure);
-    expect($temporary)->not->toBeNull();
-    expect(is_file($temporary.'/rows.jsonl'))->toBeFalse();
-    expect(file_get_contents($temporary.'/.cleanup-fixture'))->toBe('preserve unexpected files');
-    $this->assertDatabaseCount('research_datasets', 1);
-    $this->assertDatabaseHas('knowledge_build_checkpoint_chunks', ['stream' => 'snapshot-rows']);
-    Event::forget('knowledge.checkpoint.saved');
-
-    $resumed = $builder->build('kraken', 'BTC/USD', '1m', new SemanticLabels(2, 3), asOfMs: $asOf);
-
-    expect($resumed['rows_sha256'])->toBe($reference['rows_sha256']);
-    [, $expected] = app(DatasetStore::class)->load($reference['dataset_id']);
-    [, $actual] = app(DatasetStore::class)->load($resumed['dataset_id']);
-    expect($actual)->toBe($expected);
-    expect(is_file($temporary.'/.cleanup-fixture'))->toBeTrue();
-    $this->assertDatabaseCount('research_datasets', 2);
-    $this->assertDatabaseEmpty('knowledge_build_checkpoint_chunks');
-});
-
 it('invalidates saved snapshot progress when a previously processed feature changes', function () {
     IntelligenceFixtures::candles();
     $asOf = now()->getTimestampMs();
@@ -182,28 +138,6 @@ it('invalidates saved snapshot progress when a previously processed feature chan
     $fresh = $builder->build('kraken', 'BTC/USD', '1m', new SemanticLabels(2, 3), asOfMs: $asOf - 1);
 
     expect($resumed['rows_sha256'])->toBe($fresh['rows_sha256']);
-});
-
-it('resumes snapshot publication after completion metadata rolls back with the dataset', function () {
-    IntelligenceFixtures::candles();
-    $asOf = now()->getTimestampMs();
-    $builder = app(DatasetSnapshotBuilder::class);
-    checkpointInterrupt(fn (array $state): bool => $state['stage'] === 'snapshot_complete');
-
-    expect(fn () => $builder->build('kraken', 'BTC/USD', '1m', new SemanticLabels(2, 3), asOfMs: $asOf))
-        ->toThrow(RuntimeException::class, 'fixture worker interrupted');
-    $this->assertDatabaseEmpty('research_datasets');
-    $state = json_decode(DB::table('knowledge_build_checkpoints')->value('state'), true, flags: JSON_THROW_ON_ERROR);
-    expect($state['stage'])->toBe('snapshot_rows');
-    expect(DB::table('knowledge_build_checkpoint_chunks')->where('stream', 'snapshot-rows')->count())->toBeGreaterThan(0);
-    Event::forget('knowledge.checkpoint.saved');
-
-    $resumed = $builder->build('kraken', 'BTC/USD', '1m', new SemanticLabels(2, 3), asOfMs: $asOf);
-    $reference = $builder->build('kraken', 'BTC/USD', '1m', new SemanticLabels(2, 3), asOfMs: $asOf - 1);
-
-    expect($resumed['dataset_id'])->toBe($state['id']);
-    expect($resumed['rows_sha256'])->toBe($reference['rows_sha256']);
-    $this->assertDatabaseEmpty('knowledge_build_checkpoint_chunks');
 });
 
 it('invalidates interrupted labels for an in-range correction but preserves them for newer corrections', function (bool $inside) {
@@ -330,42 +264,6 @@ it('releases paused snapshots and dispatches training only after a complete immu
     app(TickerRepository::class)->invalidateHistory('kraken', 'BTC/USD', '1m');
     config(['research.checkpoint_work_seconds' => 240]);
     $job->withFakeQueueInteractions()->handle(app(DatasetSnapshotBuilder::class), app(TickerRepository::class), app(KnowledgeRequestJournal::class));
-    $job->assertNotReleased()->assertNotFailed();
-    Bus::assertDispatched(TrainMarketIntelligence::class, fn ($training) => $training->snapshotDataset !== null
-        && DB::table('research_datasets')->where('dataset_id', $training->snapshotDataset)->exists());
-    $this->assertDatabaseCount('research_datasets', 1);
-});
-
-it('releases a paused snapshot even when its temporary directory cannot be removed', function () {
-    IntelligenceFixtures::candles();
-    $job = (new BuildOwnerDatasetSnapshot('kraken', 'BTC/USD', '1m', true))->withFakeQueueInteractions();
-    app(AlgorithmicLabelBuilder::class)->build('kraken', 'BTC/USD', '1m', $job->requestedAsOfMs);
-    Bus::fake([TrainMarketIntelligence::class]);
-    config(['research.checkpoint_work_seconds' => 0]);
-    $temporary = null;
-    Event::listen('knowledge.checkpoint.saved', function (string $key, array $state) use (&$temporary): void {
-        if ($state['stage'] !== 'snapshot_rows' || ($state['snapshot']['feature_through'] ?? null) === null) {
-            return;
-        }
-        $paths = glob(config('research.path').'/'.$state['id'].'.tmp.*', GLOB_ONLYDIR);
-        expect($paths)->toHaveCount(1);
-        $temporary = $paths[0];
-        file_put_contents($temporary.'/.cleanup-fixture', 'preserve unexpected files');
-    });
-
-    $job->handle(app(DatasetSnapshotBuilder::class), app(TickerRepository::class), app(KnowledgeRequestJournal::class));
-
-    $job->assertReleased(5)->assertNotFailed();
-    expect($temporary)->not->toBeNull();
-    expect(is_file($temporary.'/rows.jsonl'))->toBeFalse();
-    expect(is_file($temporary.'/.cleanup-fixture'))->toBeTrue();
-    Bus::assertNotDispatched(TrainMarketIntelligence::class);
-    $this->assertDatabaseEmpty('research_datasets');
-    Event::forget('knowledge.checkpoint.saved');
-    config(['research.checkpoint_work_seconds' => 240]);
-
-    $job->withFakeQueueInteractions()->handle(app(DatasetSnapshotBuilder::class), app(TickerRepository::class), app(KnowledgeRequestJournal::class));
-
     $job->assertNotReleased()->assertNotFailed();
     Bus::assertDispatched(TrainMarketIntelligence::class, fn ($training) => $training->snapshotDataset !== null
         && DB::table('research_datasets')->where('dataset_id', $training->snapshotDataset)->exists());

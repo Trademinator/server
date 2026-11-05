@@ -41,7 +41,6 @@ class ActionLog
             'human_guidance_ms', 'candle_guidance_ms', 'persistence_ms',
             'feature_replay_ms', 'feature_rows', 'feature_chunks',
             'budget_seconds', 'remaining_ms', 'processed', 'total', 'eligible_rows', 'memory_bytes',
-            'fold', 'batch_rows', 'scanned',
         ] as $key) {
             if (is_int($fields[$key] ?? null) || (is_float($fields[$key] ?? null) && is_finite($fields[$key]))) {
                 $record[$key] = $fields[$key];

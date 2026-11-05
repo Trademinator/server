@@ -65,24 +65,7 @@ final class KnnCandidateBudget
     {
         if ($now > $this->deadline || ($this->secondsPerCandidate !== null
             && $this->sharedSeconds + $this->longestCandidateSeconds > $this->secondsPerCandidate)) {
-            $limits = [];
-            if ($now > $this->deadline) {
-                $limits[] = 'outer_deadline';
-            }
-            if ($this->secondsPerCandidate !== null
-                && $this->sharedSeconds + $this->longestCandidateSeconds > $this->secondsPerCandidate) {
-                $limits[] = 'candidate_budget';
-            }
-
-            throw new RuntimeException(sprintf(
-                '%s [limits=%s; shared_seconds=%.6F; max_candidate_voting_seconds=%.6F; candidate_limit_seconds=%s; outer_remaining_seconds=%.6F]',
-                $this->message,
-                implode(',', $limits),
-                $this->sharedSeconds,
-                $this->longestCandidateSeconds,
-                $this->secondsPerCandidate === null ? 'none' : sprintf('%.6F', $this->secondsPerCandidate),
-                $this->deadline - $now,
-            ));
+            throw new RuntimeException($this->message);
         }
     }
 }

@@ -17,7 +17,6 @@ use App\Models\MarketFeed;
 use App\Models\MarketSubscription;
 use App\Models\User;
 use App\Repositories\TickerRepository;
-use Illuminate\Bus\UniqueLock;
 use Illuminate\Queue\Jobs\SyncJob;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -452,35 +451,6 @@ it('rebuilds after a completed weekly generation and keeps forced job retries id
     // cannot displace a usable incumbent either.
     $active = app(ModelStore::class)->currentReport('kraken', 'BTC/USD', '1m');
     expect($active['model_id'] ?? null)->toBe($old['model_id'] ?? null);
-});
-
-it('keeps queued rebuild generations separate while snapshot retries reuse their own dataset', function () {
-    $this->travelTo('2024-01-01 02:00:00 UTC');
-    IntelligenceFixtures::candles();
-    Queue::fake([BuildOwnerDatasetSnapshot::class, TrainMarketIntelligence::class]);
-    $datasets = [];
-    foreach (['2024-01-01', 'manual:rubix-upgrade'] as $generation) {
-        $job = new TrainMarketIntelligence('kraken', 'BTC/USD', '1m', $generation);
-        $job->setJob(new SyncJob(app(), json_encode([
-            'uuid' => (string) Str::uuid7(), 'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
-        ]), 'database', 'intelligence'));
-        $job->handle(app(MarketIntelligence::class));
-        $snapshot = unserialize(serialize(Queue::pushed(BuildOwnerDatasetSnapshot::class)->last()));
-        app(AlgorithmicLabelBuilder::class)->build('kraken', 'BTC/USD', '1m', $snapshot->requestedAsOfMs);
-
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            $snapshot->handle(app(DatasetSnapshotBuilder::class), app(TickerRepository::class), app(KnowledgeRequestJournal::class));
-            $this->assertDatabaseCount('research_datasets', count($datasets) + 1);
-        }
-        $datasets[] = Queue::pushed(TrainMarketIntelligence::class)->last()->snapshotDataset;
-        // Simulate the queue handler acknowledging this completed unique job.
-        app(UniqueLock::class)->release($snapshot);
-    }
-
-    Queue::assertPushed(BuildOwnerDatasetSnapshot::class, 2);
-    expect($datasets[0])->not->toBe($datasets[1]);
-    expect(app(DatasetStore::class)->manifest($datasets[0])['rows_sha256'])
-        ->toBe(app(DatasetStore::class)->manifest($datasets[1])['rows_sha256']);
 });
 
 it('returns zero confidence without any model and rejects mismatched frozen markets', function () {

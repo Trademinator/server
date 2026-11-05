@@ -3,6 +3,7 @@
 namespace App\Domain\Intelligence;
 
 use App\Domain\Features\FeatureEngine;
+use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\FeatureSchema;
 use App\Models\HumanTrainingSnapshot;
@@ -17,7 +18,7 @@ use RuntimeException;
 /** Independent technical KNN whose targets are authorized human candle annotations. */
 final class HumanCandleKnn
 {
-    public const VERSION = 'm5-human-candle-knn-v2';
+    public const VERSION = 'm5-human-candle-knn-v3';
 
     public function __construct(private DatasetStore $datasets, private HumanTraining $snapshots) {}
 
@@ -191,7 +192,7 @@ final class HumanCandleKnn
         $diagnostics = ['recorded_labels' => (clone $recorded)->count(),
             'recorded_distinct_candles' => (clone $recorded)->distinct()->count('snapshots.decision_at_ms'),
             'prefiltered_snapshots' => [], 'candidate_snapshots' => 0, 'examined_snapshots' => 0, 'source_versions' => [],
-            'accepted_snapshots' => 0, 'duplicate_eligible_snapshots' => 0,
+            'accepted_snapshots' => 0, 'duplicate_eligible_snapshots' => 0, 'source_dataset_fallbacks' => 0,
             'projected_candles' => 0, 'legacy_same_version_candles' => 0, 'excluded' => []];
         $exclude = function (string $reason) use (&$diagnostics): void {
             $diagnostics['excluded'][$reason] = ($diagnostics['excluded'][$reason] ?? 0) + 1;
@@ -234,6 +235,9 @@ final class HumanCandleKnn
         $source = [];
         $rawRows = null;
         $legacyHistory = false;
+        $sourceFallback = false;
+        $sourceVerification = 'dataset_artifact';
+        $sourceMatchesTarget = false;
         $cursor = null;
         $batchSize = 25;
         while (true) {
@@ -291,17 +295,30 @@ final class HumanCandleKnn
                     $datasetStarted = microtime(true);
                     $progress?->stage('loading_dataset', ['dataset_id' => $dataset,
                         'processed' => $diagnostics['examined_snapshots']]);
-                    // Reject a wrong market/horizon from its verified manifest
-                    // before reading the large row artifact, but allow versions.
-                    $source = $this->datasets->manifest($dataset);
+                    // The database manifest is an independent, durable identity record.
+                    // Existing disk manifests remain strict: never hide corruption behind the
+                    // missing-artifact fallback.
+                    $source = $this->datasets->databaseManifest($dataset);
+                    $files = $this->datasets->artifactFiles($dataset);
+                    if ($files['manifest']) {
+                        $source = $this->datasets->manifest($dataset);
+                    }
                     $rawRows = null;
-                    // Action Training is independent of Outcome H. The snapshot must still
-                    // match its own source manifest exactly below, but a later model may use a
-                    // different (or unavailable) Outcome horizon.
-                    if ([$source['exchange'], $source['symbol'], $source['period']]
-                        === [$manifest['exchange'], $manifest['symbol'], $manifest['period']]) {
+                    $legacyHistory = false;
+                    $sourceFallback = false;
+                    $sourceVerification = 'dataset_artifact';
+                    $sourceMatchesTarget = [$source['exchange'], $source['symbol'], $source['period']]
+                        === [$manifest['exchange'], $manifest['symbol'], $manifest['period']];
+                    // Action Training is independent of Outcome H. A missing old rows artifact
+                    // may fall back to the immutable snapshot payload, but only after its DB
+                    // manifest identifies the same market and the current chart is revalidated.
+                    if ($sourceMatchesTarget && $files['manifest'] && $files['rows']) {
                         [, $rawRows] = $this->datasets->open($dataset);
                         $legacyHistory = app(SnapshotRevisions::class)->historyRevision($source) === 0;
+                    } elseif ($sourceMatchesTarget) {
+                        $sourceFallback = true;
+                        $sourceVerification = 'database_manifest_snapshot_payload';
+                        $diagnostics['source_dataset_fallbacks']++;
                     }
                     $loadedDataset = $dataset;
                     $diagnostics['performance']['dataset_loading_ms'] += (int) round((microtime(true) - $datasetStarted) * 1000);
@@ -316,11 +333,14 @@ final class HumanCandleKnn
                     $diagnostics['source_versions'][$version] = ($diagnostics['source_versions'][$version] ?? 0) + 1;
                     $payload = $snapshot->verifiedPayload(); // Corruption is never a soft exclusion.
                     $decision = $snapshot->decision_at_ms;
-                    $row = $rawRows?->findDecision($decision);
-                    if ($rawRows === null) {
+                    if (! $sourceMatchesTarget) {
                         $exclude('source_market_or_horizon_mismatch');
 
                         continue;
+                    }
+                    $row = $rawRows?->findDecision($decision);
+                    if ($row === null && $sourceFallback) {
+                        $row = $this->fallbackRow($source, $snapshot, $payload);
                     }
                     if ($row === null || ($payload['version'] ?? null) !== HumanTraining::VERSION
                         || ($payload['exchange'] ?? null) !== $source['exchange']
@@ -353,8 +373,10 @@ final class HumanCandleKnn
                         continue;
                     }
                     $id = $snapshot->snapshot_id;
-                    $candidates[$id] = ['snapshot' => $snapshot, 'row' => $row, 'action' => $votes->keys()->first()];
-                    if ($legacyHistory && ! isset($payload['revision']) && ($payload['feature_sha256'] ?? null) === null) {
+                    $candidates[$id] = ['snapshot' => $snapshot, 'row' => $row, 'action' => $votes->keys()->first(),
+                        'source_verification' => $sourceVerification];
+                    if (! $sourceFallback && $legacyHistory && ! isset($payload['revision'])
+                        && ($payload['feature_sha256'] ?? null) === null) {
                         // Preserve existing source-less research fixtures/legacy behavior,
                         // but NEVER use this exception to cross a feature version/schema.
                         if ($source['feature_version'] !== $manifest['feature_version'] || array_diff($keys, $source['keys']) !== []) {
@@ -406,6 +428,7 @@ final class HumanCandleKnn
                     ])->all();
                     $fullProvenance = ['snapshot_id' => $id, 'sha256' => $snapshot->sha256,
                         'dataset_id' => $snapshot->dataset_id, 'dataset_rows_sha256' => $source['rows_sha256'],
+                        'source_verification' => $candidate['source_verification'],
                         ...$projection['provenance'], 'labels' => $labelProvenance];
                     $opinions[$decision] = ['vector' => $projection['vector'], 'label' => $action === 'hold' ? 'hodl' : $action,
                         'semantic_bottom' => $action === 'buy', 'semantic_top' => $action === 'sell',
@@ -413,6 +436,7 @@ final class HumanCandleKnn
                         'updated_at_ms' => $snapshot->candleLabels->max(fn ($label) => $label->updated_at->getTimestampMs()),
                         'provenance' => ['snapshot_id' => $id, 'sha256' => $snapshot->sha256,
                             'dataset_id' => $snapshot->dataset_id, 'dataset_rows_sha256' => $source['rows_sha256'],
+                            'source_verification' => $candidate['source_verification'],
                             'projection_version' => $projection['provenance']['projection_version'] ?? null,
                             'feature_version' => $projection['provenance']['feature_version'] ?? $source['feature_version'],
                             'labels' => array_map(fn (array $label): array => ['id' => $label['id']], $labelProvenance),
@@ -437,6 +461,71 @@ final class HumanCandleKnn
         ksort($diagnostics['excluded']);
 
         return array_values($opinions);
+    }
+
+    /**
+     * Authenticate a frozen snapshot from its durable DB manifest when the original
+     * rows artifact is gone. Current features and the reviewed OHLCV chart are still
+     * revalidated by HumanCandleProjection before the annotation can influence a model.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function fallbackRow(array $source, HumanTrainingSnapshot $snapshot, array $payload): ?array
+    {
+        $keys = $source['keys'] ?? null;
+        $features = $payload['features'] ?? null;
+        $timestamp = $payload['microtimestamp'] ?? null;
+        $period = $source['period'] ?? null;
+        $horizon = $source['label_definition']['horizon'] ?? null;
+        $rowsSha256 = $source['rows_sha256'] ?? null;
+        $decision = (int) $snapshot->decision_at_ms;
+        if (! is_array($keys) || $keys === [] || ! is_array($features) || ! is_int($timestamp)
+            || ! is_string($period) || ! is_int($horizon) || $horizon < 1
+            || ! is_string($rowsSha256) || ! preg_match('/^[0-9a-f]{64}$/iD', $rowsSha256)
+            || ($payload['version'] ?? null) !== HumanTraining::VERSION
+            || ($payload['exchange'] ?? null) !== ($source['exchange'] ?? null)
+            || ($payload['symbol'] ?? null) !== ($source['symbol'] ?? null)
+            || ($payload['period'] ?? null) !== $period
+            || ($payload['decision_at_ms'] ?? null) !== $decision
+            || ($payload['feature_version'] ?? null) !== ($source['feature_version'] ?? null)
+            || ($payload['keys'] ?? null) !== $keys
+            || ($payload['normalization'] ?? null) !== NormalizedVector::VERSION
+            || ($payload['horizon_candles'] ?? null) !== $horizon
+            || count($features) !== count($keys)) {
+            return null;
+        }
+
+        $vector = [];
+        foreach ($keys as $key) {
+            if (! is_string($key) || ! array_key_exists($key, $features)) {
+                return null;
+            }
+            $vector[] = $features[$key];
+        }
+
+        try {
+            if (($payload['vector'] ?? null) != NormalizedVector::from($vector, $keys)) {
+                return null;
+            }
+            $timeframe = new CandleTimeframe;
+            if ($timeframe->next($timestamp, $period) !== $decision) {
+                return null;
+            }
+            $labelAvailableAt = $decision;
+            for ($index = 0; $index < $horizon; $index++) {
+                $labelAvailableAt = $timeframe->next($labelAvailableAt, $period);
+            }
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        return [
+            'microtimestamp' => $timestamp,
+            'decision_at_ms' => $decision,
+            'label_available_at_ms' => $labelAvailableAt,
+            'vector' => $vector,
+            'source' => ['feature_sha256' => $payload['feature_sha256'] ?? null],
+        ];
     }
 
     private function evaluate(WeightedKnn $knn, array $training, array $test, int $k, array $weights, array $settings, float $deadline,

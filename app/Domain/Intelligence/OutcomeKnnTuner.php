@@ -39,16 +39,16 @@ final class OutcomeKnnTuner
         }
 
         $folds = [];
-        $progress = new KnnTrainingProgress('outcome_knn_tuning');
         foreach ((new WalkForward)->rowFolds($rows, $trainSize, $settings['test_size'], $settings['gap'], true, null) as $fold) {
             $training = $fold['train'];
             $baseline = $this->majorityLabel($training);
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
-            $progress->fold($fold['fold'], count($training), count($fold['test']));
-            foreach ($this->neighbors->neighborBatchesPrepared($training, $fold['test'], $maximum,
-                $budget->checkpointShared(...), $progress->search(...)) as ['row' => $row, 'neighbors' => $neighbors]) {
+            foreach ($fold['test'] as $row) {
+                $budget->checkpointShared();
+                $neighbors = $this->neighbors->neighborsPrepared($training, $row['vector'], $maximum,
+                    $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 $budget->checkpointShared();
                 foreach ($reports as $k => &$report) {
                     $this->accumulate($report, $row, $this->outcomes->vote($neighbors, $k), $baseline);
@@ -78,7 +78,6 @@ final class OutcomeKnnTuner
             'candidates' => array_values($reports),
             'selection' => 'supported_macro_f1_then_baseline_improvement_accuracy_confidence_coverage'];
         $budget->checkpointShared();
-        $progress->finish();
 
         return $result;
     }
@@ -89,17 +88,16 @@ final class OutcomeKnnTuner
         $rows = TrainingRows::from($rows);
         $state = $this->emptyReport($k);
         $folds = [];
-        $progress = new KnnTrainingProgress('outcome_knn_walk_forward');
         foreach ((new WalkForward)->rowFolds($rows, $settings['min_train_size'], $settings['test_size'], $settings['gap'], true, null) as $fold) {
             $training = $fold['train'];
             $baseline = $this->majorityLabel($training);
             $folds[] = ['fold' => $fold['fold'], 'train_rows' => count($training),
                 'labels_available_by_ms' => $training->max('label_available_at_ms'),
                 'test_from_ms' => $fold['test'][0]['decision_at_ms']];
-            $progress->fold($fold['fold'], count($training), count($fold['test']));
-            foreach ($this->neighbors->neighborBatchesPrepared($training, $fold['test'], $k,
-                $budget->checkpointShared(...), $progress->search(...)) as ['row' => $row, 'neighbors' => $nearest]) {
+            foreach ($fold['test'] as $row) {
                 $budget->checkpointShared();
+                $nearest = $this->neighbors->neighborsPrepared($training, $row['vector'], $k,
+                    $row['decision_at_ms'], $row['feature_weights'] ?? []);
                 $this->accumulate($state, $row, $this->outcomes->vote($nearest, $k), $baseline);
                 $budget->checkpointShared();
             }
@@ -108,7 +106,6 @@ final class OutcomeKnnTuner
 
         $result = ['report' => $this->finish($state, $settings), 'folds' => $folds];
         $budget->checkpointShared();
-        $progress->finish();
 
         return $result;
     }
@@ -119,11 +116,10 @@ final class OutcomeKnnTuner
         $state = $this->emptyReport($k);
         $baseline = $this->majorityLabel($training);
         $trace = [];
-        $progress = new KnnTrainingProgress('outcome_knn_holdout');
-        $progress->fold(1, count($training), count($test));
-        foreach ($this->neighbors->neighborBatchesPrepared($training, $test, $k,
-            $budget->checkpointShared(...), $progress->search(...)) as ['row' => $row, 'neighbors' => $neighbors]) {
+        foreach ($test as $row) {
             $budget->checkpointShared();
+            $neighbors = $this->neighbors->neighborsPrepared($training, $row['vector'], $k,
+                $row['decision_at_ms'], $row['feature_weights'] ?? []);
             $prediction = $this->outcomes->vote($neighbors, $k);
             $this->accumulate($state, $row, $prediction, $baseline);
             $trace[] = [
@@ -142,7 +138,6 @@ final class OutcomeKnnTuner
 
         $result = [...$this->finish($state, $settings), 'trace' => $trace];
         $budget->checkpointShared();
-        $progress->finish();
 
         return $result;
     }
