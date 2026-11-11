@@ -317,11 +317,11 @@ Implementation: [`CandleGaps.php`](../app/Console/Commands/CandleGaps.php).
 
 ## trademinator:select-candle-period
 
-Signature: `trademinator:select-candle-period {exchange} {symbol} {--periods=1m,3m,5m,15m,30m,1h,4h,1d} {--tick-size=} {--threshold=0.7} {--coverage=0.8} {--minimum=50} {--sample=250} {--from=7 days ago} {--to=now}`
+Signature: `trademinator:select-candle-period {exchange} {symbol} {--periods=1m,3m,5m,15m,30m,1h,4h,1d} {--tick-size=} {--threshold=0.7} {--coverage=0.8} {--minimum=0} {--sample=250} {--from=7 days ago} {--to=now}`
 
 Description: Select the shortest sufficiently informative candle period
 
-Fetch bounded recent samples and select the shortest candidate meeting information-quality, coverage and sample-size requirements. Saves fetched candles and a successful selection record, then prints JSON. **This diagnostic command does not change the shared feed's selected period.** Use `evaluate-candle-period` to reevaluate/update automatic shared-feed selection.
+Fetch bounded recent samples and select the shortest candidate meeting information-quality, coverage and any explicitly requested sample-size requirement. A nonempty sample is required, but there is no default minimum candle count. Saves fetched candles and a successful selection record, then prints JSON. **This diagnostic command does not change the shared feed's selected period.** Use `evaluate-candle-period` to reevaluate/update automatic shared-feed selection.
 
 The example tick size is illustrative; use the actual exchange metadata value.
 
@@ -333,8 +333,8 @@ The example tick size is illustrative; use the actual exchange metadata value.
 | `--tick-size` | Required | Positive minimum exchange price increment. |
 | `--threshold` | 0.7 | Minimum information-quality score, 0–1. |
 | `--coverage` | 0.8 | Minimum candle coverage, 0–1. |
-| `--minimum` | 50 | Minimum completed sample count; integer at least 1. |
-| `--sample` | 250 | Maximum recent sample count; integer at least `--minimum`. |
+| `--minimum` | 0 | Optional minimum completed sample count; nonnegative integer. Zero disables the count gate, but an empty sample never qualifies. |
+| `--sample` | 250 | Maximum recent sample count; positive integer at least `--minimum`. |
 | `--from` | `7 days ago` | Start of the candidate fetch interval; legacy date parsing. |
 | `--to` | `now` | End of the interval; only completed samples qualify. |
 
@@ -351,13 +351,21 @@ Signature: `trademinator:evaluate-candle-period {--exchange=} {--pair=} {--dry-r
 
 Description: Evaluate and optionally update automatic candle periods for subscribed markets
 
-Reevaluate active subscribed feeds using the automatic selection policy, including fee-aware label viability and available history. Runs immediately and reports current/result periods, BUY/SELL ratios, status and reason. Normal mode may change a selected period or request more history; it keeps a current period until a replacement qualifies. Unlike gap/backfill commands, the pair filter is **`--pair`**, not `--symbol`.
+Reevaluate active subscribed feeds using the automatic selection policy, including fee-aware label viability and available history. Runs immediately and reports current/result periods, BUY/SELL ratios, true-flat ratio, run P50/P95, rejected-reversal ratio, status and reason. Normal mode may change a selected period or request more history; it keeps a current period until the candidate comparison is complete and a replacement qualifies. Unlike gap/backfill commands, the pair filter is **`--pair`**, not `--symbol`.
 
-The hard true-flat cap (`CANDLE_PERIOD_MAX_TRUE_FLAT_RATIO`, default 10%) rejects O=H=L=C-heavy periods regardless of their composite quality score, including when the seven-day window is followed by a longer fallback. The existing BUY and SELL action-ratio floor is independent; keep `CANDLE_PERIOD_MINIMUM_ACTION_RATIO=0.05` if that is the operational target.
+All candidates are compared over the same `CANDLE_PERIOD_EVALUATION_DAYS` window (default 60 days). If no candidate qualifies, a separate round adds `CANDLE_PERIOD_FALLBACK_DAYS` (default 30 additional days), giving 90 days in total. Scores from different window lengths are never ranked together. Automatic evaluation has no minimum candle-count gate; `CANDLE_PERIOD_MINIMUM_CANDLES` is no longer used.
 
-Moving to a **shorter** period is intentionally harder: it must satisfy `CANDLE_PERIOD_SHORTER_REENTRY_FLAT_RATIO` (default 5%) and all existing quality and fee-aware BUY/SELL gates in `CANDLE_PERIOD_SHORTER_CONFIRMATION_WINDOWS` (default 2) separate, non-overlapping historical windows. Each window is at least `CANDLE_PERIOD_EVALUATION_DAYS` (default 7) and long enough to provide `CANDLE_PERIOD_MINIMUM_CANDLES`. Repeating the same evaluation does not create a new confirmation. When history is missing, the existing backfill queue is used; no new queue is introduced.
+Candidates must meet the quality score (default 0.7), coverage (default 80%) and available history-depth requirements. The hard true-flat cap (`CANDLE_PERIOD_MAX_TRUE_FLAT_RATIO`, default 10%) rejects O=H=L=C-heavy periods regardless of their composite quality score. A failed recent or confirmation-window flat cap cannot be hidden by the longer fallback. BUY and SELL must each meet `CANDLE_PERIOD_MINIMUM_ACTION_RATIO` (default 2%) of finalized BUY + SELL + HOLD labels.
 
-Dry run still performs evaluation and can contact exchanges; it does not change a selected period or queue history backfill. It now shows true-flat percentages and limits for each attempted timeframe/window, with specific rejection statuses such as `flat_failed`.
+`CANDLE_PERIOD_MAX_REJECTED_REVERSAL_RATIO` (default 10%) caps opposite-action candidates rejected for insufficient movement during the first fee-pruning pass. The denominator includes only reversals actually tested against the surviving pivot; HOLDs, same-direction cleanup and the second zigzag pass do not count. Movement must exceed twice the one-side taker fee. No tested reversals means unavailable evidence, not a zero rejection rate.
+
+Among eligible candidates, rank by largest completed directional-run P50 (median), then largest P95, then lowest rejected-reversal ratio, then shortest candle period. Run lengths are measured in candles using `compare(close, open)` and `consecutive()`, with one observation per completed run. Neutral candles break runs; window-edge and gap-censored runs are excluded. There is no fixed minimum run length or run count: one-candle runs remain eligible, while no completed runs means unavailable run statistics.
+
+Moving to a **shorter** period is intentionally harder: it must satisfy `CANDLE_PERIOD_SHORTER_REENTRY_FLAT_RATIO` (default 5%) and all quality, coverage, fee-rejection, BUY/SELL and run-evidence gates in `CANDLE_PERIOD_SHORTER_CONFIRMATION_WINDOWS` (default 2) separate, non-overlapping historical windows. Each window uses the current comparison round's duration (60 days, or 90 days in the default fallback). The newest window supplies the ranking statistics. Repeating the same evaluation does not create a new confirmation. Missing candidate history uses the existing backfill queue; remaining candidates are assessed, but selection waits until the required comparisons are resolved.
+
+Dry run still performs evaluation and can contact exchanges; it does not change a selected period or queue history backfill. It shows true-flat percentages and limits, P50/P95, completed-run counts, rejected-reversal percentages and tested-reversal counts for each attempted timeframe/window, with rejection statuses such as `flat_failed`, `reversal_failed` and `insufficient_run_evidence`.
+
+Only the winning selection's aggregate quality, run and economic summary is persisted in the existing selection audit. Per-candle comparisons, consecutive counters and candidate samples remain temporary. The feature schema is unchanged, so existing features need no blanket rebuild; after a period change, the normal feature dispatcher builds missing or outdated features for the newly selected period.
 
 | Parameter | Default / requirement | Explanation |
 | --- | --- | --- |

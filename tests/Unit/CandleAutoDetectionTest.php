@@ -48,8 +48,6 @@ it('uses only the transaction-cost floor and retains the previous BUY when SELL 
         ->and($tickers[1])->not->toHaveKey('action');
 });
 
-
-
 it('requires movement strictly greater than twice the one-side taker fee', function () {
     $atFloor = [
         [...autoCandle('101', '100'), 'action' => 'buy'],
@@ -67,7 +65,6 @@ it('requires movement strictly greater than twice the one-side taker fee', funct
     expect($aboveFloor[0]['action'])->toBe('buy')
         ->and($aboveFloor[1]['action'])->toBe('sell');
 });
-
 
 it('keeps SELL BUY zigzags whose close movement exceeds twice the taker fee', function () {
     $tickers = [
@@ -92,7 +89,6 @@ it('removes the BUY candidate at exactly twice the taker fee and keeps the SELL 
     expect($tickers[0]['action'])->toBe('sell')
         ->and($tickers[1])->not->toHaveKey('action');
 });
-
 
 it('keeps the previous BUY as pivot when an intermediate SELL fails the fee floor', function () {
     $tickers = [
@@ -220,7 +216,6 @@ it('labels only completely flat dojis as HOLD in the doji cleanup pass', functio
         ->and($tickers[3])->not->toHaveKey('action');
 });
 
-
 it('removes endpoint actions and reservations without removing their candle context', function (int $count) {
     $tickers = array_fill(0, $count, [
         ...autoCandle('10', '10', '10', '10'),
@@ -276,4 +271,24 @@ it('does not let reserved HOLD passes restore endpoint labels', function () {
     expect($tickers[0])->not->toHaveKey('action')
         ->and($tickers[5])->not->toHaveKey('action')
         ->and(array_column(array_slice($tickers, 1, 4), 'action'))->toBe(array_fill(0, 4, 'hold'));
+});
+
+it('counts only opposite candidates tested by the first fee pass without changing labels', function () {
+    $tickers = [
+        ['close' => '100', 'action' => 'buy'],
+        ['close' => '100.2', 'action' => 'sell'],
+        ['close' => '100', 'action' => 'hold'],
+        ['close' => '99', 'action' => 'buy'],
+        ['close' => '102', 'action' => 'sell'],
+        ['close' => '100', 'action' => 'buy'],
+    ];
+    $ordinary = $tickers;
+    $counts = ['tested' => 0, 'rejected' => 0];
+    $detector = candleAutoDetector();
+    $detector->remove_unprofitable_transactions($ordinary, '0.001');
+    $detector->remove_unprofitable_transactions($tickers, '0.001', null, $counts);
+    $detector->remove_zigzags($tickers, '0.001');
+
+    expect($counts)->toBe(['tested' => 3, 'rejected' => 1]);
+    expect($tickers)->toBe($ordinary);
 });

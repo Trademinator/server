@@ -16,9 +16,9 @@ final class CandlePeriodSelector
     /** @param list<string> $periods
      * @return array<string, mixed>|null
      */
-    public function select(string $exchange, string $symbol, array $periods, float $tickSize, int $from, int $to, float $threshold = 0.7, float $coverage = 0.8, int $minimum = 50, int $sample = 250): ?array
+    public function select(string $exchange, string $symbol, array $periods, float $tickSize, int $from, int $to, float $threshold = 0.7, float $coverage = 0.8, int $minimum = 0, int $sample = 250): ?array
     {
-        if ($tickSize <= 0 || ! is_finite($tickSize) || $from >= $to || $minimum < 1 || $sample < $minimum
+        if ($tickSize <= 0 || ! is_finite($tickSize) || $from >= $to || $minimum < 0 || $sample < max(1, $minimum)
             || $threshold < 0 || $threshold > 1 || $coverage < 0 || $coverage > 1) {
             throw new InvalidArgumentException('Invalid candle selection settings.');
         }

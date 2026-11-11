@@ -10,7 +10,7 @@ use function Trademinator\Time\to_unixtime;
 
 class SelectCandlePeriod extends Command
 {
-    protected $signature = 'trademinator:select-candle-period {exchange} {symbol} {--periods=1m,3m,5m,15m,30m,1h,4h,1d} {--tick-size=} {--threshold=0.7} {--coverage=0.8} {--minimum=50} {--sample=250} {--from=7 days ago} {--to=now}';
+    protected $signature = 'trademinator:select-candle-period {exchange} {symbol} {--periods=1m,3m,5m,15m,30m,1h,4h,1d} {--tick-size=} {--threshold=0.7} {--coverage=0.8} {--minimum=0} {--sample=250} {--from=7 days ago} {--to=now}';
 
     protected $description = 'Select the shortest sufficiently informative candle period';
 
@@ -26,8 +26,8 @@ class SelectCandlePeriod extends Command
         if ($tickSize === false || $tickSize <= 0 || $from === false || $to === false || $from >= $to
             || $threshold === false || $threshold < 0 || $threshold > 1
             || $coverage === false || $coverage < 0 || $coverage > 1
-            || $minimum === false || $minimum < 1 || $sample === false || $sample < $minimum) {
-            $this->error('Provide a positive --tick-size, valid interval, 0..1 threshold/coverage, and sample >= minimum >= 1.');
+            || $minimum === false || $minimum < 0 || $sample === false || $sample < max(1, $minimum)) {
+            $this->error('Provide a positive --tick-size, valid interval, 0..1 threshold/coverage, and sample >= 1 and minimum >= 0.');
 
             return self::FAILURE;
         }

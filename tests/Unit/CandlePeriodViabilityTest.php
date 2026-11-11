@@ -47,7 +47,6 @@ it('rejects a period when transaction costs leave either BUY or SELL below the v
         ->and(min($result['buy_ratio'], $result['sell_ratio']))->toBeLessThan(0.01);
 });
 
-
 it('excludes context-only endpoints from finalized viability counts', function (int $count, int $expectedTotal) {
     $candles = array_fill(0, $count, [
         ...viabilityCandle('100', '100'), 'action' => 'hold',
@@ -78,3 +77,28 @@ it('does not tag either endpoint of a rising or falling sequence', function (boo
         ->and($candles[7])->not->toHaveKey('action')
         ->and(array_column($candles, 'action'))->not->toBeEmpty();
 })->with(['rising' => [true], 'falling' => [false]]);
+
+it('accepts exactly ten percent fee rejections and rejects a larger share', function (int $count, int $tested, bool $passes) {
+    $candles = [];
+    for ($i = 0; $i < $count; $i++) {
+        $candles[] = $i % 2 === 1
+            ? viabilityCandle('101', '100', '113', '99')
+            : viabilityCandle('111', '112', '113', '99');
+    }
+    $candles[2] = viabilityCandle('99.1', '100.1', '113', '99');
+    $result = app(CandlePeriodViability::class)->evaluate($candles, 0.001, 0.02, 0.10);
+
+    expect($result['reversals_tested'])->toBe($tested)
+        ->and($result['reversals_rejected'])->toBe(1)
+        ->and($result['rejected_reversal_ratio'])->toBe(1 / $tested)
+        ->and($result['passes'])->toBe($passes);
+})->with([[15, 10, true], [14, 9, false]]);
+
+it('does not treat missing reversal evidence as a perfect zero rejection ratio', function () {
+    $candles = array_fill(0, 5, viabilityCandle('100', '100'));
+    $result = app(CandlePeriodViability::class)->evaluate($candles, 0.001, 0);
+
+    expect($result['reversals_tested'])->toBe(0)
+        ->and($result['rejected_reversal_ratio'])->toBeNull()
+        ->and($result['passes'])->toBeFalse();
+});

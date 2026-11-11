@@ -91,28 +91,29 @@ final class CandleQuality
      * The periods must be supplied from shortest to longest.
      * The optional diagnostics include rejection status and measured quality per period.
      *
-     * @param array<string, array<string, mixed>>|null $diagnostics
+     * @param  array<string, array<string, mixed>>|null  $diagnostics
      */
     public function choose(array $samplesByPeriod, float $tickSize, float $threshold = 0.7,
-        int $minimumCandles = 50, float $minimumCoverage = 0.8,
+        int $minimumCandles = 0, float $minimumCoverage = 0.8,
         float $maximumTrueFlatRatio = 1.0, ?array &$diagnostics = null): ?array
     {
-        if (! is_finite($threshold) || $threshold < 0 || $threshold > 1 || $minimumCandles < 1
+        if (! is_finite($threshold) || $threshold < 0 || $threshold > 1 || $minimumCandles < 0
             || ! is_finite($minimumCoverage) || $minimumCoverage < 0 || $minimumCoverage > 1
             || ! is_finite($maximumTrueFlatRatio) || $maximumTrueFlatRatio < 0 || $maximumTrueFlatRatio > 1) {
             throw new InvalidArgumentException('Invalid selection threshold, coverage, minimum sample size or true-flat limit.');
         }
 
         foreach ($samplesByPeriod as $period => $candles) {
-            if (count($candles) < $minimumCandles) {
+            if ($candles === [] || count($candles) < $minimumCandles) {
                 // Even an undersized recent window must enforce the true-flat cap.
-                // Otherwise a 14-day aggregate could conceal a bad recent week.
+                // Otherwise the fallback aggregate could conceal a bad recent window.
                 $metrics = $candles === [] ? ['sample_size' => 0] : $this->evaluate($candles, $tickSize);
                 $status = ($metrics['true_flat_ratio'] ?? 0.0) > $maximumTrueFlatRatio
                     ? 'flat_failed' : 'insufficient_candles';
                 if ($diagnostics !== null) {
                     $diagnostics[$period] = [...$metrics, 'status' => $status];
                 }
+
                 continue;
             }
 

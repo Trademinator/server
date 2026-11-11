@@ -3,13 +3,14 @@
 return [
     // Bump this whenever automatic period-selection semantics change. Existing
     // shared feeds keep their current period until the new version succeeds.
-    'selection_version' => env('CANDLE_PERIOD_SELECTION_VERSION', 4),
+    'selection_version' => max(5, (int) env('CANDLE_PERIOD_SELECTION_VERSION', 5)),
     'periods' => ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'],
     'quality_threshold' => env('CANDLE_PERIOD_QUALITY_THRESHOLD', 0.7),
     'minimum_coverage' => env('CANDLE_PERIOD_MINIMUM_COVERAGE', 0.8),
-    'minimum_candles' => env('CANDLE_PERIOD_MINIMUM_CANDLES', 50),
-    'evaluation_days' => env('CANDLE_PERIOD_EVALUATION_DAYS', 7),
-    'fallback_days' => env('CANDLE_PERIOD_FALLBACK_DAYS', 7),
+    'evaluation_days' => env('CANDLE_PERIOD_EVALUATION_DAYS', 60),
+    // Additional days, so the default fallback evaluates 90 days in total.
+    'fallback_days' => env('CANDLE_PERIOD_FALLBACK_DAYS', 30),
+    'max_rejected_reversal_ratio' => env('CANDLE_PERIOD_MAX_REJECTED_REVERSAL_RATIO', 0.10),
     'minimum_action_ratio' => env('CANDLE_PERIOD_MINIMUM_ACTION_RATIO', 0.02),
     // Hard cap on O=H=L=C candles, regardless of the blended quality score.
     'max_true_flat_ratio' => env('CANDLE_PERIOD_MAX_TRUE_FLAT_RATIO', 0.10),

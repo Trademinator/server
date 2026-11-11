@@ -113,7 +113,7 @@ it('reenters 5m when both independent windows satisfy flat, quality and action g
 
     expect($result['status'])->toBe('would_switch')
         ->and($result['selected_period'])->toBe('5m')
-        ->and($result['window_days'])->toBe(2)
+        ->and($result['window_days'])->toBe(1)
         ->and($feed->fresh()->selected_period)->toBe('15m');
     $olderWindow = collect($result['attempts'])->first(fn ($attempt) => ($attempt['confirmation_window'] ?? null) === 2);
     expect($olderWindow['status'])->toBe('passed')
@@ -140,7 +140,7 @@ it('does not queue backfills or change the period when a confirmation window is 
     expect($result['status'])->toBe('needs_backfill')
         ->and($result['selected_period'])->toBeNull()
         ->and($feed->fresh()->selected_period)->toBe('15m');
-    $last = collect($result['attempts'])->last();
+    $last = collect($result['attempts'])->first(fn ($attempt) => ($attempt['confirmation_window'] ?? null) === 2);
     expect($last['confirmation_window'])->toBe(2)
         ->and($last['status'])->toBe('needs_backfill');
 });

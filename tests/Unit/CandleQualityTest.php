@@ -13,9 +13,9 @@ it('selects the shortest period meeting the candle quality threshold', function 
         ->and($quality->evaluate($flat, 0.01)['true_flat_ratio'])->toBe(1.0);
 });
 
-it('rejects too-small samples rather than treating them as high quality', function () {
+it('allows a nonempty quality sample without an arbitrary default candle minimum', function () {
     $candle = ['open' => 1, 'high' => 2, 'low' => 1, 'close' => 2, 'volume' => 1];
-    expect((new CandleQuality)->choose(['1m' => [$candle]], 0.01))->toBeNull();
+    expect((new CandleQuality)->choose(['1m' => [$candle]], 0.01))->not->toBeNull();
 });
 
 it('rejects sparse candles despite strong price movement', function () {

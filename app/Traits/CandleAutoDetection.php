@@ -119,9 +119,9 @@ trait CandleAutoDetection
     // Keep alternating BUY/SELL pivots whose CLOSE movement clears twice the taker fee.
     // A rejected opposite candidate does not replace the last surviving pivot.
     // HOLD labels and reserved HOLD candidates are ignored completely.
-    public function remove_unprofitable_transactions(array|ActionCandleBuffer &$tickers, mixed $taker_fee, ?ActionLabelCursor $progress = null): array|ActionCandleBuffer
+    public function remove_unprofitable_transactions(array|ActionCandleBuffer &$tickers, mixed $taker_fee, ?ActionLabelCursor $progress = null, ?array &$reversals = null): array|ActionCandleBuffer
     {
-        return $this->candle_auto_prune_trade_actions($tickers, $taker_fee, $progress);
+        return $this->candle_auto_prune_trade_actions($tickers, $taker_fee, $progress, $reversals);
     }
 
     // Remove SELL -> BUY zigzags whose CLOSE movement cannot clear twice the one-side taker fee.
@@ -287,7 +287,7 @@ trait CandleAutoDetection
     }
 
     /** Process BUY/SELL candidates against the last surviving trade pivot. */
-    private function candle_auto_prune_trade_actions(array|ActionCandleBuffer &$tickers, mixed $taker_fee, ?ActionLabelCursor $progress = null): array|ActionCandleBuffer
+    private function candle_auto_prune_trade_actions(array|ActionCandleBuffer &$tickers, mixed $taker_fee, ?ActionLabelCursor $progress = null, ?array &$reversals = null): array|ActionCandleBuffer
     {
         $minimumMovement = $this->candle_auto_double_taker_fee($taker_fee);
         $scale = $this->precisionPolicy()->minimumScale;
@@ -354,7 +354,13 @@ trait CandleAutoDetection
                 ? bcsub(bcdiv($candidateClose, $survivorClose, $scale), '1', $scale)
                 : bcsub('1', bcdiv($candidateClose, $survivorClose, $scale), $scale);
 
+            if ($reversals !== null) {
+                $reversals['tested']++;
+            }
             if (bccomp($movement, $minimumMovement, $scale) <= 0) {
+                if ($reversals !== null) {
+                    $reversals['rejected']++;
+                }
                 unset($tickers[$index]['action']);
 
                 continue;
