@@ -19,6 +19,11 @@ final class BuildCheckpoint
 
     public const LEASE_SECONDS = 90;
 
+    // Scope columns are observability metadata, not checkpoint-state semantics.
+    // Update this digest when ownership/state/chunk behavior changes so queued
+    // work is invalidated deliberately, not by unrelated source formatting.
+    private const PROTOCOL_SOURCE_SHA256 = '14cf41b6e1d7714ffca7651b1e40f2bed5208a9c296ccdeac6c48700e4405827';
+
     public array $state;
 
     private Lock $lock;
@@ -27,13 +32,21 @@ final class BuildCheckpoint
 
     private array $writers = [];
 
+    private array $scope;
+
     private int $operations = 0;
 
     public readonly string $key;
 
     public function __construct(private array $identity, private ?float $deadline = null)
     {
-        $this->key = hash('sha256', self::encode([self::VERSION, $identity]));
+        $this->key = self::keyFor($identity);
+        $this->scope = [
+            'kind' => isset($identity['kind']) ? (string) $identity['kind'] : null,
+            'exchange' => isset($identity['exchange']) ? (string) $identity['exchange'] : null,
+            'symbol' => isset($identity['symbol']) ? (string) $identity['symbol'] : null,
+            'period' => isset($identity['period']) ? (string) $identity['period'] : null,
+        ];
         $this->lock = Cache::lock('trademinator:checkpoint:'.$this->key, self::LEASE_SECONDS);
         if (! $this->lock->get()) {
             throw new BuildPaused('This build is already running on another worker.');
@@ -45,7 +58,7 @@ final class BuildCheckpoint
             $this->state = DB::transaction(function (): array {
                 $empty = self::encode([]);
                 DB::table('knowledge_build_checkpoints')->insertOrIgnore([
-                    'build_key' => $this->key, 'owner' => $this->owner,
+                    'build_key' => $this->key, 'owner' => $this->owner, ...$this->scope,
                     'state' => $empty, 'sha256' => hash('sha256', $empty), 'updated_at' => now(),
                 ]);
                 $row = DB::table('knowledge_build_checkpoints')->where('build_key', $this->key)->lockForUpdate()->first();
@@ -55,7 +68,8 @@ final class BuildCheckpoint
                 if (! $this->lock->isOwnedByCurrentProcess()) {
                     throw new RuntimeException('Build checkpoint lease expired before ownership transfer.');
                 }
-                DB::table('knowledge_build_checkpoints')->where('build_key', $this->key)->update(['owner' => $this->owner]);
+                DB::table('knowledge_build_checkpoints')->where('build_key', $this->key)
+                    ->update(['owner' => $this->owner, ...$this->scope]);
 
                 return json_decode($row->state, true, flags: JSON_THROW_ON_ERROR);
             });
@@ -66,6 +80,11 @@ final class BuildCheckpoint
             $this->close();
             throw $error;
         }
+    }
+
+    public static function keyFor(array $identity): string
+    {
+        return hash('sha256', self::encode([self::VERSION, $identity]));
     }
 
     public static function implementation(string $kind): string
@@ -82,7 +101,11 @@ final class BuildCheckpoint
                 'app/Domain/Research/FeatureSchema.php', 'app/Domain/Intelligence/PatternCatalog.php'];
         }
 
-        return hash('sha256', implode('', array_map(fn (string $file): string => hash_file('sha256', base_path($file)), $files)));
+        return hash('sha256', implode('', array_map(
+            fn (string $file): string => $file === 'app/Domain/Intelligence/BuildCheckpoint.php'
+                ? self::PROTOCOL_SOURCE_SHA256 : hash_file('sha256', base_path($file)),
+            $files
+        )));
     }
 
     public static function encode(mixed $value): string

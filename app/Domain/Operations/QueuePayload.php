@@ -28,7 +28,7 @@ final class QueuePayload
 
     private const STRINGS = [
         'exchange', 'symbol', 'period', 'marketId', 'historyId', 'gapId', 'requestId',
-        'datasetId', 'modelId', 'snapshotDataset', 'schema', 'week', 'mode', 'source',
+        'datasetId', 'modelId', 'snapshotDataset', 'schema', 'week', 'generation', 'mode', 'source',
         'leaseToken', 'cacheKey', 'transferId', 'uniqueLockOwner', 'dispatchLockOwner',
     ];
 
@@ -154,7 +154,7 @@ final class QueuePayload
             'available_at' => $availableAt, 'attempts' => (int) ($payload['attempts'] ?? 0),
             'timeout' => $payload['timeout'] ?? null, 'max_tries' => $payload['maxTries'] ?? null,
             'subscriber_count' => 0, 'manual' => null, 'priority_reason' => 'Waiting order',
-            'options' => $options, 'can_cancel' => $canCancel, 'cancel_reason' => $reason,
+            'options' => $options, 'can_cancel' => $canCancel, 'cancel_reason' => $reason, 'batched' => $batched,
             'can_move' => $state === 'waiting', 'chain_remaining' => (int) ($context['chain_remaining'] ?? 0),
             '_properties' => $properties, '_unique' => $unique, '_requests' => $context['requests'] ?? [],
         ];
