@@ -43,14 +43,16 @@ final class MarketPurge
         $snapshotIds = [];
 
         $this->collectDirectPeriods($exchange, $symbol, array_keys($marketIds), $periods);
+        foreach (array_keys($periods) as $period) {
+            $marketKeys[ModelStore::marketKey($exchange, $symbol, $period)] = true;
+        }
 
         if (Schema::hasTable('research_datasets')) {
-            foreach (DB::table('research_datasets')->select('dataset_id', 'manifest')->cursor() as $row) {
+            foreach (DB::table('research_datasets')->select('dataset_id', 'manifest')
+                ->where('manifest->exchange', $exchange)->where('manifest->symbol', $symbol)->cursor() as $row) {
                 $manifest = $this->json($row->manifest);
-                if ($this->belongs($manifest, $exchange, $symbol)) {
-                    $datasetIds[(string) $row->dataset_id] = true;
-                    $this->addPeriod($periods, $manifest['period'] ?? null);
-                }
+                $datasetIds[(string) $row->dataset_id] = true;
+                $this->addPeriod($periods, $manifest['period'] ?? null);
             }
         }
         $researchRoot = $this->configuredRoot('research.path');
@@ -69,35 +71,32 @@ final class MarketPurge
             }
         }
         if (Schema::hasTable('intelligence_models')) {
-            foreach (DB::table('intelligence_models')->select('model_id', 'dataset_id', 'market_key', 'report')->cursor() as $row) {
+            foreach (DB::table('intelligence_models')->select('model_id', 'dataset_id', 'market_key', 'report')
+                ->whereIn('market_key', array_keys($marketKeys))->cursor() as $row) {
                 $report = $this->json($row->report);
-                if ($this->belongs($report, $exchange, $symbol)) {
-                    $modelIds[(string) $row->model_id] = true;
-                    $datasetIds[(string) $row->dataset_id] = true;
-                    $marketKeys[(string) $row->market_key] = true;
-                    $this->addPeriod($periods, $report['period'] ?? null);
-                }
+                $modelIds[(string) $row->model_id] = true;
+                $datasetIds[(string) $row->dataset_id] = true;
+                $marketKeys[(string) $row->market_key] = true;
+                $this->addPeriod($periods, $report['period'] ?? null);
             }
         }
         if (Schema::hasTable('intelligence_tournaments')) {
-            foreach (DB::table('intelligence_tournaments')->select('dataset_id', 'market_key', 'report')->cursor() as $row) {
+            foreach (DB::table('intelligence_tournaments')->select('dataset_id', 'market_key', 'report')
+                ->whereIn('market_key', array_keys($marketKeys))->cursor() as $row) {
                 $report = $this->json($row->report);
-                if ($this->belongs($report, $exchange, $symbol)) {
-                    $datasetIds[(string) $row->dataset_id] = true;
-                    $marketKeys[(string) $row->market_key] = true;
-                    $this->addPeriod($periods, $report['period'] ?? null);
-                }
+                $datasetIds[(string) $row->dataset_id] = true;
+                $marketKeys[(string) $row->market_key] = true;
+                $this->addPeriod($periods, $report['period'] ?? null);
             }
         }
         if (Schema::hasTable('tournament_shadow_models')) {
-            foreach (DB::table('tournament_shadow_models')->select('shadow_model_id', 'dataset_id', 'market_key', 'metadata')->cursor() as $row) {
+            foreach (DB::table('tournament_shadow_models')->select('shadow_model_id', 'dataset_id', 'market_key', 'metadata')
+                ->whereIn('market_key', array_keys($marketKeys))->cursor() as $row) {
                 $metadata = $this->json($row->metadata);
-                if ($this->belongs($metadata, $exchange, $symbol)) {
-                    $shadowIds[(string) $row->shadow_model_id] = true;
-                    $datasetIds[(string) $row->dataset_id] = true;
-                    $marketKeys[(string) $row->market_key] = true;
-                    $this->addPeriod($periods, $metadata['period'] ?? null);
-                }
+                $shadowIds[(string) $row->shadow_model_id] = true;
+                $datasetIds[(string) $row->dataset_id] = true;
+                $marketKeys[(string) $row->market_key] = true;
+                $this->addPeriod($periods, $metadata['period'] ?? null);
             }
         }
 
@@ -137,25 +136,12 @@ final class MarketPurge
         $gapIds = $this->idsForMarkets('candle_gap_repairs', 'gap_id', array_keys($marketIds));
         $requestIds = $this->idsForMarkets('history_recovery_requests', 'request_id', array_keys($marketIds));
         $subscriptionIds = $this->idsForMarkets('market_subscriptions', 'market_subscription_id', array_keys($marketIds));
-        $signalIds = $this->idsForMarkets('market_signals', 'market_signal_id', array_keys($marketIds));
         $paperAccountIds = ! Schema::hasTable('client_paper_accounts') || $subscriptionIds === [] ? []
             : $this->set(DB::table('client_paper_accounts')->whereIn('market_subscription_id', array_keys($subscriptionIds))
                 ->pluck('client_paper_account_id')->all());
         $labelSetIds = ! Schema::hasTable('algorithmic_label_sets') ? []
             : $this->set(DB::table('algorithmic_label_sets')->where('exchange', $exchange)->where('symbol', $symbol)
                 ->pluck('label_set_id')->all());
-        $predictionIds = [];
-        if (Schema::hasTable('tournament_shadow_predictions')) {
-            $predictionIds = $this->set(DB::table('tournament_shadow_predictions')
-                ->where(function ($query) use ($shadowIds, $marketKeys): void {
-                    if ($shadowIds !== []) {
-                        $query->whereIn('shadow_model_id', array_keys($shadowIds));
-                    } else {
-                        $query->whereRaw('1 = 0');
-                    }
-                    $query->orWhereIn('market_key', array_keys($marketKeys));
-                })->pluck('shadow_prediction_id')->all());
-        }
         $archiveRows = Schema::hasTable('archive_catalog')
             ? DB::table('archive_catalog')->where('exchange', $exchange)->where('symbol', $symbol)
                 ->get(['archive_id', 'path'])->map(fn ($row): array => (array) $row)->all()
@@ -164,9 +150,8 @@ final class MarketPurge
             'exchange' => $exchangeIds, 'market' => $marketIds, 'dataset' => $datasetIds, 'model' => $modelIds,
             'shadow model' => $shadowIds, 'human snapshot' => $snapshotIds, 'history' => $historyIds,
             'gap' => $gapIds, 'history recovery request' => $requestIds,
-            'subscription' => $subscriptionIds, 'signal' => $signalIds,
-            'paper account' => $paperAccountIds, 'label set' => $labelSetIds,
-            'shadow prediction' => $predictionIds,
+            'subscription' => $subscriptionIds, 'paper account' => $paperAccountIds,
+            'label set' => $labelSetIds,
         ] as $description => $ids) {
             $this->assertUuidIds(array_keys($ids), $description);
         }
@@ -184,10 +169,11 @@ final class MarketPurge
             'exchange_ids' => array_keys($exchangeIds),
             'market_ids' => array_keys($marketIds),
             'subscription_ids' => array_keys($subscriptionIds),
-            'signal_ids' => array_keys($signalIds),
+            // Potentially huge historical IDs are deliberately not materialized.
+            'signal_ids' => [],
             'paper_account_ids' => array_keys($paperAccountIds),
             'label_set_ids' => array_keys($labelSetIds),
-            'shadow_prediction_ids' => array_keys($predictionIds),
+            'shadow_prediction_ids' => [],
             'periods' => array_keys($periods),
             'market_keys' => array_keys($marketKeys),
             'dataset_ids' => array_keys($datasetIds),
@@ -227,8 +213,33 @@ final class MarketPurge
             $delete('failed_jobs', fn ($q) => $in($q, 'id', $plan['failed_job_ids']));
             $delete('knowledge_build_checkpoints', fn ($q) => $in($q, 'build_key', $plan['checkpoint_keys']));
 
-            $delete('tournament_shadow_scores', fn ($q) => $in($q, 'shadow_prediction_id', $plan['shadow_prediction_ids']));
-            $delete('tournament_shadow_predictions', fn ($q) => $in($q, 'shadow_prediction_id', $plan['shadow_prediction_ids']));
+            $delete('tournament_shadow_scores', function ($q) use ($plan): void {
+                $q->whereIn('shadow_prediction_id', function ($subquery) use ($plan): void {
+                    $subquery->select('shadow_prediction_id')->from('tournament_shadow_predictions')
+                        ->where(function ($nested) use ($plan): void {
+                            if ($plan['shadow_model_ids'] !== []) {
+                                $nested->whereIn('shadow_model_id', $plan['shadow_model_ids']);
+                            } else {
+                                $nested->whereRaw('1 = 0');
+                            }
+                            if ($plan['market_keys'] !== []) {
+                                $nested->orWhereIn('market_key', $plan['market_keys']);
+                            }
+                        });
+                });
+            });
+            $delete('tournament_shadow_predictions', function ($q) use ($plan): void {
+                $q->where(function ($nested) use ($plan): void {
+                    if ($plan['shadow_model_ids'] !== []) {
+                        $nested->whereIn('shadow_model_id', $plan['shadow_model_ids']);
+                    } else {
+                        $nested->whereRaw('1 = 0');
+                    }
+                    if ($plan['market_keys'] !== []) {
+                        $nested->orWhereIn('market_key', $plan['market_keys']);
+                    }
+                });
+            });
             $delete('tournament_shadow_models', fn ($q) => $in($q, 'shadow_model_id', $plan['shadow_model_ids']));
 
             $delete('human_candle_labels', fn ($q) => $in($q, 'snapshot_id', $plan['snapshot_ids']));
@@ -254,26 +265,12 @@ final class MarketPurge
                 'market_action_label_analyses', 'market_suggestion_dismissals'] as $table) {
                 $delete($table, fn ($q) => $q->where('exchange', $plan['exchange'])->where('symbol', $plan['symbol']));
             }
-            $delete('client_paper_events', function ($q) use ($in, $plan): void {
-                $q->where(function ($nested) use ($in, $plan): void {
-                    $in($nested, 'client_paper_account_id', $plan['paper_account_ids']);
-                    if ($plan['signal_ids'] !== []) {
-                        $nested->orWhereIn('market_signal_id', $plan['signal_ids']);
-                    }
-                });
-            });
+            $delete('client_paper_events', fn ($q) => $in($q, 'client_paper_account_id', $plan['paper_account_ids']));
             $delete('client_paper_accounts', fn ($q) => $in($q, 'client_paper_account_id', $plan['paper_account_ids']));
-            $delete('client_execution_reports', function ($q) use ($in, $plan): void {
-                $q->where(function ($nested) use ($in, $plan): void {
-                    $in($nested, 'market_subscription_id', $plan['subscription_ids']);
-                    if ($plan['signal_ids'] !== []) {
-                        $nested->orWhereIn('market_signal_id', $plan['signal_ids']);
-                    }
-                });
-            });
+            $delete('client_execution_reports', fn ($q) => $in($q, 'market_subscription_id', $plan['subscription_ids']));
             $delete('client_market_settings', fn ($q) => $in($q, 'market_subscription_id', $plan['subscription_ids']));
             $delete('dashboard_market_favorites', fn ($q) => $in($q, 'market_subscription_id', $plan['subscription_ids']));
-            $delete('market_signals', fn ($q) => $in($q, 'market_signal_id', $plan['signal_ids']));
+            $delete('market_signals', fn ($q) => $in($q, 'market_id', $plan['market_ids']));
             $delete('market_subscriptions', fn ($q) => $in($q, 'market_subscription_id', $plan['subscription_ids']));
             $delete('coin_gecko_market_mappings', fn ($q) => $in($q, 'market_id', $plan['market_ids']));
             $delete('market_history_changes', fn ($q) => $in($q, 'history_id', $plan['history_ids']));
@@ -703,8 +700,6 @@ final class MarketPurge
         }
         foreach ([
             'algorithmic_label_chunks' => ['label_set_id', $plan['label_set_ids']],
-            'tournament_shadow_predictions' => ['shadow_prediction_id', $plan['shadow_prediction_ids']],
-            'tournament_shadow_scores' => ['shadow_prediction_id', $plan['shadow_prediction_ids']],
             'human_training_reviews' => ['snapshot_id', $plan['snapshot_ids']],
             'human_candle_labels' => ['snapshot_id', $plan['snapshot_ids']],
             'dashboard_market_favorites' => ['market_subscription_id', $plan['subscription_ids']],
@@ -715,23 +710,44 @@ final class MarketPurge
         ] as $table => [$column, $ids]) {
             $counts[$table] = ! Schema::hasTable($table) || $ids === [] ? 0 : DB::table($table)->whereIn($column, $ids)->count();
         }
+        if (Schema::hasTable('tournament_shadow_predictions')) {
+            $predictionScope = function ($query) use ($plan): void {
+                $query->where(function ($nested) use ($plan): void {
+                    if ($plan['shadow_model_ids'] !== []) {
+                        $nested->whereIn('shadow_model_id', $plan['shadow_model_ids']);
+                    } else {
+                        $nested->whereRaw('1 = 0');
+                    }
+                    if ($plan['market_keys'] !== []) {
+                        $nested->orWhereIn('market_key', $plan['market_keys']);
+                    }
+                });
+            };
+            $counts['tournament_shadow_predictions'] = tap(DB::table('tournament_shadow_predictions'), $predictionScope)->count();
+            if (Schema::hasTable('tournament_shadow_scores')) {
+                $counts['tournament_shadow_scores'] = DB::table('tournament_shadow_scores')
+                    ->whereIn('shadow_prediction_id', function ($subquery) use ($plan): void {
+                        $subquery->select('shadow_prediction_id')->from('tournament_shadow_predictions')
+                            ->where(function ($nested) use ($plan): void {
+                                if ($plan['shadow_model_ids'] !== []) {
+                                    $nested->whereIn('shadow_model_id', $plan['shadow_model_ids']);
+                                } else {
+                                    $nested->whereRaw('1 = 0');
+                                }
+                                if ($plan['market_keys'] !== []) {
+                                    $nested->orWhereIn('market_key', $plan['market_keys']);
+                                }
+                            });
+                    })->count();
+            }
+        }
         if (Schema::hasTable('client_execution_reports')) {
-            $counts['client_execution_reports'] = DB::table('client_execution_reports')->where(function ($query) use ($plan): void {
-                $plan['subscription_ids'] === [] ? $query->whereRaw('1 = 0')
-                    : $query->whereIn('market_subscription_id', $plan['subscription_ids']);
-                if ($plan['signal_ids'] !== []) {
-                    $query->orWhereIn('market_signal_id', $plan['signal_ids']);
-                }
-            })->count();
+            $counts['client_execution_reports'] = $plan['subscription_ids'] === [] ? 0
+                : DB::table('client_execution_reports')->whereIn('market_subscription_id', $plan['subscription_ids'])->count();
         }
         if (Schema::hasTable('client_paper_events')) {
-            $counts['client_paper_events'] = DB::table('client_paper_events')->where(function ($query) use ($plan): void {
-                $plan['paper_account_ids'] === [] ? $query->whereRaw('1 = 0')
-                    : $query->whereIn('client_paper_account_id', $plan['paper_account_ids']);
-                if ($plan['signal_ids'] !== []) {
-                    $query->orWhereIn('market_signal_id', $plan['signal_ids']);
-                }
-            })->count();
+            $counts['client_paper_events'] = $plan['paper_account_ids'] === [] ? 0
+                : DB::table('client_paper_events')->whereIn('client_paper_account_id', $plan['paper_account_ids'])->count();
         }
         $counts['files_present'] = count(array_filter($plan['files'], fn ($entry) => file_exists($entry['path']) || is_link($entry['path'])));
 
