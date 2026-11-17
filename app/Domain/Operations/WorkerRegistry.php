@@ -190,14 +190,25 @@ LUA, 3, $lease['slot_key'], $this->recordKey($lease['worker_id']), self::PREFIX.
     }
 
     /** Acquire before inspecting all affected workers, closing the start/recovery race. */
-    public function beginMaintenance(): string
+    public function beginMaintenance(int $seconds = 600): string
     {
         $owner = (string) Str::uuid();
-        if (! $this->redis()->set(self::PREFIX.'maintenance', $owner, 'EX', 600, 'NX')) {
+        $seconds = max(60, min(86400, $seconds));
+        if (! $this->redis()->set(self::PREFIX.'maintenance', $owner, 'EX', $seconds, 'NX')) {
             throw new RuntimeException('Another queue maintenance operation is active.');
         }
 
         return $owner;
+    }
+
+    public function refreshMaintenance(string $owner, int $seconds = 600): bool
+    {
+        $seconds = max(60, min(86400, $seconds));
+
+        return (int) $this->redis()->eval(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) end return 0",
+            1, self::PREFIX.'maintenance', $owner, $seconds
+        ) === 1;
     }
 
     public function maintenanceKey(): string

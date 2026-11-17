@@ -66,6 +66,7 @@ Each link contains the exact signature, parameter meanings, execution/side-effec
 | Exchanges and subscriptions | [`trademinator:exchange`](#trademinatorexchange) |
 | Exchanges and subscriptions | [`trademinator:refresh-exchanges`](#trademinatorrefresh-exchanges) |
 | Exchanges and subscriptions | [`trademinator:market-subscription`](#trademinatormarket-subscription) |
+| Exchanges and subscriptions | [`trademinator:purge-market`](#trademinatorpurge-market) |
 | Candles and history | [`trademinator:dispatch-market-feeds`](#trademinatordispatch-market-feeds) |
 | Candles and history | [`trademinator:fetch-ohlcv`](#trademinatorfetch-ohlcv) |
 | Candles and history | [`trademinator:sync-ohlcv`](#trademinatorsync-ohlcv) |
@@ -187,6 +188,39 @@ php artisan trademinator:market-subscription unsubscribe user@example.com kraken
 ```
 
 Implementation: [`ManageMarketSubscriptions.php`](../app/Console/Commands/ManageMarketSubscriptions.php).
+
+## trademinator:purge-market
+
+Signature: `trademinator:purge-market {exchange : Configured CCXT exchange ID} {symbol : Exact market symbol, e.g. BTC/USD} {--apply : Permanently erase the market and every canonical server artifact} {--workers-stopped : Confirm that workers with lost contact were stopped on every host}`
+
+Description: Audit or permanently erase one exchange market and all canonical server data
+
+Permanently erase one exact exchange/symbol pair across every stored candle period. The default invocation is a read-only audit. It reports subscriptions, feeds, OHLCV, features, labels, human-training rows, knowledge requests/checkpoints, signals and dependent Client records, intelligence models and sidecars, research datasets, tournaments, shadow models, cold ticker archives, failed jobs, and queued/delayed/reserved work associated with the market.
+
+Deploy the patch and run its migration on every Server/worker host before using the command; the metadata-only checkpoint scope upgrade preserves existing checkpoint identities.
+
+`--apply` is intentionally strict. Stop `schedule:run` and the affected managed workers on every host before applying the purge. The command acquires the shared queue-maintenance guard, verifies worker state, removes matching work from the default, features, history, intelligence, signals, and tournament queues, releases the jobs' owned locks/leases through normal cancellation cleanup, refuses jobs owned by coordinated Laravel batches until their batch is cancelled, writes a private audit under `storage/app/private/market-purges`, deletes database records in dependency-safe order, removes private artifacts, invalidates caches, and verifies that nothing canonical remains. `--workers-stopped` may acknowledge only lost-contact registry records after the operator has verified the processes are stopped; it never bypasses a live slot lease.
+
+This is pair-wide, not period-only. Purging `kraken 'BTC/USD'` removes `1m`, `5m`, `1h`, and every other period stored for that exact exchange market. A later subscription starts from a new market row with no retained Server history or intelligence. The configured exchange itself is preserved.
+
+Portable export packages, external backups, the command's private audit, and existing operational logs are immutable records and are not rewritten. Remove exported/off-server copies separately when the operational requirement also covers them. Shared CoinGecko context snapshots are provider observations reused by any market with the same coin/quote, so the purge removes the target mapping and target features but preserves those shared rows.
+
+| Parameter | Default / requirement | Explanation |
+| --- | --- | --- |
+| `exchange` | Required | Exact configured CCXT ID. |
+| `symbol` | Required | Exact pair on that exchange; preserve case and quote the slash-containing value. |
+| `--apply` | Off | Without it, print the bounded deletion plan only. With it, irreversibly remove canonical Server state. |
+| `--workers-stopped` | Off | Use only after verifying every host when stale/lost-contact worker records prevent the safety check. |
+
+```bash
+# Read-only inventory first.
+php artisan trademinator:purge-market kraken 'BTC/USD'
+
+# Stop the scheduler and affected workers on every host, review the dry run, then apply.
+php artisan trademinator:purge-market kraken 'BTC/USD' --apply
+```
+
+Implementation: [`PurgeMarket.php`](../app/Console/Commands/PurgeMarket.php).
 
 ## trademinator:dispatch-market-feeds
 

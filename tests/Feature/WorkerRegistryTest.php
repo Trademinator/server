@@ -133,6 +133,17 @@ it('blocks new workers and claims during maintenance while allowing an owned run
     expect($workers->acquire('redis', ['features'], '2'))->not->toBeNull();
 });
 
+it('renews only the owned queue-maintenance guard', function (): void {
+    $workers = new WorkerRegistry;
+    $owner = $workers->beginMaintenance(60);
+    expect($this->workerRedis->ttl($workers->maintenanceKey()))->toBeBetween(1, 60)
+        ->and($workers->refreshMaintenance('wrong-owner', 120))->toBeFalse()
+        ->and($workers->refreshMaintenance($owner, 120))->toBeTrue()
+        ->and($this->workerRedis->ttl($workers->maintenanceKey()))->toBeBetween(100, 120);
+    $workers->endMaintenance($owner);
+    expect($this->workerRedis->exists($workers->maintenanceKey()))->toBe(0);
+});
+
 it('requires an explicit stopped-worker assertion for lost contact during recovery', function (): void {
     $this->freezeTime();
     $workers = new WorkerRegistry;
