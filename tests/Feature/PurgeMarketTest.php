@@ -321,6 +321,57 @@ it('erases the selected market while preserving another market', function () {
         ->and(is_file($other['data']))->toBeTrue();
 });
 
+it('keeps large signal and shadow history out of the purge plan', function () {
+    $target = purgeMarketFixture('BTC/USD');
+    $signals = [];
+    $predictions = [];
+    $scores = [];
+    for ($i = 0; $i < 2000; $i++) {
+        $prediction = (string) Str::uuid7();
+        $signals[] = [
+            'market_signal_id' => (string) Str::uuid7(), 'market_id' => $target['market']->market_id,
+            'snapshot_key' => hash('sha256', 'bulk-signal|'.$i), 'period' => '1m', 'model_id' => $target['model'],
+            'decision_at_ms' => 100000 + $i, 'recorded_at_ms' => 200000 + $i, 'is_change' => false,
+            'action' => 'hodl', 'reason' => 'fixture', 'payload' => '{}',
+        ];
+        $predictions[] = [
+            'shadow_prediction_id' => $prediction, 'shadow_model_id' => $target['shadow'],
+            'market_key' => $target['marketKey'], 'decision_at_ms' => 100000 + $i,
+            'predicted_at_ms' => 200000 + $i, 'prediction' => 'buy', 'supported' => true,
+            'confidence' => '0.9', 'probabilities' => '{}', 'reason' => 'supported',
+            'feature_sha256' => str_repeat('c', 64), 'created_at' => now(), 'updated_at' => now(),
+        ];
+        $scores[] = [
+            'shadow_prediction_id' => $prediction, 'actual' => 'buy', 'label_available_at_ms' => 300000 + $i,
+            'scored_at_ms' => 400000 + $i, 'correct' => true, 'created_at' => now(), 'updated_at' => now(),
+        ];
+    }
+    foreach (array_chunk($signals, 250) as $rows) {
+        DB::table('market_signals')->insert($rows);
+    }
+    foreach (array_chunk($predictions, 250) as $rows) {
+        DB::table('tournament_shadow_predictions')->insert($rows);
+    }
+    foreach (array_chunk($scores, 250) as $rows) {
+        DB::table('tournament_shadow_scores')->insert($rows);
+    }
+
+    $service = app(MarketPurge::class);
+    $plan = $service->plan('kraken', 'BTC/USD');
+
+    expect($plan['signal_ids'])->toBe([])
+        ->and($plan['shadow_prediction_ids'])->toBe([])
+        ->and($plan['counts']['market_signals'])->toBe(2001)
+        ->and($plan['counts']['tournament_shadow_predictions'])->toBe(2002)
+        ->and($plan['counts']['tournament_shadow_scores'])->toBe(2002);
+
+    $service->applyDatabase($plan);
+
+    expect(DB::table('market_signals')->where('market_id', $target['market']->market_id)->count())->toBe(0)
+        ->and(DB::table('tournament_shadow_predictions')->where('market_key', $target['marketKey'])->count())->toBe(0)
+        ->and(DB::table('tournament_shadow_scores')->count())->toBe(0);
+});
+
 it('stores checkpoint scope so a market purge can remove resumable work', function () {
     $checkpoint = new BuildCheckpoint([
         'kind' => 'labels', 'exchange' => 'kraken', 'symbol' => 'BTC/USD', 'period' => '1m',
