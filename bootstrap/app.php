@@ -9,6 +9,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -25,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'server-owner' => EnsureServerOwner::class,
             'client-auth' => AuthenticateClientApiKey::class,
         ]);
+        $middleware->prependToPriorityList(ThrottleRequests::class, AuthenticateClientApiKey::class);
         $middleware->prependToPriorityList(SubstituteBindings::class, EnsureServerOwner::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
