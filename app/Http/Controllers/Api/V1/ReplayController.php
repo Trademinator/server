@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Domain\Client\ClientMarketAccess;
 use App\Domain\Client\ReplayIntelligence;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\Intelligence\ModelUnavailable;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Http\Controllers\Controller;
 use App\Models\Market;
@@ -75,7 +76,7 @@ final class ReplayController extends Controller
             'gaps' => $gaps, 'execution_detail' => 'ohlcv_approximate']);
     }
 
-    public function models(Request $request, string $subscription, ClientMarketAccess $access): JsonResponse
+    public function models(Request $request, string $subscription, ClientMarketAccess $access, ModelStore $modelStore): JsonResponse
     {
         $item = $access->owned($request->user(), $subscription);
         $data = $request->validate(['model_exchange' => ['required', 'string', 'regex:/^[a-z][a-z0-9]{1,40}$/D'],
@@ -83,10 +84,20 @@ final class ReplayController extends Controller
         $key = ModelStore::marketKey($data['model_exchange'], $item->market->symbol, $data['period']);
         $models = [];
         $head = DB::table('intelligence_heads')->where('market_key', $key)->value('model_id');
-        foreach (DB::table('intelligence_models')->where('market_key', $key)->orderByDesc('created_at')->orderBy('model_id')->limit(100)->get() as $m) {
+        $records = DB::table('intelligence_models')->where('market_key', $key)->orderByDesc('created_at')->orderBy('model_id')->limit(100)->get();
+        if ($head !== null && ! $records->contains('model_id', $head)) {
+            $retainedHead = DB::table('intelligence_models')->where('market_key', $key)->where('model_id', $head)->first();
+            if ($retainedHead !== null) {
+                $records->push($retainedHead);
+            }
+        }
+        foreach ($records as $m) {
             $report = json_decode($m->report, true);
+            $isHead = $m->model_id === $head;
+            $unavailableReason = $isHead ? $modelStore->currentUnavailableReason($m->model_id, $m->sha256, $report) : null;
             $models[] = ['model_id' => $m->model_id, 'family' => 'production', 'algorithm' => 'production_fusion',
-                'current' => $m->model_id === $head, 'published_at_ms' => strtotime($m->created_at) * 1000,
+                'current' => $isHead && $unavailableReason === null, 'unavailable_reason' => $unavailableReason,
+                'published_at_ms' => strtotime($m->created_at) * 1000,
                 'trained_until_ms' => $report['trained_as_of_ms'] ?? null, 'sha256' => $m->sha256, 'status' => $m->status];
         }
         foreach (DB::table('tournament_shadow_models')->where('market_key', $key)->orderByDesc('published_at_ms')->orderBy('shadow_model_id')->limit(100)->get() as $m) {
@@ -124,6 +135,9 @@ final class ReplayController extends Controller
         }
         try {
             return response()->json($replay->infer($data, $item->market->symbol));
+        } catch (ModelUnavailable $e) {
+            return response()->json(['api_version' => 1, 'code' => 'model_unavailable',
+                'message' => $e->getMessage(), 'model_id' => $e->modelId, 'reason' => $e->reason], 409);
         } catch (\InvalidArgumentException $e) {
             throw ValidationException::withMessages(['candles' => $e->getMessage()]);
         }

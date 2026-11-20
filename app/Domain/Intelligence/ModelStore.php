@@ -31,6 +31,30 @@ final class ModelStore
             && ($report['trained_as_of_ms'] ?? 0) > KnowledgeWindow::fromMs(now()->getTimestampMs());
     }
 
+    /** Check current eligibility and the model header without hydrating knowledge sidecars. */
+    public function currentUnavailableReason(string $id, string $expectedHash, ?array $report): ?string
+    {
+        if (! self::isReadyReport($report)) {
+            return $report !== null
+                && ($report['trained_as_of_ms'] ?? 0) <= KnowledgeWindow::fromMs(now()->getTimestampMs())
+                ? 'stale_model' : 'model_not_ready';
+        }
+
+        $path = $this->path($id);
+        if (! is_file($path)) {
+            return 'model_artifact_missing';
+        }
+        if (! is_readable($path)) {
+            return 'model_artifact_unreadable';
+        }
+        $actualHash = @hash_file('sha256', $path);
+        if ($actualHash === false) {
+            return 'model_artifact_unreadable';
+        }
+
+        return hash_equals($expectedHash, $actualHash) ? null : 'model_checksum_mismatch';
+    }
+
     /** @return array<string, array{ready: bool, reason: string}> */
     public static function knnReadiness(?array $report): array
     {
@@ -441,9 +465,18 @@ final class ModelStore
     {
         $path = $this->path($id);
         $record = DB::table('intelligence_models')->where('model_id', $id)->first();
-        $bytes = is_file($path) ? file_get_contents($path) : false;
-        if ($record === null || $bytes === false || ! hash_equals($record->sha256, hash('sha256', $bytes))) {
-            throw new RuntimeException('Intelligence model is missing or its checksum does not match.');
+        if ($record === null) {
+            throw new ModelUnavailable($id, 'model_record_missing');
+        }
+        if (! is_file($path)) {
+            throw new ModelUnavailable($id, 'model_artifact_missing');
+        }
+        $bytes = is_readable($path) ? @file_get_contents($path) : false;
+        if ($bytes === false) {
+            throw new ModelUnavailable($id, 'model_artifact_unreadable');
+        }
+        if (! hash_equals($record->sha256, hash('sha256', $bytes))) {
+            throw new ModelUnavailable($id, 'model_checksum_mismatch');
         }
         // Check independently stored JSON before any old Rubix __unserialize() can run.
         $this->requireCompatibleRubix(json_decode($record->report, true, flags: JSON_THROW_ON_ERROR), $id);

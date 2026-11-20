@@ -4,8 +4,10 @@ namespace App\Domain\Client;
 
 use App\Domain\Features\FeatureEngine;
 use App\Domain\Intelligence\IntelligenceTrainer;
+use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\MarketIntelligence;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\Intelligence\ModelUnavailable;
 use App\Domain\Intelligence\NormalizedVector;
 use App\Domain\Intelligence\OutcomeKnn;
 use App\Domain\Intelligence\PatternCatalog;
@@ -76,6 +78,9 @@ final class ReplayIntelligence
             }
             if ($historical && max((int) $model['trained_as_of_ms'], (int) $model['available_at_ms']) >= $at) {
                 throw ValidationException::withMessages(['model_id' => 'The historical model must precede the supplied decision.']);
+            }
+            if ((int) $model['trained_as_of_ms'] <= KnowledgeWindow::fromMs($inferenceAt)) {
+                throw new ModelUnavailable($data['model_id'], 'stale_model');
             }
             if (($model['lead_lag_keys'] ?? []) !== []) {
                 $result = [...WeightedKnn::abstain('replay_lead_lag_context_unavailable'), ...$context];
