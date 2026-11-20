@@ -4,6 +4,7 @@ use App\Domain\Client\RiskFactorCalculator;
 use App\Models\ClientApiKey;
 use App\Models\MarketPreferenceProfile;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -153,8 +154,8 @@ it('returns an error rather than a default for undecryptable or malformed saved 
 });
 
 it('uses a read-only GET route with the existing authentication and throttle middleware', function () {
-    $route = app('router')->getRoutes()->match(\Illuminate\Http\Request::create('/api/v1/client/risk-factor', 'GET'));
+    $route = app('router')->getRoutes()->match(Request::create('/api/v1/client/risk-factor', 'GET'));
     expect($route->methods())->toBe(['GET', 'HEAD'])
-        ->and($route->gatherMiddleware())->toContain('client-auth', 'throttle:120,1');
+        ->and($route->gatherMiddleware())->toContain('client-auth', 'throttle:120,1,client-api');
     $this->postJson('/api/v1/client/risk-factor')->assertStatus(405);
 });
