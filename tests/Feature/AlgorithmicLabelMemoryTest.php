@@ -151,7 +151,10 @@ it('keeps pre-upgrade immutable JSON label sets readable', function () {
 it('builds and reloads a full year of Action and Outcome labels within a busy 512 MiB worker', function () {
     $process = new Process([PHP_BINARY, '-d', 'memory_limit=512M',
         base_path('tests/Support/algorithmic-label-memory-check.php'), '527041', '192'], base_path());
-    $process->setTimeout(240);
+    // This verifies memory and exact labels, not the machine's CPU or disk speed.
+    // The child reports actual work on stderr; stalled work still times out.
+    $process->setTimeout(null);
+    $process->setIdleTimeout(240);
 
     $process->run();
 

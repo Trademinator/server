@@ -397,11 +397,35 @@ it('refuses to purge a dataset that is also linked to another market', function 
         ->toThrow(RuntimeException::class, 'cross-market reference');
 });
 
-it('keeps resumable checkpoint identities stable for the metadata-only scope upgrade', function () {
-    expect(BuildCheckpoint::implementation('labels'))
-        ->toBe('224dd92355365c99f239d5c81b02d5c764237646ea4f78670343d099292c9794')
-        ->and(BuildCheckpoint::implementation('snapshot'))
-        ->toBe('766d6a945f0fef706ba4ffb32fe047ddddd4c6aec264795a3ac537ad6470ae6c');
+it('ignores checkpoint metadata source edits but invalidates identities when build dependencies change', function () {
+    $originalBase = base_path();
+    $fixture = $this->purgeRoot.'/implementation';
+    File::ensureDirectoryExists($fixture, 0700);
+    File::copyDirectory(base_path('app'), $fixture.'/app');
+    File::copy(base_path('composer.lock'), $fixture.'/composer.lock');
+
+    try {
+        $this->app->setBasePath($fixture);
+        $labels = BuildCheckpoint::implementation('labels');
+        $snapshot = BuildCheckpoint::implementation('snapshot');
+
+        // Scope metadata is excluded through the explicit checkpoint protocol digest.
+        File::append(base_path('app/Domain/Intelligence/BuildCheckpoint.php'), "\n// Scope metadata edit.\n");
+        expect(BuildCheckpoint::implementation('labels'))->toBe($labels);
+        expect(BuildCheckpoint::implementation('snapshot'))->toBe($snapshot);
+
+        File::append(base_path('app/Domain/Intelligence/ActionAutoLabeler.php'), "\n// Label implementation edit.\n");
+        $changedLabels = BuildCheckpoint::implementation('labels');
+        $changedSnapshot = BuildCheckpoint::implementation('snapshot');
+        expect($changedLabels)->not->toBe($labels);
+        expect($changedSnapshot)->not->toBe($snapshot);
+
+        File::append(base_path('app/Domain/Research/DatasetSnapshotBuilder.php'), "\n// Snapshot implementation edit.\n");
+        expect(BuildCheckpoint::implementation('labels'))->toBe($changedLabels);
+        expect(BuildCheckpoint::implementation('snapshot'))->not->toBe($changedSnapshot);
+    } finally {
+        $this->app->setBasePath($originalBase);
+    }
 });
 
 it('refuses malformed persisted identifiers before constructing artifact paths', function () {

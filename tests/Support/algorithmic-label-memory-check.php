@@ -10,12 +10,23 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Tests\Support\TestEnvironment;
 
 require dirname(__DIR__, 2).'/vendor/autoload.php';
 
 TestEnvironment::prepare();
+
+$lastProgressAt = null;
+$progress = static function (string $stage, bool $force = false) use (&$lastProgressAt): void {
+    $now = hrtime(true);
+    if ($force || $lastProgressAt === null || $now - $lastProgressAt >= 5_000_000_000) {
+        fwrite(STDERR, "[memory-check] {$stage}\n");
+        $lastProgressAt = $now;
+    }
+};
+$progress('starting');
 
 $count = (int) ($argv[1] ?? 527041);
 $retainedMiB = (int) ($argv[2] ?? 192);
@@ -40,9 +51,13 @@ config([
 ]);
 DB::purge();
 Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]);
-$app->instance(TickerRepository::class, new class($count) extends TickerRepository
+$progress('database ready', true);
+Event::listen('knowledge.checkpoint.saved', static function (string $key, array $state) use ($progress): void {
+    $progress('checkpoint '.($state['stage'] ?? 'saved'));
+});
+$app->instance(TickerRepository::class, new class($count, $progress) extends TickerRepository
 {
-    public function __construct(private int $count) {}
+    public function __construct(private int $count, private Closure $progress) {}
 
     public function streamHistory(string $exchange, string $symbol, string $period, ?int $fromMs = null, ?int $toMs = null): Generator
     {
@@ -50,6 +65,9 @@ $app->instance(TickerRepository::class, new class($count) extends TickerReposito
             $timestamp = 1704067200000 + $i * 60000;
             if ($timestamp < ($fromMs ?? 0) || $timestamp > ($toMs ?? PHP_INT_MAX)) {
                 continue;
+            }
+            if ($i % 4096 === 0) {
+                ($this->progress)('source candle '.$i);
             }
             yield $timestamp => ['open' => '10000', 'high' => '10100', 'low' => '9900',
                 'close' => $i % 2 === 0 ? '10070' : '9930', 'volume' => '1.00000000'];
@@ -60,9 +78,11 @@ $retained = str_repeat('x', $retainedMiB * 1024 * 1024);
 $started = hrtime(true);
 $asOf = 1704067200000 + $count * 60000;
 $set = app(AlgorithmicLabelBuilder::class)->build('kraken', 'BTC/USD', '1m', $asOf);
+$progress('labels published', true);
 $id = $set['label_set_id'];
 unset($set);
 $set = app(AlgorithmicLabelSets::class)->find('kraken', 'BTC/USD', '1m', $asOf);
+$progress('labels reloaded', true);
 $digests = $counts = [];
 foreach (LabelChunkWriter::KINDS as $kind) {
     $hash = hash_init('sha256');
@@ -70,9 +90,13 @@ foreach (LabelChunkWriter::KINDS as $kind) {
     foreach ($set[$kind] as $timestamp => $value) {
         hash_update($hash, $timestamp.':'.json_encode($value, JSON_THROW_ON_ERROR)."\n");
         $counts[$kind]++;
+        if ($counts[$kind] % 4096 === 0) {
+            $progress('verifying '.$kind.' '.$counts[$kind]);
+        }
     }
     $digests[$kind] = hash_final($hash);
 }
+$progress('verification complete', true);
 echo json_encode(['counts' => $counts, 'digests' => $digests, 'horizon' => $set['outcome_horizon'],
     'same_set' => $set['label_set_id'] === $id, 'peak_bytes' => memory_get_peak_usage(true),
     'retained_bytes' => strlen($retained), 'memory_limit' => ini_get('memory_limit'),
