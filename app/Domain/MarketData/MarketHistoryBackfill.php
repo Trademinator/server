@@ -4,6 +4,7 @@ namespace App\Domain\MarketData;
 
 use App\Domain\Operations\ActionLog;
 use App\Jobs\BackfillMarketHistory;
+use App\Jobs\SyncMarketCandles;
 use App\Models\MarketFeed;
 use ccxt\AuthenticationError;
 use ccxt\BadSymbol;
@@ -12,6 +13,7 @@ use ccxt\NotSupported;
 use ccxt\PermissionDenied;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -127,6 +129,32 @@ final class MarketHistoryBackfill
         });
 
         return $this->claimAndDispatch($feed->market_id, $period);
+    }
+
+    /** Refresh a bounded candidate tail even when its older backfill already completed. */
+    public function refreshCandidate(MarketFeed $feed, string $period, int $fromMs, int $toMs): bool
+    {
+        if (! in_array($period, CandleTimeframe::SUPPORTED, true) || $fromMs < 0 || $fromMs > $toMs
+            || in_array(config('queue.default'), ['sync', 'null'], true)
+            || ! $feed->market()->whereHas('subscriptions', fn ($query) => $query->where('active', true))->exists()) {
+            return false;
+        }
+        $feed->loadMissing('market.exchange');
+        $job = new SyncMarketCandles($feed->market->exchange->class, $feed->market->symbol,
+            $period, intdiv($fromMs, 1000), intdiv($toMs, 1000));
+        $lock = Cache::lock($job->candidateLockKey(), 86_400);
+        if (! $lock->get()) {
+            return false;
+        }
+        $job->candidateLockOwner = $lock->owner();
+        try {
+            dispatch($job)->onQueue(config('history_backfill.queue'));
+        } catch (Throwable $error) {
+            $lock->release();
+            throw $error;
+        }
+
+        return true;
     }
 
     private function claimAndDispatch(string $marketId, string $period): bool

@@ -7,10 +7,15 @@ use App\Domain\MarketData\MarketDataSynchronizer;
 use App\Repositories\TickerRepository;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
+use Throwable;
 
 final class SyncMarketCandles implements ShouldQueue
 {
     use Queueable;
+
+    /** Ownership is carried across bounded pages; ordinary sync jobs do not acquire this lock. */
+    public ?string $candidateLockOwner = null;
 
     public int $tries = 5;
 
@@ -32,6 +37,10 @@ final class SyncMarketCandles implements ShouldQueue
 
     public function handle(MarketDataSynchronizer $synchronizer, TickerRepository $tickers, CandleSyncPages $pages): void
     {
+        if ($this->candidateLockOwner !== null
+            && ! Cache::restoreLock($this->candidateLockKey(), $this->candidateLockOwner)->isOwnedByCurrentProcess()) {
+            return;
+        }
         $from = $this->from;
         if ($this->incremental) {
             $latest = $tickers->latestTimestamp($this->exchange, $this->symbol, $this->period);
@@ -40,6 +49,8 @@ final class SyncMarketCandles implements ShouldQueue
             }
         }
         if ($from > $this->to) {
+            $this->releaseCandidateLock();
+
             return;
         }
 
@@ -47,9 +58,29 @@ final class SyncMarketCandles implements ShouldQueue
         $synchronizer->sync($this->exchange, $this->symbol, $this->period, $page['from'], $page['to'], false, $this->repairGaps, $this->pageSize);
 
         if ($page['next'] !== null) {
-            self::dispatch($this->exchange, $this->symbol, $this->period, $page['next'], $this->to, false, $this->repairGaps, $this->pageSize)
-                ->onConnection($this->connection)->onQueue($this->queue)
+            $next = new self($this->exchange, $this->symbol, $this->period, $page['next'], $this->to, false, $this->repairGaps, $this->pageSize);
+            $next->candidateLockOwner = $this->candidateLockOwner;
+            dispatch($next)->onConnection($this->connection)->onQueue($this->queue)
                 ->delay(now()->addSecond());
+        } else {
+            $this->releaseCandidateLock();
+        }
+    }
+
+    public function candidateLockKey(): string
+    {
+        return 'trademinator:candidate-refresh:'.hash('sha256', "$this->exchange|$this->symbol|$this->period");
+    }
+
+    public function failed(?Throwable $error): void
+    {
+        $this->releaseCandidateLock();
+    }
+
+    private function releaseCandidateLock(): void
+    {
+        if ($this->candidateLockOwner !== null) {
+            Cache::restoreLock($this->candidateLockKey(), $this->candidateLockOwner)->release();
         }
     }
 }

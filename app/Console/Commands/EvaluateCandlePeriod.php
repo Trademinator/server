@@ -30,7 +30,8 @@ final class EvaluateCandlePeriod extends Command
                 fn ($query) => $query->where('symbol', $pair)));
 
         if ($outdatedOnly) {
-            $query->where(fn ($query) => $query->whereNull('selected_period')->orWhere('selection_version', '<', $version))
+            $query->where(fn ($query) => $query->whereNull('selected_period')->orWhere('selection_version', '<', $version)
+                ->orWhereNotNull('selection_next_attempt_at'))
                 ->where(fn ($query) => $query->whereNull('selection_next_attempt_at')->orWhere('selection_next_attempt_at', '<=', now()));
         }
 
@@ -39,6 +40,7 @@ final class EvaluateCandlePeriod extends Command
             : null;
         $rows = [];
         $candidateRows = [];
+        $swingRows = [];
         $failed = false;
         $processed = 0;
         foreach ($query->orderBy('market_id')->lazy(5) as $feed) {
@@ -56,6 +58,20 @@ final class EvaluateCandlePeriod extends Command
                     $result['run_p50'] ?? '-', $result['run_p95'] ?? '-',
                     $this->percent($result['rejected_reversal_ratio'] ?? null), $result['reason'],
                 ];
+                foreach ($dryRun ? ($result['attempts'] ?? []) : [$result] as $sample) {
+                    $swings = $sample['swings'] ?? null;
+                    if ($swings === null) {
+                        continue;
+                    }
+                    $confirmation = $sample['confirmation_window'] ?? null;
+                    $days = $sample['days'] ?? $sample['window_days'];
+                    $swingRows[] = [$result['exchange'], $result['symbol'],
+                        $sample['period'] ?? $sample['selected_period'],
+                        $confirmation === null ? "{$days}d" : "{$confirmation}: {$days}d",
+                        $swings['count'], $this->percent($swings['round_trip_fee']),
+                        $this->percent($swings['mean']), $this->percent($swings['p25']), $this->percent($swings['p50']),
+                        $this->multiple($swings['fee_margin_p25']), $this->multiple($swings['fee_margin_p50'])];
+                }
                 if ($dryRun) {
                     foreach ($result['attempts'] ?? [] as $attempt) {
                         $window = $attempt['confirmation_window'] ?? null;
@@ -99,10 +115,20 @@ final class EvaluateCandlePeriod extends Command
                 $this->table(['Exchange', 'Pair', 'Period', 'Window', 'Status', 'True flats', 'Flat cap', 'BUY', 'SELL', 'P50', 'P95', 'Runs', 'Rejected', 'Tested'],
                     $candidateRows);
             }
-            $this->info('Dry run: no period was changed and no history backfill was queued.');
+            $this->info('Dry run: no period was changed and no history backfill or candidate refresh was queued.');
+        }
+
+        if ($swingRows !== []) {
+            $this->info('Finalized Action swings: directional close-to-close movement, not realized profit. Surplus/fee = (movement - round-trip fee) / round-trip fee; unavailable at zero fee.');
+            $this->table(['Exchange', 'Pair', 'Period', 'Window', 'Swings', 'RT fee', 'Mean', 'P25', 'Median', 'P25 surplus/fee', 'Median surplus/fee'], $swingRows);
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    private function multiple(mixed $ratio): string
+    {
+        return is_numeric($ratio) ? Decimal::format((float) $ratio, 3).'x' : '-';
     }
 
     private function percent(mixed $ratio): string

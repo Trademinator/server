@@ -46,8 +46,13 @@ final class ActionAutoLabeler
         return $tickers;
     }
 
-    /** Mutate an owned context without retaining a second full candle array. */
-    public function labelInPlace(array|ActionCandleBuffer &$tickers, float $takerFee, ?BuildCheckpoint $checkpoint = null): void
+    /**
+     * Mutate an owned context without retaining a second full candle array.
+     * Optional reversal counters observe the first fee pass; selection supplies them without a checkpoint.
+     *
+     * @param  array{tested: int, rejected: int}|null  $reversals
+     */
+    public function labelInPlace(array|ActionCandleBuffer &$tickers, float $takerFee, ?BuildCheckpoint $checkpoint = null, ?array &$reversals = null): void
     {
         if (count($tickers) === 0) {
             return;
@@ -60,7 +65,9 @@ final class ActionAutoLabeler
                 continue;
             }
             $cursor = $checkpoint === null ? null : new ActionLabelCursor($checkpoint);
-            if (in_array($method, ['remove_unprofitable_transactions', 'remove_zigzags'], true)) {
+            if ($method === 'remove_unprofitable_transactions') {
+                $this->$method($tickers, $takerFee, $cursor, $reversals);
+            } elseif ($method === 'remove_zigzags') {
                 $this->$method($tickers, $takerFee, $cursor);
             } elseif ($method === 'unlabel_endpoints') {
                 $this->$method($tickers);

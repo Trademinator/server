@@ -157,12 +157,12 @@ it('prints the flat ratio and every evaluated window in a dry run', function () 
         ->toContain('2: 1d');
 });
 
-it('rejects stale earlier confirmation windows even when their available candles look good', function () {
+it('waits for stale earlier confirmation windows even when their available candles look good', function () {
     $feed = hysteresisFeed('15m', 0.04, 0.0, true);
     $result = app(CandlePeriodReevaluation::class)->evaluate($feed, true);
 
-    expect($result['status'])->toBe('unchanged')
+    expect($result['status'])->toBe('needs_backfill')
         ->and($feed->fresh()->selected_period)->toBe('15m');
     $older = collect($result['attempts'])->first(fn ($attempt) => ($attempt['confirmation_window'] ?? null) === 2);
-    expect($older['status'])->toBe('stale_sample');
+    expect($older['status'])->toBe('needs_refresh');
 });

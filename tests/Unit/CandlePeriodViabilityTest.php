@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Intelligence\ActionAutoLabeler;
 use App\Domain\MarketData\CandlePeriodViability;
 
 function viabilityCandle(string $open, string $close, ?string $high = null, ?string $low = null): array
@@ -78,7 +79,7 @@ it('does not tag either endpoint of a rising or falling sequence', function (boo
         ->and(array_column($candles, 'action'))->not->toBeEmpty();
 })->with(['rising' => [true], 'falling' => [false]]);
 
-it('accepts exactly ten percent fee rejections and rejects a larger share', function (int $count, int $tested, bool $passes) {
+it('measures fee rejections without a fixed ten percent veto', function (int $count, int $tested) {
     $candles = [];
     for ($i = 0; $i < $count; $i++) {
         $candles[] = $i % 2 === 1
@@ -86,13 +87,13 @@ it('accepts exactly ten percent fee rejections and rejects a larger share', func
             : viabilityCandle('111', '112', '113', '99');
     }
     $candles[2] = viabilityCandle('99.1', '100.1', '113', '99');
-    $result = app(CandlePeriodViability::class)->evaluate($candles, 0.001, 0.02, 0.10);
+    $result = app(CandlePeriodViability::class)->evaluate($candles, 0.001, 0.02);
 
     expect($result['reversals_tested'])->toBe($tested)
         ->and($result['reversals_rejected'])->toBe(1)
         ->and($result['rejected_reversal_ratio'])->toBe(1 / $tested)
-        ->and($result['passes'])->toBe($passes);
-})->with([[15, 10, true], [14, 9, false]]);
+        ->and($result['passes'])->toBeTrue();
+})->with([[15, 10], [14, 9]]);
 
 it('does not treat missing reversal evidence as a perfect zero rejection ratio', function () {
     $candles = array_fill(0, 5, viabilityCandle('100', '100'));
@@ -101,4 +102,52 @@ it('does not treat missing reversal evidence as a perfect zero rejection ratio',
     expect($result['reversals_tested'])->toBe(0)
         ->and($result['rejected_reversal_ratio'])->toBeNull()
         ->and($result['passes'])->toBeFalse();
+});
+
+it('measures finalized directional swing quantiles and fee surplus with the training labeler', function (float $fee) {
+    $candles = [
+        viabilityCandle('100', '100'),
+        viabilityCandle('101', '100', '104', '98'),
+        viabilityCandle('101', '102', '104', '98'),
+        viabilityCandle('100', '99', '104', '98'),
+        viabilityCandle('102', '103', '104', '98'),
+        viabilityCandle('103', '103'),
+        viabilityCandle('103', '103'),
+        viabilityCandle('103', '103'),
+    ];
+    $labeler = app(ActionAutoLabeler::class);
+    $expected = $labeler->labels(array_map(fn (array $candle): array => $labeler->compact($candle), $candles), $fee);
+    $result = app(CandlePeriodViability::class)->evaluate($candles, $fee);
+
+    expect($candles)->toBe($expected);
+    expect($result['swings']['count'])->toBe(3);
+    expect($result['swings']['p25'])->toEqualWithDelta(0.024705882352941, 1e-12);
+    expect($result['swings']['p50'])->toEqualWithDelta(0.029411764705882, 1e-12);
+    expect($result['swings']['mean'])->toEqualWithDelta(0.029938601703308, 1e-12);
+    if ($fee === 0.0) {
+        expect($result['swings']['fee_margin_p25'])->toBeNull();
+        expect($result['swings']['fee_margin_p50'])->toBeNull();
+    } else {
+        expect($result['swings']['round_trip_fee'])->toBe(0.01);
+        expect($result['swings']['fee_margin_p25'])->toEqualWithDelta(1.4705882352941, 1e-10);
+        expect($result['swings']['fee_margin_p50'])->toEqualWithDelta(1.9411764705882, 1e-10);
+    }
+})->with([0.005, 0.0]);
+
+it('does not create an action swing or count context-only labels across a candle gap', function () {
+    $candles = [];
+    foreach ([0, 3_600_000] as $start) {
+        foreach ([['100', '100'], ['101', '100'], ['101', '102'], ['102', '102'], ['102', '102'], ['102', '102']] as $i => [$open, $close]) {
+            $candles[] = [...viabilityCandle($open, $close, '103', '99'), 'microtimestamp' => $start + $i * 60_000];
+        }
+    }
+    $result = app(CandlePeriodViability::class)->evaluate($candles, 0.005, 0.02, '1m');
+
+    expect($result['swings']['count'])->toBe(2);
+    expect($result['swings']['mean'])->toEqualWithDelta(0.02, 1e-12);
+    expect($result['buy'])->toBe(2);
+    expect($result['sell'])->toBe(2);
+    foreach ([0, 5, 6, 11] as $index) {
+        expect($candles[$index])->not->toHaveKey('action');
+    }
 });

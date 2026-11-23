@@ -2,6 +2,7 @@
 
 use App\Domain\MarketData\CandlePeriodReevaluation;
 use App\Jobs\BackfillMarketHistory;
+use App\Jobs\SyncMarketCandles;
 use App\Models\Exchange;
 use App\Models\Market;
 use App\Models\MarketFeed;
@@ -10,8 +11,10 @@ use App\Models\User;
 use App\Repositories\ExchangeRepository;
 use App\Repositories\TickerRepository;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 use function Trademinator\Time\periods_to_seconds;
 
@@ -121,7 +124,7 @@ it('prefers fewer fee rejections when both run percentiles tie', function () {
         ->and($result['attempts'][1]['rejected_reversal_ratio'])->toBe(0);
 });
 
-it('rejects excessive insufficient-movement reversals despite enough final BUY and SELL labels', function () {
+it('keeps highly rejected reversals eligible and uses them to resolve otherwise equal candidates', function () {
     $noisy = rankingCandles('4h', [1]);
     foreach (range(3, 143, 2) as $index) {
         $noisy[$index]['open'] = '99.1';
@@ -131,7 +134,8 @@ it('rejects excessive insufficient-movement reversals despite enough final BUY a
     $result = app(CandlePeriodReevaluation::class)->evaluate($feed, true);
 
     expect($result['selected_period'])->toBe('1d')
-        ->and($result['attempts'][0]['status'])->toBe('reversal_failed')
+        ->and($result['attempts'][0]['status'])->toBe('passed')
+        ->and($result['attempts'][0]['rejected_reversal_ratio'])->toBeGreaterThan(0.10)
         ->and($result['attempts'][0]['buy_ratio'])->toBeGreaterThan(0.02)
         ->and($result['attempts'][0]['sell_ratio'])->toBeGreaterThan(0.02);
 });
@@ -183,3 +187,107 @@ it('evaluates the remaining candidates but retains the selection until missing h
         Queue::assertPushed(BackfillMarketHistory::class, 1);
     }
 })->with([true, false]);
+
+it('ranks the lower quartile before the median swing when run continuity ties', function () {
+    $daily = rankingCandles('1d', [1]);
+    foreach ($daily as $i => &$candle) {
+        if ($i % 2 === 1) {
+            $candle['open'] = $i < 20 ? '101' : '117';
+            $candle['close'] = $i < 20 ? '102' : '118';
+        }
+        $candle['high'] = '119';
+    }
+    unset($candle);
+    $feed = rankingFeed(['4h' => rankingCandles('4h', [1]), '1d' => $daily]);
+    $result = app(CandlePeriodReevaluation::class)->evaluate($feed, true);
+
+    expect($result['selected_period'])->toBe('4h');
+    expect($result['attempts'][0]['swings']['p25'])->toBeGreaterThan($result['attempts'][1]['swings']['p25']);
+    expect($result['attempts'][0]['swings']['p50'])->toBeLessThan($result['attempts'][1]['swings']['p50']);
+});
+
+it('uses the median swing when run continuity and lower quartiles tie', function () {
+    $daily = rankingCandles('1d', [1]);
+    foreach ($daily as $i => &$candle) {
+        if ($i % 2 === 1 && $i >= 32) {
+            $candle['open'] = '117';
+            $candle['close'] = '118';
+        }
+        $candle['high'] = '119';
+    }
+    unset($candle);
+    $feed = rankingFeed(['4h' => rankingCandles('4h', [1]), '1d' => $daily]);
+    $result = app(CandlePeriodReevaluation::class)->evaluate($feed, true);
+
+    expect($result['selected_period'])->toBe('1d');
+    expect($result['attempts'][0]['swings']['p25'])->toBe($result['attempts'][1]['swings']['p25']);
+    expect($result['attempts'][0]['swings']['p50'])->toBeLessThan($result['attempts'][1]['swings']['p50']);
+});
+
+it('queues one bounded refresh for a completed but stale candidate and retains the current period', function (bool $dryRun) {
+    $stale = array_slice(rankingCandles('4h', [3]), 0, -12);
+    $feed = rankingFeed(['4h' => $stale, '1d' => rankingCandles('1d', [1])]);
+    config(['queue.default' => 'database']);
+    DB::table('market_history_backfills')->insert([
+        'history_id' => (string) Str::uuid7(), 'market_id' => $feed->market_id,
+        'period' => '4h', 'status' => 'complete', 'reason' => 'target_reached',
+        'before_ms' => now()->subDays(90)->getTimestampMs(), 'target_start_ms' => now()->subDays(90)->getTimestampMs(),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $evaluation = app(CandlePeriodReevaluation::class);
+    $result = $evaluation->evaluate($feed, $dryRun);
+    $evaluation->evaluate($feed, $dryRun, true);
+
+    expect($result['status'])->toBe($dryRun ? 'needs_backfill' : 'pending');
+    expect(array_column($result['attempts'], 'status'))->toBe(['needs_refresh', 'passed']);
+    expect($feed->fresh()->selected_period)->toBe('1m');
+    expect(DB::table('candle_period_selections')->count())->toBe(0);
+    expect(DB::table('market_history_backfills')->sole()->status)->toBe('complete');
+    if ($dryRun) {
+        Queue::assertNothingPushed();
+        expect($feed->fresh()->selection_next_attempt_at)->toBeNull();
+    } else {
+        Queue::assertPushed(SyncMarketCandles::class, 1);
+        Queue::assertPushed(SyncMarketCandles::class, fn ($job): bool => $job->period === '4h' && $job->from === intdiv($stale[array_key_last($stale)]['microtimestamp'], 1000)
+            && $job->to === now()->getTimestamp() && $job->queue === config('history_backfill.queue')
+            && $job->candidateLockOwner !== null);
+        expect($feed->fresh()->selection_next_attempt_at->getTimestamp())->toBe(now()->addMinutes(15)->getTimestamp());
+    }
+})->with([true, false]);
+
+it('selects the stronger candidate after its recent candles become available', function () {
+    $complete = ['4h' => rankingCandles('4h', [3]), '1d' => rankingCandles('1d', [1])];
+    $feed = rankingFeed(['4h' => array_slice($complete['4h'], 0, -12), '1d' => $complete['1d']]);
+    config(['queue.default' => 'database']);
+    $pending = app(CandlePeriodReevaluation::class)->evaluate($feed);
+    expect($pending['status'])->toBe('pending');
+    Queue::assertPushed(SyncMarketCandles::class, 1);
+
+    $tickers = Mockery::mock(TickerRepository::class);
+    $tickers->shouldReceive('streamHistory')->andReturnUsing(function ($exchange, $symbol, $period) use ($complete) {
+        yield from $complete[$period];
+    });
+    app()->instance(TickerRepository::class, $tickers);
+    $result = app(CandlePeriodReevaluation::class)->evaluate($feed, force: true);
+
+    expect($result['status'])->toBe('switched');
+    expect($feed->fresh()->selected_period)->toBe('4h');
+    expect($feed->fresh()->selection_version)->toBe(6);
+    $audit = json_decode(DB::table('candle_period_selections')->sole()->quality, true);
+    expect($audit['economic']['swings']['count'])->toBeGreaterThan(0);
+    expect($audit['economic']['swings'])->not->toHaveKeys(['samples', 'candles', 'movements']);
+});
+
+it('retries due current-version feeds and prints finalized swing statistics', function () {
+    $feed = rankingFeed(['1d' => rankingCandles('1d', [1])]);
+    $feed->forceFill(['selection_version' => 6, 'selection_next_attempt_at' => now()->subMinute()])->save();
+    $status = Artisan::call('trademinator:evaluate-candle-period', [
+        '--exchange' => 'binance', '--pair' => 'XRP/USDC', '--outdated-only' => true, '--dry-run' => true,
+    ]);
+
+    expect($status)->toBe(0);
+    expect(Artisan::output())->toContain('Finalized Action swings')
+        ->toContain('P25 surplus/fee')->toContain('RT fee')->toContain('would_switch');
+    Queue::assertNothingPushed();
+    expect($feed->fresh()->selected_period)->toBe('1m');
+});

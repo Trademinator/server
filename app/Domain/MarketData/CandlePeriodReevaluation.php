@@ -88,7 +88,7 @@ final class CandlePeriodReevaluation
                         $attempts[] = $evaluation['attempt'];
                         $status = $evaluation['attempt']['status'];
                         if ($status !== 'passed') {
-                            $pending = $pending || $status === 'needs_backfill';
+                            $pending = $pending || in_array($status, ['needs_backfill', 'needs_refresh'], true);
                             if ($status === 'flat_failed') {
                                 // A longer aggregate must not conceal a failed recent/confirmation flat cap.
                                 $flatFailures[$period] = true;
@@ -132,6 +132,10 @@ final class CandlePeriodReevaluation
                 if ($candidates !== []) {
                     usort($candidates, static fn (array $a, array $b): int => ($b['runs']['p50'] <=> $a['runs']['p50'])
                         ?: ($b['runs']['p95'] <=> $a['runs']['p95'])
+                        ?: (($b['economic']['swings']['fee_margin_p25'] ?? $b['economic']['swings']['p25'])
+                            <=> ($a['economic']['swings']['fee_margin_p25'] ?? $a['economic']['swings']['p25']))
+                        ?: (($b['economic']['swings']['fee_margin_p50'] ?? $b['economic']['swings']['p50'])
+                            <=> ($a['economic']['swings']['fee_margin_p50'] ?? $a['economic']['swings']['p50']))
                         ?: ($a['economic']['rejected_reversal_ratio'] <=> $b['economic']['rejected_reversal_ratio'])
                         ?: (periods_to_seconds($a['period']) <=> periods_to_seconds($b['period'])));
                     $winner = $candidates[0];
@@ -149,7 +153,7 @@ final class CandlePeriodReevaluation
             }
 
             return $this->result($feed, 'no_candidate',
-                'No supported period passed quality, flatness, history depth, BUY/SELL density and rejected-reversal checks with available run statistics.',
+                'No supported period passed quality, flatness, history depth, BUY/SELL density with available run, reversal and finalized-swing statistics.',
                 $attempts);
         } finally {
             $lock->release();
@@ -176,7 +180,12 @@ final class CandlePeriodReevaluation
             return ['attempt' => [...$attempt, 'status' => 'history_unavailable']];
         }
         if (! $this->coversWindowEnd($candles, $period, $toMs)) {
-            return ['attempt' => [...$attempt, 'status' => 'stale_sample']];
+            if (! $dryRun) {
+                $latestMs = $candles === [] ? $fromMs : (int) $candles[array_key_last($candles)]['microtimestamp'];
+                $this->history->refreshCandidate($feed, $period, max($fromMs, $latestMs), $toMs);
+            }
+
+            return ['attempt' => [...$attempt, 'status' => 'needs_refresh']];
         }
 
         $diagnostics = [];
@@ -190,11 +199,10 @@ final class CandlePeriodReevaluation
 
         $runs = $this->runs->evaluate($candles, $period);
         $economic = $this->viability->evaluate($candles, $takerFee,
-            (float) config('candle_period.minimum_action_ratio', 0.02),
-            (float) config('candle_period.max_rejected_reversal_ratio', 0.10));
+            (float) config('candle_period.minimum_action_ratio', 0.02), $period);
         $status = match (true) {
             $economic['rejected_reversal_ratio'] === null => 'insufficient_reversal_evidence',
-            $economic['rejected_reversal_ratio'] > $economic['maximum_rejected_reversal_ratio'] => 'reversal_failed',
+            $economic['swings']['count'] === 0 => 'insufficient_swing_evidence',
             ! $economic['passes'] => 'economic_failed',
             $runs['count'] === 0 => 'insufficient_run_evidence',
             default => 'passed',
@@ -394,6 +402,7 @@ final class CandlePeriodReevaluation
             'run_count' => $selectedAttempt['run_count'] ?? null,
             'rejected_reversal_ratio' => $selectedAttempt['rejected_reversal_ratio'] ?? null,
             'reversals_tested' => $selectedAttempt['reversals_tested'] ?? null,
+            'swings' => $selectedAttempt['swings'] ?? null,
             'attempts' => $attempts,
         ];
     }
