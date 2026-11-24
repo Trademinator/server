@@ -14,7 +14,7 @@
         "ext-bcmath": "*",
         "ext-intl": "*",
         "ext-pcntl": "*",
-        "ccxt/ccxt": "^4.5",
+        "ccxt/ccxt": "dev-trademinator-4.5.94-composer as 4.5.94",
         "codeat3/blade-phosphor-icons": "^2.4",
         "jason-guru/laravel-make-repository": "^1.0",
         "laravel/framework": "^13.0",
@@ -96,5 +96,10 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "repositories": [{
+        "name": "ccxt-trademinator",
+        "type": "vcs",
+        "url": "https://github.com/daniel-lucio/ccxt.git"
+    }]
 }

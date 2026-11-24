@@ -1,48 +1,9 @@
 {
     "schema": 2,
-    "ccxt_version": "v4.5.57",
-    "ccxt_reference": "9ebdddc8c0c0382836cd124d27fc1466fe87801b",
-    "reviews_sha256": "a6b8ca217b60f9f889601fdee04bb65ccd72c2138c77f1d22e162355f8857355",
+    "ccxt_version": "dev-trademinator-4.5.94-composer",
+    "ccxt_reference": "3b6820067fccdfd1fe8a47dc7f269b0e117d234a",
+    "reviews_sha256": "292c9bd63f96a9b17d0997ac0e87ff2752dd1887ceef9a4e4c73295a3d87fe62",
     "exchanges": {
-        "aftermath": {
-            "name": "AftermathFinance",
-            "countries": [],
-            "spot": false,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "3m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "2h",
-                "4h",
-                "8h",
-                "12h",
-                "1d",
-                "3d",
-                "1w",
-                "1M"
-            ],
-            "logo": "https://github.com/user-attachments/assets/70e5ae86-2f3a-4755-976b-aedb9d3c2807",
-            "required_credentials": [
-                "privateKey",
-                "walletAddress"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/aftermath.php": "fec7acb36eb493fac83733af05f40c7e604ebb5ad1e7e0fd0856d1f74d2860d7",
-                "php/aftermath.php": "7c3afb194ceb6f474194e434348888e96cd3ab82b6bf88cf13237c96671a066d"
-            },
-            "source_fingerprint": "cb0688c47b01f2e46d34f60250bfe5afcb9f59d6b75307cd8d24e80214887185",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
         "alpaca": {
             "name": "Alpaca",
             "countries": [
@@ -73,11 +34,11 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/alpaca.php": "3b0ad4bca5d6fcb5f49774ecffb32f7a8b365a0387b2c8d4b3cc9baa7a73472f",
-                "php/alpaca.php": "fed26b750289e0433a64208f7c00fa1943395b5103348104a7d805d86c6d9dd0"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/alpaca.php": "c7f44d34783208675eb9ef118868cb09801cc72a80b94aa7bf7eabf0887a619f",
+                "php/alpaca.php": "3abc5b0602bb19edecce0dc49eab1429018256f34a025ba7c9ef059fad9a280f"
             },
-            "source_fingerprint": "bf63bdd5fe3aab967fd1669da0430ebb248bde71c083eb0f4601ef1cbc544ba9",
+            "source_fingerprint": "5ceca5a6c7ba50a53e7cd7242e19e314ea567648e60864c1c8e09ec58fc6e010",
             "access": {
                 "state": "authentication_required",
                 "markets": "authentication_required",
@@ -104,91 +65,18 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/fef8f2f7-4265-46aa-965e-33a91881cb00",
+            "logo": "https://github.com/user-attachments/assets/8ba7fbfa-0dd0-4ab9-8b72-ff60abe08ac6",
             "required_credentials": [
                 "apiKey",
                 "secret",
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/apex.php": "9a69117ec95815f706d77692f1e45aed0f671954e135f583e8e1d62c444dac26",
-                "php/apex.php": "a8e27aa3669d2b57aeb25f66d620c861a4206662100be8b9f1ca1e298724c625"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/apex.php": "75e4b98c7d63e48ed577d0d19cbfa84f8212fc0b96939a58f301f5fa7a11ae17",
+                "php/apex.php": "440aa16911746342b732956f0f4d15a4801beac47e1a580800abafa8a0afc429"
             },
-            "source_fingerprint": "dc06947d6afd7bad68db4273fe81d0f7514c1ccbb39383a0a572fae4492dfa4f",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "arkham": {
-            "name": "ARKHAM",
-            "countries": [
-                "US"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "6h",
-                "1d"
-            ],
-            "logo": "https://github.com/user-attachments/assets/5cefdcfb-2c10-445b-835c-fa21317bf5ac",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/arkham.php": "ad0e637ff72115a42e6631acdba461f9940f062542ffbaf6fc64edb2e9575b69",
-                "php/arkham.php": "483cf76e34971733671bc33fa3813aeeae8cceec414d109e6ee049ad4733eda1"
-            },
-            "source_fingerprint": "3fd93069ccc9404a6c01f6e89caef054a9c631e9796966210ac92a44b94e65ce",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "ascendex": {
-            "name": "AscendEX",
-            "countries": [
-                "SG"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "2h",
-                "4h",
-                "6h",
-                "12h",
-                "1d",
-                "1w",
-                "1M"
-            ],
-            "logo": "https://github.com/user-attachments/assets/55bab6b9-d4ca-42a8-a0e6-fac81ae557f1",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/ascendex.php": "8cadb825b5598b887d84d45a5f493037f965e7486a1a88699fbfe6e722580551",
-                "php/ascendex.php": "8a1111688658eac388d824a003242c35cda8d9da352c928c276c9ee3986ac153"
-            },
-            "source_fingerprint": "ba012146c2ddb23ea5ce36128f0d64fafc44757abfa1afb6b079f0657cbfeab6",
+            "source_fingerprint": "53cac4e4a641715cca9043cfd436419bda0b0247278a8749651759ef9301d8ee",
             "access": {
                 "state": "public",
                 "markets": "public",
@@ -201,7 +89,7 @@
             "countries": [
                 "US"
             ],
-            "spot": false,
+            "spot": true,
             "fetchOHLCV": true,
             "timeframes": [
                 "1m",
@@ -220,21 +108,21 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/4982201b-73cd-4d7a-8907-e69e239e9609",
+            "logo": "https://github.com/user-attachments/assets/5e5909d6-c4de-4435-992f-4339c80edbd7",
             "required_credentials": [
                 "privateKey"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/aster.php": "7c63d6234b6b158c57418a38c3270ad766e282e3cdccaf1f29c698644fd10353",
-                "php/aster.php": "8913ae4d27d0bf82e2a619bc725ede70fbcd31801d1e935c0d7dc10476c9c9f6"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/aster.php": "ad6e297756b01c46f479883a2b9fcd7e04cd68ee1d507616563c03386526f9ac",
+                "php/aster.php": "036af8ef8d1ab9883752e2895cec2001bcda84536a6df9dceb00dba3c02bcd88"
             },
-            "source_fingerprint": "a4473ad496f6b439af0e95bc6b0b85a0c1b61ae9f504cb120f09e83410170618",
+            "source_fingerprint": "be23ff21ca0b5a3ac7931c71998d14cfb77220bda90690125e318c1fae4cac9d",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "backpack": {
@@ -261,22 +149,22 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/cc04c278-679f-4554-9f72-930dd632b80f",
+            "logo": "https://github.com/user-attachments/assets/7f682234-3eb1-48ab-a5ec-250a3227c985",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/backpack.php": "82eed645eed49955916b930207caf29835754d55d63b0a7e1e4b543adcf8efe4",
-                "php/backpack.php": "2e11c8e1db98e0038ae6b5adff180899d104666aecc80cfd2b3f289995dfba7d"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/backpack.php": "90fba7b0279bd750ee3792b19ee7ae124762db7e2b548678cd229c5c51eca8d8",
+                "php/backpack.php": "cdf3a3e1720f9259cd1246f662bdef227bd36600e46baab76acd8963cf373e82"
             },
-            "source_fingerprint": "4d01a6a75a8096b581e3017fbe87909b30a159c246d531c1fdd4ac9b64ce9460",
+            "source_fingerprint": "5bc2c1f41893c9032d08ca8526f7772beb9d6408ca551dc91e23442bac8b2a6e",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bequant": {
@@ -298,24 +186,24 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/0583ef1f-29fe-4b7c-8189-63565a0e2867",
+            "logo": "https://github.com/user-attachments/assets/01e199a6-5c65-4b03-83ab-7f9827c140f9",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bequant.php": "bf6ca8dc76eea0fd9b8002787898b63cda3c341597cb5cd5be2b963d6d1dce68",
-                "php/abstract/hitbtc.php": "12fa8d71fe9900cb4379eddc4100fdd8a066d4be204c7e8891ca8e9bfa282bf9",
-                "php/bequant.php": "fb9f6cc92082bf32f6326fefdc6eafe83aa677814d0513391fe8657cc7998f29",
-                "php/hitbtc.php": "a5c69e7dd566386f7c2c91abb1ef51a9f581706e34fc369c2d19cc1b75653b61"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bequant.php": "0e5f8c796fcfb76906f03f5d8884fbd2955bb7fc6dd853bf855b15bd3b8806e2",
+                "php/abstract/hitbtc.php": "9bdec8ab7ff711145922893ade6fdcbf06cb7f62a8f6be2c5d79d02640945617",
+                "php/bequant.php": "1c47e7cf048642c752d78e68e28721247bdb98bee4a0d28b6796f939c543aade",
+                "php/hitbtc.php": "b1ed5ace6dc3fc0c70012466471298e2784f0378df98065bef43f7110f392a59"
             },
-            "source_fingerprint": "11f8ba8c05626669dd89115d36076a5a6460b8db163f297b27f840f08501ec4c",
+            "source_fingerprint": "bbcee552dbe92b2cbd46b040e0b916064aab2066eb3494ca13513ff0a711fdb9",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bigone": {
@@ -345,16 +233,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bigone.php": "f102a79acb9d79ec5a392a8b544758f4509dd5c463eac46ef985ed5298b29dbb",
-                "php/bigone.php": "a649d5341defcf592dfad8b28b5d4af3661759eda808d7dfb71a699077ea1c55"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bigone.php": "b44d17e152dac13bf8daa9358ddd1c7b11793c3b8549484adaf5b18b9e9935f0",
+                "php/bigone.php": "8973742cb3b6b1243a3c6f4fbed89297443a1632395519d3863ff4f68ce64f22"
             },
-            "source_fingerprint": "b435e8d60c7a37fe40c11582877601d65d2c6bd2488dbb05f6bf7311a4e16ef3",
+            "source_fingerprint": "1aac1795b94b5d4908ca80329164923618e741e4982affc8269aea778488a645",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "binance": {
@@ -386,16 +274,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/binance.php": "10195a307e174df09b9d9aae882e76322c6254e1869715906c24d09b12a04fd5",
-                "php/binance.php": "c760d8863ad8e88eaa018f90743e493f1bef4bc3fa476670f1dedcba4314b022"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/binance.php": "cdca41019d6531cd187824785f8da75c4a61b76556664e41e950f73db61f4b89",
+                "php/binance.php": "6a2477b3ab32841eb34e56648b53d88716a52b7ba595f80d51c59bb9b190f3c9"
             },
-            "source_fingerprint": "3423e0dba51023c717d0fd7ee361fd4e848c9b41cd2081b4b4f7f8adb124e79c",
+            "source_fingerprint": "be666009871133f505b29442e7033583bd0945a9ed390c8bbe69e4b3ae801823",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "binancecoinm": {
@@ -427,18 +315,18 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/binance.php": "10195a307e174df09b9d9aae882e76322c6254e1869715906c24d09b12a04fd5",
-                "php/abstract/binancecoinm.php": "e86720725544775be5c7c3e9df274178be0ed73fb74341fb9c01c4ee202b443a",
-                "php/binance.php": "c760d8863ad8e88eaa018f90743e493f1bef4bc3fa476670f1dedcba4314b022",
-                "php/binancecoinm.php": "e55b5f919828facc8677faaf399f8657ae036a3f1ef8dbd9e5d0ee7ccb811607"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/binance.php": "cdca41019d6531cd187824785f8da75c4a61b76556664e41e950f73db61f4b89",
+                "php/abstract/binancecoinm.php": "d94dcff4432fb1f1482599709c0d54de48d526cf64f6b180737b4044bcb50496",
+                "php/binance.php": "6a2477b3ab32841eb34e56648b53d88716a52b7ba595f80d51c59bb9b190f3c9",
+                "php/binancecoinm.php": "9a46d96433003a11777923eba0fb998a513b69316223fcf7c5ede8876033d97e"
             },
-            "source_fingerprint": "375b2f64bf7158c739da6a545a0d10ed1b7d55d6081cb881114e705c13f9b2d7",
+            "source_fingerprint": "3911b9dced1c77b6e24010ae0600cabd40fed574af72bccabb45cff35aaf4700",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "binanceus": {
@@ -472,18 +360,18 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/binance.php": "10195a307e174df09b9d9aae882e76322c6254e1869715906c24d09b12a04fd5",
-                "php/abstract/binanceus.php": "d3ddc457ab9ab7cd38ee715d3bbd8591bc0fcc5886b56c77b89e8ef5b8ea02f5",
-                "php/binance.php": "c760d8863ad8e88eaa018f90743e493f1bef4bc3fa476670f1dedcba4314b022",
-                "php/binanceus.php": "2814b7e3f53218013ee1aa06c4b4769c1557b1952ff4f4d81ba7af931a091bd2"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/binance.php": "cdca41019d6531cd187824785f8da75c4a61b76556664e41e950f73db61f4b89",
+                "php/abstract/binanceus.php": "abfcf14cca555a520bedaca929283e868a5c6f46950ab993e8329e30b86b4747",
+                "php/binance.php": "6a2477b3ab32841eb34e56648b53d88716a52b7ba595f80d51c59bb9b190f3c9",
+                "php/binanceus.php": "99d64d2e95b9889d7c2f068eab189927611656b1c22a1eff6b70a8d67b7420ed"
             },
-            "source_fingerprint": "72bf72e2def8080c5d9b87f857df702566077fd65279038d9144ba0628c5f926",
+            "source_fingerprint": "05cb3adc721943ebee3e8e87d66b49cbf408654ba88fb0dfbb17364cd2b6b709",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "binanceusdm": {
@@ -515,18 +403,18 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/binance.php": "10195a307e174df09b9d9aae882e76322c6254e1869715906c24d09b12a04fd5",
-                "php/abstract/binanceusdm.php": "3d0cd468647ef4314e8cec44a69365b22fe263abe718033136afaf898e3d104a",
-                "php/binance.php": "c760d8863ad8e88eaa018f90743e493f1bef4bc3fa476670f1dedcba4314b022",
-                "php/binanceusdm.php": "d866f47739e2e91f2b4b6b225c9aa52da050b69737e52195b08c0d9c85373e3b"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/binance.php": "cdca41019d6531cd187824785f8da75c4a61b76556664e41e950f73db61f4b89",
+                "php/abstract/binanceusdm.php": "239c54e87f486397edf3b746fadcb8b449f380b86a1197056966c39ea91efb1f",
+                "php/binance.php": "6a2477b3ab32841eb34e56648b53d88716a52b7ba595f80d51c59bb9b190f3c9",
+                "php/binanceusdm.php": "1967fc216b8ae959b5ac51f4f83cde052c36acd04bf0375eac56427b31a533f7"
             },
-            "source_fingerprint": "8298dc86477306c9fb7977afe694df94f00cecb4600221029fb5f51d9ce46bd9",
+            "source_fingerprint": "7759bb033f42719aee14ac22c4c8e36d7a7470258bc764c4483fb7a315931fe8",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bingx": {
@@ -558,16 +446,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bingx.php": "44a68996df5912aabe90e1f933fbc257d28092302502ae306e7f0d8eadd5f92e",
-                "php/bingx.php": "90f1486a202953cddc6a73547d90f3f7f0783fb91fe2df79636d6c92f52b6662"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bingx.php": "595adcc57ac1977e43ae97fdf38fc1962ecd0555dedaf370e53753123b5ce408",
+                "php/bingx.php": "c74a9404f08247fd12da32a45559db9f87eab51c3c25391745b05f4d633a2885"
             },
-            "source_fingerprint": "8e07ac7d8bee070b75f3f70112004a035aec4fd61f1df88c376cc0bbcbf2b6bc",
+            "source_fingerprint": "57fb67e76480b5987b95d61e7a37d27176e1dc1fdb482ca5dc94c9bb0ff72be8",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bit2c": {
@@ -584,16 +472,50 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bit2c.php": "073cbe82b29e08194d46f3536933655e2d108a425027cc2650ee03d5e74474bf",
-                "php/bit2c.php": "d8144fa386296f5f862dc6ab23ef5d428f975e27c740dac49bfb39b75f7a7162"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bit2c.php": "dc60810c74241155b71d9876ec03892a2f5a4ee00e9a0b529a087a69bb2e2198",
+                "php/bit2c.php": "7793f406d4fb9cb900c5e5f21047fd7eecef642d6a3521daabc9537e7e77711e"
             },
-            "source_fingerprint": "d1fbbd00bd2949bfc76cf81c2e14fbe6b1f14ef4eed384d00d1ee3d77822da19",
+            "source_fingerprint": "37e29027b4141ab60f61f0695cbd124975f2137962a89f2201a9410ec79550bf",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
+            }
+        },
+        "bit2me": {
+            "name": "Bit2Me",
+            "countries": [
+                "ES"
+            ],
+            "spot": true,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "4h",
+                "1d"
+            ],
+            "logo": "https://github.com/user-attachments/assets/d7c1790a-7e3d-453f-8c31-a7e800f56aaf",
+            "required_credentials": [
+                "apiKey",
+                "secret"
+            ],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bit2me.php": "0ad34844d9857b199fa273db4c95bbfd419655f26766caf6ad52d7940e28d58c",
+                "php/bit2me.php": "ac981f20a637d316a4155f55718ee9c4c9f90a90a01ba1d2c9867043eec542b1"
+            },
+            "source_fingerprint": "006f0da60ed440b48dd39015e086454798d050a70c87ef07a91159a8301dacb5",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "bitbank": {
@@ -621,16 +543,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitbank.php": "3349376ab3e43697a3effd873594ceed977d9d40bd5ab3c1ae376d67b08db643",
-                "php/bitbank.php": "9ef9103a449cdb35ce551a94e7a4c59b122f3eac4b26d92acccc2d1901a2272f"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitbank.php": "fb5a197d281a122b175dfe713977d97a9c0c5bc5f9d0ac610b9c9925b07ba2b1",
+                "php/bitbank.php": "a44ec4018cd4e0005c45a85b8ab510885ab3f4d096dc0e1b122d53d52872a60e"
             },
-            "source_fingerprint": "2d4c37aebe2d4803abc83e229e63f187c32adc66f8f3e9e433015f817cb54b15",
+            "source_fingerprint": "12743efac9813e7584175b87a3abf4cc36ddd8d24308c086ef1dbd51c77c8e0d",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bitbns": {
@@ -647,16 +569,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitbns.php": "628f8641b10be1f7ef4e7cc38a9cb4ba2bc77506bd9873011852e16b8196dd27",
-                "php/bitbns.php": "576961394e93e84fc276a375d3e7a4bc1b181931f033782125cf76e610406ef8"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitbns.php": "4939670dd42ff7b91baf162b4e3c3c256594039e7270299e15ac95a0bcd10fdc",
+                "php/bitbns.php": "cb050bb4d7aa96d5892b35a760d647b210e72618574891feebfba54db87fefaf"
             },
-            "source_fingerprint": "76768583f34340935cd4f84176e3943a9f89ec31ed8bddc79dc534cf8c45ac25",
+            "source_fingerprint": "7c5d02d1217f0fe19b46089adc16528b37d00151f7c5660b84d9f9b5cd7af794",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "bitfinex": {
@@ -687,16 +609,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitfinex.php": "f44892975b31e2fa7908e86192e947fbe07fa559d7a43abc4a8ef5f9e012dba6",
-                "php/bitfinex.php": "5f57ad5943adf45f7adda495a99f8ef16f13b1aea4395676939b135190b5cad7"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitfinex.php": "ffd43d1f6d0961f9f52cc44c52691d515c75b16dbb2ef0064d69533f903e53e4",
+                "php/bitfinex.php": "781be620da4709693e68ed86fb75a79dd445826d05cbce1f54a77e2c38e96ab0"
             },
-            "source_fingerprint": "90fd4eb4d7950902a7fe05c6a9f12d70de2df184ada9732a4ddefd188cf8458a",
+            "source_fingerprint": "799aab4ebb14dfd1990abbc9847aff0af34577303e82934ec8e90912ff28b3da",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bitflyer": {
@@ -713,16 +635,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitflyer.php": "00eb05ffc25c665191017a467df032d762ac831f8b90a69f0e68625e0b8f0580",
-                "php/bitflyer.php": "b30eed28f92b46e2ab2b05ae2b360a44141f3a64844cd4a94e176af51d75ea9e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitflyer.php": "a0b2f05cb0c7877ae5393a0fc74a02a9aed044cf2062467764cf0ea6e552e581",
+                "php/bitflyer.php": "d3747d38be7df5eab4e08fa933873ea1daf5be33934ff3a1c4a1e19fb2114450"
             },
-            "source_fingerprint": "c8a6e84e6466991257df4c2bbfc17461225f011c59c3a37d0988a1943d364220",
+            "source_fingerprint": "09035e4117f09304136ba48a1b6b374f3a540c5d375ce0441b2fd7604a415f21",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "bitget": {
@@ -748,23 +670,23 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/fbaa10cc-a277-441d-a5b7-997dd9a87658",
+            "logo": "https://github.com/user-attachments/assets/b54bb4c2-416d-4231-8968-85a77748ba45",
             "required_credentials": [
                 "apiKey",
                 "secret",
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitget.php": "189c9962f688ad5258c35d11bab4d101b2bae3f9c692b46f02c9cee9b624de82",
-                "php/bitget.php": "b4f0e2f512ac47ddc41af829ac6206f6be1773250b2b1b3eec103535b8a4a371"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitget.php": "dc30fd0a2d9d44d78e236d2f7a846c094d8a7472b1e9dbac0fc5138991a6f608",
+                "php/bitget.php": "00bd6930e53570c3cdc0dee60c16a0f1033b1416e3d43e1ea3b29d0f601ce846"
             },
-            "source_fingerprint": "68c68749df31183c93405d2c5657888176e5edbc0d82246a9c6a483856aa0789",
+            "source_fingerprint": "ddcdac912606e54cfad669a2733764905b1e1e3b7ff29cef5ddfe415e158eca4",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bithumb": {
@@ -779,11 +701,13 @@
                 "3m",
                 "5m",
                 "10m",
+                "15m",
                 "30m",
                 "1h",
-                "6h",
-                "12h",
-                "1d"
+                "4h",
+                "1d",
+                "1w",
+                "1M"
             ],
             "logo": "https://github.com/user-attachments/assets/c9e0eefb-4777-46b9-8f09-9d7f7c4af82d",
             "required_credentials": [
@@ -791,91 +715,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bithumb.php": "bf3df45c3f8dd03e003ee6bbe23ee4e12f5bd489eeae78e333a8f787f2c4c3bb",
-                "php/bithumb.php": "ea8466eb55c73f053001ae25e79587cba008d2551480bddc9bac9b9b64f03832"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bithumb.php": "6e7c37b1d7d015053c621ce6178fbc1660fc937b9fa1c66d3788fdcc18973deb",
+                "php/bithumb.php": "f0ee930b70dbf9c18fa752e528dff6f2da758b3e482e5a0e2692e13984c3982b"
             },
-            "source_fingerprint": "83c30777d9516bf7d304d46d003425fb2a0108a468fb4e07ea3cee437863064e",
+            "source_fingerprint": "195a09706cff52b90b55d90a2571c9874e57d0e1aff4ae8e087701cff0502c04",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "bitmart": {
-            "name": "BitMart",
-            "countries": [
-                "US",
-                "CN",
-                "HK",
-                "KR"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "3m",
-                "5m",
-                "15m",
-                "30m",
-                "45m",
-                "1h",
-                "2h",
-                "3h",
-                "4h",
-                "1d",
-                "1w",
-                "1M"
-            ],
-            "logo": "https://github.com/user-attachments/assets/0623e9c4-f50e-48c9-82bd-65c3908c3a14",
-            "required_credentials": [
-                "apiKey",
-                "secret",
-                "uid"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitmart.php": "c3af82891b5fad70781a9a16f88b631827c12a1045d7a9656484127cd6a274f4",
-                "php/bitmart.php": "b1fdb6cf4a6e599837c26633878e06682058a6a0a9602f7220a33eaf1b9977ed"
-            },
-            "source_fingerprint": "419923bd39467b53b5ee70b753d576f545b41b573792060b13cf656474f4c913",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "bitmex": {
-            "name": "BitMEX",
-            "countries": [
-                "SC"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "1h",
-                "1d"
-            ],
-            "logo": "https://github.com/user-attachments/assets/c78425ab-78d5-49d6-bd14-db7734798f04",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitmex.php": "930ff08147e046d2e2de288016c7884f5a9d4c3d59511cd5f54ce1ca06c2205d",
-                "php/bitmex.php": "4155c154c6cd6f546d9bdc74beae05622740e569fb3b0ecea3f9214ace99930e"
-            },
-            "source_fingerprint": "bd06429557222994bb1d120611b88be9c880098cc7fc4bbc35fe453eb343db13",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bitopro": {
@@ -904,16 +753,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitopro.php": "5fef1642a357a05ea5c649253ac166242d154eb2513fd544cf85817e1508c316",
-                "php/bitopro.php": "1e0d3f49797f88ec5789d3289834adfb8db2c2a2f951c6bcd78c11ede9fd97eb"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitopro.php": "66286fa21c067fa4468d443da929c66f72f222c98ed911ba2eca2ff3d1ea9f60",
+                "php/bitopro.php": "185dcc72d4359f00e8a9865ab2be8335d1250747cf9a380c292e0b422554f03c"
             },
-            "source_fingerprint": "21c9309a042e3fe4a65b195658e261fe162984f33c4ef3534032609adfc0e3e5",
+            "source_fingerprint": "e9ff99182c550aa5209c6f08777aa0c0420b2ce8e334e8e873460c4f0db872cd",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bitrue": {
@@ -940,16 +789,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitrue.php": "1af8ac93ae312bb255c821c02c48d59c7537f49776241ff9826900c0992cc8b4",
-                "php/bitrue.php": "593f7e410aa2ede6b08bcce018e58f8588eecc4bcf9d3777b51a634ebbcdc744"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitrue.php": "887d4d236ef30104708cec0892ba0702b107e22b1aa18b778c8b2a8435a06003",
+                "php/bitrue.php": "bd2d20b179cd73d444d10f0a918f2a76bf4f82785941a04341fa9e150af9c853"
             },
-            "source_fingerprint": "34cdb033544f40d51ae1098db4b9af7fbd34f0bdbdeb2edec81dddb49a80c0d0",
+            "source_fingerprint": "3d3e3677d81496ff089051e788441e387f9dd01bc1eb182b168965ed3d116b04",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bitso": {
@@ -970,17 +819,17 @@
                 "1d",
                 "1w"
             ],
-            "logo": "https://github.com/user-attachments/assets/178c8e56-9054-4107-b192-5e5053d4f975",
+            "logo": "https://github.com/user-attachments/assets/3d0c1e5e-8aaa-419f-968a-2b7409381ce4",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitso.php": "5ef163767f62f2aaa79def0964115f7b1feedfe58ea5aa5e1d95fa21df8bec3e",
-                "php/bitso.php": "d03c3d3912a1d2808975e0e6088455e5a0aaeecc71a95e76bec657eaa13cd04c"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitso.php": "d67d1540ca9841016174bff990f4838f44c3d54529825831417d0a000ec9b856",
+                "php/bitso.php": "bcaabd790a36df5a8d1662b3c12f8d41fd26970ba56a3f43a3f1a3d6ae7fa32f"
             },
-            "source_fingerprint": "a3f368f8c7e7a18eba2fffe59e5eea8a5ba604e5cfdff51b8ba9e00e0abfbad8",
+            "source_fingerprint": "d893205e783031eccaf384aca17c3e887347734c3995089e44c29a00f7648d9b",
             "access": {
                 "state": "public",
                 "markets": "public",
@@ -1015,16 +864,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitstamp.php": "fddc9ea15fb905d3d7d61db6a44ea3f71ed493d23689ae008e5af038f24a77d9",
-                "php/bitstamp.php": "92184f621d869cae1e36d0aa2964bc12adb5e07a7378842d9a57b977d0fa060a"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitstamp.php": "7820fa7bd99322dda4e27bbc47e3aefae174b67a855a3cca0d6222431787c7f7",
+                "php/bitstamp.php": "b5201764112018da77aaf2d93ccec320027544f4a6ccafee1da9d5ee7ed872a3"
             },
-            "source_fingerprint": "2d3ed2b9281d256fd0c75d29e69127a6365117b896547fc5ccbfd601de034153",
+            "source_fingerprint": "cb279cdcb1d36db9ed81880a7fb06e3a47a554f7d3dae2968054e2aebe38c5d3",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bitteam": {
@@ -1047,16 +896,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitteam.php": "b4c41448552d9820471ed73b9437e6e6659a621e5c6608e6b776a7059f5de099",
-                "php/bitteam.php": "c19ad6d04eb0782c5554077d5e1e8576f41f7be9505ebb3a46f39a8716bd470d"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitteam.php": "f755ebd98f8988b854ea414bdd094b7917b40bea65d797bf59ca3f4ed415f456",
+                "php/bitteam.php": "ec2c0559d47e139a311fae685423132008128863e8704f0caeafd8f4db224c10"
             },
-            "source_fingerprint": "cf20ecce1f748867281cd79a5e348ef61173dbf346181faecf080aa24ef35d2c",
+            "source_fingerprint": "f30d7f88dfc5ed1bf4820bce5653a34e0493f7434622221d3697dadeb7b026f3",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bittrade": {
@@ -1078,22 +927,22 @@
                 "1M",
                 "1y"
             ],
-            "logo": "https://user-images.githubusercontent.com/1294454/85734211-85755480-b705-11ea-8b35-0b7f1db33a2f.jpg",
+            "logo": "https://github.com/user-attachments/assets/c5996ed2-0d56-42d8-ac40-7eaf8116dbae",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bittrade.php": "09e397093be36d16b8bc61aa1ef48ff678702ebfdda265a42d6819314adc44b5",
-                "php/bittrade.php": "da20052b48bf20c2cde3cec4d62b80c70f26ee145cb336cef9f6afbc26649ab2"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bittrade.php": "432befba8c2db5e1a0847cd49803d7596a6ba98519bda69ec5b38ab67c1cc613",
+                "php/bittrade.php": "8743be1beecf9b769bfedfbc05fcb2e7db15812a1a2ddeb362c63de5fa03930b"
             },
-            "source_fingerprint": "d9f141268a5cbf36fc178b1af0b743e31083f37cb59a2fe8eb2cd0a53a475d67",
+            "source_fingerprint": "cea6d9f6b4c70d3d4e26e08141d4a75ad82cdceb2905c94a6a73962f76d695e7",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bitvavo": {
@@ -1116,22 +965,22 @@
                 "12h",
                 "1d"
             ],
-            "logo": "https://github.com/user-attachments/assets/d213155c-8c71-4701-9bd5-45351febc2a8",
+            "logo": "https://github.com/user-attachments/assets/35d690b1-5710-47f6-86e9-d638ce38685a",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bitvavo.php": "693f3eebfc663626c2971ec714d6ad08ae5d548716d3a93af9b3d383d2cc1238",
-                "php/bitvavo.php": "769b0349163dbfd712e95f51bf7d7f12f3657f892b5750e5b93d3c6d0fffca82"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bitvavo.php": "f18573378072e9449b5c6a11d0b52468d9d872e2b3684db038557194f444918d",
+                "php/bitvavo.php": "cfd01d3d799e026d3a5f882c7df685d693ab3da547f69b4ac0c8585864d840f4"
             },
-            "source_fingerprint": "e136dc9126723e9fabb461832289a1b41ae751dee14027cd40e2d79fa402bfa9",
+            "source_fingerprint": "f750dd542ae86975cc51321563c87e9435a50e837d15b8477b1f71bdea0107b0",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "blockchaincom": {
@@ -1147,22 +996,22 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/blockchaincom.php": "a096554b4c96da911400b0c6fd401cfbcdc39d0453d6d7f692335b77e3d0728f",
-                "php/blockchaincom.php": "191d91a25fde69f5741138b0b5dc26b31ca5880d6c4491a7fee82716ffb860d8"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/blockchaincom.php": "6f8db8a612d5cd35f42ab4a965e419cf480811fd29644a37f27b2177d43fd5e4",
+                "php/blockchaincom.php": "9c7e9782c6664a18a2570cfc064011a965692767da7d44d2a903f3053aaaa8aa"
             },
-            "source_fingerprint": "093a178907f35ef231860443aaed4ce0639b460f886e98706371bd59df0b2f1d",
+            "source_fingerprint": "28815212070122998730da6f96bde3b7573b518274cb8d61af11f8559d8680fd",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "blofin": {
             "name": "BloFin",
             "countries": [
-                "US"
+                "MH"
             ],
             "spot": false,
             "fetchOHLCV": true,
@@ -1183,23 +1032,23 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/518cdf80-f05d-4821-a3e3-d48ceb41d73b",
+            "logo": "https://github.com/user-attachments/assets/67edf117-6217-4cb8-95e7-9b03f314b1b1",
             "required_credentials": [
                 "apiKey",
                 "secret",
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/blofin.php": "3d8233c64d945aeec2d9283a69f970820e1e7d0c382f138db30840ea293d62bc",
-                "php/blofin.php": "2d7626036c3acc26d9d03576324740fd91e99d6385ca83f9e87472507bbc0941"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/blofin.php": "71b6cad69a8a3049c1018ad607596edc50f0c597903c26298ed88e00b3f3707a",
+                "php/blofin.php": "bb36339d4326898bdd1f38e8bd1d124f2c80f17f62432285352ca374c38180ba"
             },
-            "source_fingerprint": "838ea272f25440e7a6a8662b33d2a17a79fa80e84814a98493d5acde5e6b4b01",
+            "source_fingerprint": "09642b59b9c2d9a24c99cf0be94936df2b6c8f4e5bec05bb166bc269d716ea5e",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "btcbox": {
@@ -1216,16 +1065,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/btcbox.php": "7b80eb914a698880de7a6d82f967ba9c090123ed2ba16e5ec8f7d5317676dee5",
-                "php/btcbox.php": "26b5848aed4f91af1ba0017e202d6f26e2927e1b70353ef0d016cb871e63d4bb"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/btcbox.php": "2d5388b282ccd6bd4d5e6469058ae9c7172e814b584c936ec54b41a35b0d686c",
+                "php/btcbox.php": "dd2e19a670ad3f4d7c0295e301df2c13150a714b1f4d538423740d60d76c7307"
             },
-            "source_fingerprint": "5bf9fbec93406ee365983f0ec5977d75a21f8af2db3721ab8a23419ffc05d709",
+            "source_fingerprint": "a0219937f84b4cba039b4837404fbe36316b865f751c650c8940c80d836da37a",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "btcmarkets": {
@@ -1246,16 +1095,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/btcmarkets.php": "7f0a6f65b2348db3b4aff96660fa503cf0bdacfd0cb0f5b799b5f0de350683e1",
-                "php/btcmarkets.php": "a243283b03e6a02dc3e0850d0c99de5fea06e4715d67f333385c7cfdcfa0860b"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/btcmarkets.php": "678f594bac35a14df129eb833d812bf821afd970e62107b84d4279c74137f0fd",
+                "php/btcmarkets.php": "55c202ece76265a527f163fe9cd227b8bb0490b2092df595942b76b1812b8efc"
             },
-            "source_fingerprint": "9594f42efe554fcf8b9eff3b8923ef64e6918fb565d99de1cdd9d1a2487fdffb",
+            "source_fingerprint": "f2a0f0af679f4e93c2260f62dbc80ffaa2f90e2db44bb6de631502360c8e2bfe",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "btcturk": {
@@ -1275,22 +1124,59 @@
                 "1w",
                 "1y"
             ],
-            "logo": "https://github.com/user-attachments/assets/10e0a238-9f60-4b06-9dda-edfc7602f1d6",
+            "logo": "https://github.com/user-attachments/assets/710711ff-1278-4e7a-9b03-b5503dd85b59",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/btcturk.php": "d4354e980f379484a355550120f54147dc5dde5a754377576f29288666e6ec0b",
-                "php/btcturk.php": "d8105b0cf202446fb79b38daa3239c720ee887a70d8a1aaa0fceff0eb9195c90"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/btcturk.php": "e62342d837d70cec03f3777d18dc6cd42a33ee87f6a230c8ac6a7feabdd990cd",
+                "php/btcturk.php": "ed8afdcaf645c3e96941b6d3b3e73ea76f1e6d4934c7b60d079f45d5184ba797"
             },
-            "source_fingerprint": "563117f2342af1a46f63b53c1e4d2b48502015f0bf10ea2249bd9e28523e252d",
+            "source_fingerprint": "3362fc7f5545a3ff7ed9a44d3321c8b9527cc743072215513bf3cc3269dd7bce",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
+            }
+        },
+        "btse": {
+            "name": "BTSE",
+            "countries": [
+                "VG"
+            ],
+            "spot": true,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "4h",
+                "6h",
+                "1d",
+                "1w",
+                "1M"
+            ],
+            "logo": "https://github.com/user-attachments/assets/879ce771-6db1-4d8f-868a-77c9621635dc",
+            "required_credentials": [
+                "apiKey",
+                "secret"
+            ],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/btse.php": "06bd6340cb629784742613541a754afc2de1f9d8105a87baed2a9a27f8422ab8",
+                "php/btse.php": "3f990e185cfab8ac547c24f85711e2f44219064b5ee6e447c1cc893c00bd74b1"
+            },
+            "source_fingerprint": "ccf982ddf82bd4894badcaeb0cbbfffb886a54857adfc8392e220b6e1ee1a8d5",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "bullish": {
@@ -1315,16 +1201,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bullish.php": "25ceb5e04dddab068a1352ce029b5e6d884a31e39ae7353377fab29e28a880e0",
-                "php/bullish.php": "8b56bdc8008c0b30715691d71e67cf785bd6d10ea3d5dfa3c6d2646be055fc46"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bullish.php": "8ca6033e1078519221240bfd5c5c671365fb3dc36b2ebfe2a773ebcd8e0ac6d8",
+                "php/bullish.php": "afedc9df58f7ccf477839b4190596eefd010f7de645944f6912e8d098a3c2864"
             },
-            "source_fingerprint": "12bd83195c0887fe7a53e2bd53b75f40c44bf9feedd51576518dd609ea74b32d",
+            "source_fingerprint": "a3d470560a64db8badeb2b512cdedf53f9c7dc3c91c66a21db15048ac6e1a0eb",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bybit": {
@@ -1355,16 +1241,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bybit.php": "64312cc549a350ac7cb99da809ab49ad85c72fffbaede69182600c8492b3fd28",
-                "php/bybit.php": "ea8e3ddf798045a06e6ef6517277194887852918560a08589635ae0e822bcda4"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bybit.php": "87e50a538873a292477de7eac10088a7671b4225d0e42cf0766109e27bc8b82a",
+                "php/bybit.php": "7e689685dfe7c2d4d4fb5b1f310ea30024fbca7207436773bbd56cc29c78da99"
             },
-            "source_fingerprint": "0c518072a9b2500a8ec07c8b62e21f845dce1db122aca67d1a2916fe3c3812f7",
+            "source_fingerprint": "91999a8831d9a99f6ce253d323e04a868fbe67e43d1526689b4602e50e7e3bc0",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "bybiteu": {
@@ -1395,26 +1281,26 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bybit.php": "64312cc549a350ac7cb99da809ab49ad85c72fffbaede69182600c8492b3fd28",
-                "php/abstract/bybiteu.php": "8ce48c5c343e6c011c445aa041fb790193ee20d5265f31ae055831d00e98a727",
-                "php/bybit.php": "ea8e3ddf798045a06e6ef6517277194887852918560a08589635ae0e822bcda4",
-                "php/bybiteu.php": "df2dffe83c98a86c259c4b976017cdb837acd7de0f237b4dfc78045ced0b9c99"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bybit.php": "87e50a538873a292477de7eac10088a7671b4225d0e42cf0766109e27bc8b82a",
+                "php/abstract/bybiteu.php": "623cb7d26aba5efb41faddfba4e2ba30e9c0b52095288871550f247d2a2766c3",
+                "php/bybit.php": "7e689685dfe7c2d4d4fb5b1f310ea30024fbca7207436773bbd56cc29c78da99",
+                "php/bybiteu.php": "49a3a090608ebd574309e0b21850859a0e621c152e37c12388dcbd5db4691f68"
             },
-            "source_fingerprint": "68508c7426dd6f2d94c8601267d7276a3b3aec7e1ff40be7d04693bf78a4ec24",
+            "source_fingerprint": "6fa884b7237c50791642d2261715eacd1b7a89c145c6d73ca48b4db7b3d14252",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
-        "bydfi": {
-            "name": "BYDFi",
+        "bybitid": {
+            "name": "Bybit Indonesia",
             "countries": [
-                "SG"
+                "ID"
             ],
-            "spot": false,
+            "spot": true,
             "fetchOHLCV": true,
             "timeframes": [
                 "1m",
@@ -1427,24 +1313,28 @@
                 "4h",
                 "6h",
                 "12h",
-                "1d"
+                "1d",
+                "1w",
+                "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/bfffb73d-29bd-465d-b75b-98e210491769",
+            "logo": "https://github.com/user-attachments/assets/97a5d0b3-de10-423d-90e1-6620960025ed",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/bydfi.php": "d361339185b25ae64128dd4d015a7ef322356619e9c8101413bf765b757ee024",
-                "php/bydfi.php": "827fe6c8bfe770cfd3ca2cdd6055c2cb674c35108ed7268022b11eb255887628"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/bybit.php": "87e50a538873a292477de7eac10088a7671b4225d0e42cf0766109e27bc8b82a",
+                "php/abstract/bybitid.php": "42f494a4bf0a49d8b2cf27fd3743f248a09ce20743e26f99c0bed4df2acaa046",
+                "php/bybit.php": "7e689685dfe7c2d4d4fb5b1f310ea30024fbca7207436773bbd56cc29c78da99",
+                "php/bybitid.php": "9227d0d15de81aac2a5d61ead012161cc5bc9b7687c931bfa20cc71a71ef459f"
             },
-            "source_fingerprint": "fc969054963b42ae3d13979594b79719f2ce8da4bbd811038237daf2c36736a8",
+            "source_fingerprint": "2157ea82a89c4e3fb5ac214d4a70446a657782d252d7e8d7325029c4aec4185b",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "cex": {
@@ -1467,22 +1357,22 @@
                 "4h",
                 "1d"
             ],
-            "logo": "https://user-images.githubusercontent.com/1294454/27766442-8ddc33b0-5ed8-11e7-8b98-f786aef0f3c9.jpg",
+            "logo": "https://github.com/user-attachments/assets/6105a195-3bae-4a08-a1bd-b2a86e3e8f99",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/cex.php": "d1d61a022e921c5d145d9a87e60dc14575dd73370b22b9db611385302aeec5c5",
-                "php/cex.php": "b7c41a58b4b3158434b55c7562700ed3b14b4bc726ffeaf0e747512be1b1515e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/cex.php": "fb9d09c4af0ed6ba63aee7ced6f11f7c8b3c5e8afb850edaf0ddf5089ee7e5eb",
+                "php/cex.php": "5343f75b3dc1cf53e6e03cdbda1ccb23343a14103117ca5e1471785d08b99ae4"
             },
-            "source_fingerprint": "3a0ce0bf29a17f1489ec5240cb97d03506b166113f25602f5117506130fe3503",
+            "source_fingerprint": "099c870755c93bc2fefedd34796035fdb063bfa9d42c6d26f3e8c0f8903d3d1c",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "coinbase": {
@@ -1508,48 +1398,11 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinbase.php": "7e9026c72f5a7cae9a9912f72be556e405023a5116d113f178be93447d524d8c",
-                "php/coinbase.php": "d06dc1a361fac3aa4cff2559205682def693d88e6957dc55c299cb8f97c64ed6"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coinbase.php": "9edcf047dd726da664783db9b3a4479295bd2f1fccdf641a08f52e18550cf4a7",
+                "php/coinbase.php": "9eb394f3f32187a9f8b97af2f2c22bfa6bf024652fc5481413d46a14d7632c4a"
             },
-            "source_fingerprint": "0b3bb5519af0051b4b66cf8b881f92cd089bc079ef7d3e76dd59819e88bf7275",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "coinbaseadvanced": {
-            "name": "Coinbase Advanced",
-            "countries": [
-                "US"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "2h",
-                "6h",
-                "1d"
-            ],
-            "logo": "https://user-images.githubusercontent.com/1294454/40811661-b6eceae2-653a-11e8-829e-10bfadb078cf.jpg",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinbase.php": "7e9026c72f5a7cae9a9912f72be556e405023a5116d113f178be93447d524d8c",
-                "php/abstract/coinbaseadvanced.php": "afa6ffdc129adb34cc1f499d2e49ef44632d7ac296fe97ff0ebb155f068f42df",
-                "php/coinbase.php": "d06dc1a361fac3aa4cff2559205682def693d88e6957dc55c299cb8f97c64ed6",
-                "php/coinbaseadvanced.php": "b0cc57197774be8d16ea44d4c04054496f2b00eba13915496408ff42e70e4cd0"
-            },
-            "source_fingerprint": "7523accc8580057884028d0bd67ab863be8b5489c67ef075bce8ed5ffbe59467",
+            "source_fingerprint": "d6600860c5a744f1b0ecaab4b5837cbbbee301e2e39323b531f21bf42c85ee8a",
             "access": {
                 "state": "public",
                 "markets": "public",
@@ -1572,23 +1425,23 @@
                 "6h",
                 "1d"
             ],
-            "logo": "https://github.com/ccxt/ccxt/assets/43336371/34a65553-88aa-4a38-a714-064bd228b97e",
+            "logo": "https://github.com/user-attachments/assets/a99ef849-a4b2-4dd4-87fe-458ef17db7fd",
             "required_credentials": [
                 "apiKey",
                 "secret",
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinbaseexchange.php": "b0bf7407281d851c28a4e09e3c616242b78c6369640d5fe81cb31dfb98031c1e",
-                "php/coinbaseexchange.php": "e63e4443c31328f83ecc12e346071aa2b60ff81ce8421ae698ed8f51dd6d1817"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coinbaseexchange.php": "33f270c21386f12ac2547bccccc05128f10f38215e7311b5d1b66f7e1363fdc7",
+                "php/coinbaseexchange.php": "0add5c8b35032fd2542c62d98db2a96ced3cd3479bfd6c21ea14c7b4c6dad80b"
             },
-            "source_fingerprint": "52c38a978c19473db6c67d180db6c69e418984e85d7f2a8288efa461ebab7811",
+            "source_fingerprint": "f0c6adc95c996bb15a557345fcdebc2ab571590788954abc426e41f69d6726e0",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "coinbaseinternational": {
@@ -1611,24 +1464,23 @@
             "logo": "https://github.com/ccxt/ccxt/assets/43336371/866ae638-6ab5-4ebf-ab2c-cdcce9545625",
             "required_credentials": [
                 "apiKey",
-                "secret",
-                "password"
+                "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinbaseinternational.php": "82ae3abd04b6e73f1ef17cc9c78ef376337e400f913d8fc7df7624bdc9778b2a",
-                "php/coinbaseinternational.php": "43b49469561cfe19fd05e3cef3707bf2b8dd8511dee55f184b14ea2186f2116d"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coinbaseinternational.php": "73a7df6a391c91856bec761116cd353009ab2a1fa29a0eb58e0495e8b73e79f8",
+                "php/coinbaseinternational.php": "b9cf36f7f81f299bb1b14f6d58e84b1a07352ba1aef52b9a429a8c115a063ac2"
             },
-            "source_fingerprint": "345892f85de6654fa93a5c401ab0c5a82a14ec67ffdf2cc34b6d7dc119c043b5",
+            "source_fingerprint": "6f51e0a06f56b5a7ed131b7b2ad3ed93925c1057b6a4a0c8fe7861dfd736e222",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "coincheck": {
-            "name": "coincheck",
+            "name": "Coincheck",
             "countries": [
                 "JP",
                 "ID"
@@ -1642,56 +1494,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coincheck.php": "e5a9bf7a9d51b98f2c6b45fa31e581aef594dee37ab18ffedc7147b3fa5cdca7",
-                "php/coincheck.php": "b31639e8ffe92c6b939bb2eb8f61ee155b27bb97f1508eeb1d98f60198e36d28"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coincheck.php": "826b527176c11cf3507dfbbacd7f59e83de81f8511078c8b72a36766a38f83d3",
+                "php/coincheck.php": "e6c5c719b20276ce301cb28db42256193680cbf29503f8659948648dae02640d"
             },
-            "source_fingerprint": "2ba540ddc65ae6b70f8754883e1eb7a1ce5edfcc3858fc132f2de9ba4dc9e487",
+            "source_fingerprint": "d933a3b8edfe6aebacdb510b393b30e9d695bcc8eb9edcdf3e45fb07ad9ec6cc",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
-            }
-        },
-        "coinex": {
-            "name": "CoinEx",
-            "countries": [
-                "CN"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "3m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "2h",
-                "4h",
-                "6h",
-                "12h",
-                "1d",
-                "3d",
-                "1w"
-            ],
-            "logo": "https://user-images.githubusercontent.com/51840849/87182089-1e05fa00-c2ec-11ea-8da9-cc73b45abbbc.jpg",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinex.php": "b7a228dd7b3d13d9989018f6b74c322d05c3de9431496367b9e68d9603b470ed",
-                "php/coinex.php": "1d9ccbab497da374b8f73e37204be6d3c9cf519eff8727e051a71f1cfd7e8dad"
-            },
-            "source_fingerprint": "4d38b15b64de92f1b828e5224bbc1e9e63b71695b5e1411c22da121226b0cd0f",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "reason": "source_changed"
             }
         },
         "coinmate": {
@@ -1711,48 +1523,16 @@
                 "uid"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinmate.php": "53596776303a7540d5772499b1ae165f389471d17ce3e3206d8558d7aa823eb9",
-                "php/coinmate.php": "4c1c24443dcfbb19e99de215a1286afa2acc19cceed39572cb1026ec5f681084"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coinmate.php": "de5ef2fe258e3200c39601b64e7849414fad55798e4ac211a4c60e417ce830a3",
+                "php/coinmate.php": "e16ab3fe770688db30176113a5a03a884103a356db1221e9d5dcc407f3e601fa"
             },
-            "source_fingerprint": "9dfb5311ea4d5320eb0a652e3f054cb706daf8d7ac4363c5f2e18fbeaaf47449",
+            "source_fingerprint": "f675f1aea1f8c39df06932d2919abdf1b26f92fc8f91c4618f42e6104c607c8b",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
-            }
-        },
-        "coinmetro": {
-            "name": "Coinmetro",
-            "countries": [
-                "EE"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "30m",
-                "4h",
-                "1d"
-            ],
-            "logo": "https://github.com/ccxt/ccxt/assets/43336371/e86f87ec-6ba3-4410-962b-f7988c5db539",
-            "required_credentials": [
-                "uid",
-                "token"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinmetro.php": "539309c5d088bd6df1d44ffdb34824ea757a6f30c8ff80f81f4a63fdc8c76adb",
-                "php/coinmetro.php": "81a97f0bdd448ef0211369dc321536ce33b62162cc000e2af5c6254d9902c8ce"
-            },
-            "source_fingerprint": "bb2ad58bcf436b0abfe3b9f56b7501becec3a9d255b1dfd5b025d7eac2730f6a",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "reason": "source_changed"
             }
         },
         "coinone": {
@@ -1769,16 +1549,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinone.php": "ff04bdc6fdad08e28af4eba9d86b45c7834f62f519fad490e1b5cbc3f7f5f633",
-                "php/coinone.php": "e9c9c9516eef72bdbf32ac963f1cf3dc5ca7b218f4929b45850d72ab2424e903"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coinone.php": "bd9c699c113a393e12051d6005cf15e72e69dc275e2fd990fb2d11b26a10fd1e",
+                "php/coinone.php": "f2a5896bcca88f5ef51cec1f8796dd7293da90aa4f4dd2ae8296e8cde9500ae9"
             },
-            "source_fingerprint": "c3ef27b56de5619ce69f10acf719a22d6fc68ae8ad86ff99fb53de30576eb3be",
+            "source_fingerprint": "7b5f3dddd307ace6e07a03edde69f77e37716ce540aa9405e215af9d60c1f895",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "coinsph": {
@@ -1811,16 +1591,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinsph.php": "5354cd7a3b81c0de8da55deab6ca14576c4bacd45c82ad370ffc7287ff1470cc",
-                "php/coinsph.php": "6f7821ab26e65511903d456f0fd01500694c913327b978613d0eb1b511373ce9"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coinsph.php": "61348a25c3b639edfde1044983e470a2f5f3c0a19707643b2851df94b14f78e3",
+                "php/coinsph.php": "8caa017a7862964b26b4b1d66e5aa1819924b9cd6b736336b8b8200975e3c81f"
             },
-            "source_fingerprint": "d71223dd33ef773a741d6f5452e674e97190547ff70c63f6b8630b8d0d2bf776",
+            "source_fingerprint": "a2198816917e1c57ba7cba7e5058c2838e9c317f575232dd15313d8fffdac2fa",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "coinspot": {
@@ -1837,16 +1617,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/coinspot.php": "c6aff9ee3e52ebc6730ece5277479133abbd06490f8ac7cf9096ba3cc737833c",
-                "php/coinspot.php": "e28fe9c2f13ca40ae757d45b69f69260073b5273af871a7bb62c4ed18df7debf"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/coinspot.php": "b475eefd8285b425bc66298be4d5844af5b1983dd4fcf4e99f3cc73fd28212f4",
+                "php/coinspot.php": "32d2d548e7393f8346d9e39706c0cfb491948383379bf7273228743722cd161d"
             },
-            "source_fingerprint": "7206a51ed86ef30165951b65d26d89087b9eee2d131691c82fb5f9a0fb46bee8",
+            "source_fingerprint": "3164d000eceec0388dac97c467eb1c0634bd24344df17a11a3e661bd214b99da",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "cryptocom": {
@@ -1876,16 +1656,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/cryptocom.php": "431b2339631a3822c210ecdd09cd23c24861e95f13e8ba68d0063e24e3854b6c",
-                "php/cryptocom.php": "664878082f1b2bd5d0d27fdfa7176f03e0098e4ff6fc3cca7cccc77e059366ab"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/cryptocom.php": "c0d70b19ea8bcaa4d6bd89b1914fcee0d7f3ea74227bf903883c9121c9569670",
+                "php/cryptocom.php": "95cc84ff181c2e95de3c10be5341aa3e67282f21be698f4befde4de21d21c36d"
             },
-            "source_fingerprint": "097768ff80d8974735b671636ca61295c3f9737650999f290d1b6594565173e9",
+            "source_fingerprint": "245bc216bb2378ef9a11e75264e65e7e3524df32f4c61f29647e931b93f7b422",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "cryptomus": {
@@ -1896,22 +1676,22 @@
             "spot": true,
             "fetchOHLCV": false,
             "timeframes": [],
-            "logo": "https://github.com/user-attachments/assets/8e0b1c48-7c01-4177-9224-f1b01d89d7e7",
+            "logo": "https://github.com/user-attachments/assets/cce42038-d22e-49bc-8a9a-b9c92a2859a0",
             "required_credentials": [
                 "secret",
                 "uid"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/cryptomus.php": "284cc6aad9b29ad9efd15cd008d08c93544209e50983adcc1fc747a77f7d1ade",
-                "php/cryptomus.php": "a59b5fb661268c7ba0ecf43be2ac772cd2502177c7903fa878de7924ad652f90"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/cryptomus.php": "9091c3f5f591bbede91271cb512756b58d325ec3d2270cb74a63b8857de5588f",
+                "php/cryptomus.php": "35404891152a108ba6847485bb442454dc4ebaafaced4d59268f233706b1bad3"
             },
-            "source_fingerprint": "64553ab3894a179eb884fb40e6b08ffbf00b019b48b581e5811d7dfa9d9c835e",
+            "source_fingerprint": "0e366423dc6a41d4fb47afbc0665d30c6076a22cb277b3c6d8ad600468021eaf",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "deepcoin": {
@@ -1941,16 +1721,16 @@
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/deepcoin.php": "bcc45fb12a1c4c39bcc6df67a0ec538783a2fa81f6cd298b7a349066c693db48",
-                "php/deepcoin.php": "d388c048a9f7c37601445c2a369525410ebcb2331503f0fe6471ac2d252eb735"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/deepcoin.php": "a2902925760793201166254fe3b18e06b9216466e38b444fe20047fcd62c3dfb",
+                "php/deepcoin.php": "95e51b2becf54033e774db14a31eb8af5d1ab77c94add874592e9e8345ee71bf"
             },
-            "source_fingerprint": "f3dd35a91636e17957cba97b584ec44cf9181acdfdc33f65066db87aa4f9c7ee",
+            "source_fingerprint": "af5bdf7ccc45d5e20061f7e4686b450fc558ddf78e05170bf5b9c8a8fdd42578",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "delta": {
@@ -1982,16 +1762,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/delta.php": "90e7e3d07fe290aa09573df59a0c70acef7ecfadde8e7f7a2f0f5493bfb93de2",
-                "php/delta.php": "8b10e0eead2ba65281164aebf711c9bd17fa704e17ca53e6dc0e41496f6b201e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/delta.php": "f337e46f223a4c0572a4da7533dd9193664e28a8eeb8db01dc2e06af265033fc",
+                "php/delta.php": "5a118c1350bbda8056588589be797e6c7002272710fa0abcb20d7b94a87358c1"
             },
-            "source_fingerprint": "9c87028e331a7e3c08ece4428f87d2b49a77ec9a2c271235ac779b0f46c32435",
+            "source_fingerprint": "fea96dd7ef12efe43c33a6ef89d9c5099ee00483fbba8057589fc873b81a13df",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "deribit": {
@@ -2021,55 +1801,50 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/deribit.php": "9cbbbffaaf9db57ddefa348f030bd3d1958bbfe3ee18f4b269429fbcc800289a",
-                "php/deribit.php": "be279ae3bc8895918e40fbef82fa4890e227cc92820b50d89a6e54787cfb7405"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/deribit.php": "a8a42c31870728a6cf5765be37ccb3dcb7881a520839827df509ec21e35a8698",
+                "php/deribit.php": "a665fa910de156158379f97c73c73938ad148ece2bbf80e0f36d8c8cb1e6f64b"
             },
-            "source_fingerprint": "52ef28fec1dee5c6fe0d4da078703dde5ebbc7ff1a894e97aa821029de8c262c",
+            "source_fingerprint": "82a16e870508077da6328a63c9e7117c252d54fdd01176e5e2d31d8d2979fe61",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "derive": {
-            "name": "derive",
+            "name": "Derive",
             "countries": [],
-            "spot": false,
-            "fetchOHLCV": false,
+            "spot": true,
+            "fetchOHLCV": true,
             "timeframes": [
                 "1m",
-                "3m",
                 "5m",
                 "15m",
                 "30m",
                 "1h",
-                "2h",
                 "4h",
                 "8h",
-                "12h",
                 "1d",
-                "3d",
-                "1w",
-                "1M"
+                "1w"
             ],
-            "logo": "https://github.com/user-attachments/assets/f835b95f-033a-43dd-b6bb-24e698fc498c",
+            "logo": "https://github.com/user-attachments/assets/9e640700-c870-41f9-8907-fba58e120fed",
             "required_credentials": [
                 "privateKey",
                 "walletAddress"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/derive.php": "7ae50adca0f667f7d7ef5c41555ed6c704c0d6294b4449096f8d1fa792d8d785",
-                "php/derive.php": "81b152966a5d0cbceedbd1275e3804f072ac155c5c4b810eb96b4f0893766197"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/derive.php": "b47cf77766970cfb4da8ade25ea74ed16adf246f3e6e58b4d54b6e06486e5d2c",
+                "php/derive.php": "a0fe4e9e7443da42917b77ffbff50dd05a00cfb04cd77af0e5a0ba48cdc7fe39"
             },
-            "source_fingerprint": "24f42a0ce65575787994d9b5205a026d0a331bfd3b4069be10fecdee3e9fd090",
+            "source_fingerprint": "d0ab0c0ddd4ae8425ff67b57c1d50b5f17002dde1258f3bc7c6c2d4559404f36",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "digifinex": {
@@ -2096,16 +1871,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/digifinex.php": "619aef53b2be07eea69d7f862eb15af3a828d82b3445509b2a80c2b33c736ad2",
-                "php/digifinex.php": "bb8f10ae29c28da50bcaa7f7316076710476aa54c1b7fb4ee725d1d1afc6cf32"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/digifinex.php": "01f1b150e0410eb1db7a51fa69101fba6b23109cbe95c775aa3426deadeb7a36",
+                "php/digifinex.php": "36b816bb15adfec4b80e375328bd5180efcfb0fa753f2c7600379972947da21d"
             },
-            "source_fingerprint": "112fc91cb696777c294d76f98be3e3784e6200f3b79e1e4fc3804fe29a27f49a",
+            "source_fingerprint": "7d1e782e0a683c759381b95c8bed041353f0d7e8c1a31e31a1d43ecf6e35ee63",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "dydx": {
@@ -2124,58 +1899,19 @@
                 "4h",
                 "1d"
             ],
-            "logo": "https://github.com/user-attachments/assets/617ea0c1-f05a-4d26-9fcb-a0d1d4091ae1",
+            "logo": "https://github.com/user-attachments/assets/def0a54a-020a-4286-ba95-0f84e50a944d",
             "required_credentials": [],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/dydx.php": "6b14f485b5633ddcfb6b0a0c9e8abc64a09821532aab90f899452381d663d77c",
-                "php/dydx.php": "733026f405b4ee3ad64b756cc2efee384ee1d1c250da2f4296c5c77f2071d896"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/dydx.php": "1a9e17c4b17857f68d481f4639c02b993c24596ce65ffdf9369b7cfce4c062b9",
+                "php/dydx.php": "a1a13ad5f9e5e29e70cdc53de23284a3cb3fd689363dd6961a873a1b33a779df"
             },
-            "source_fingerprint": "8265f4c86059878f57e05b49f00e255e6afd80e3cc399bad8c18235142595fa5",
+            "source_fingerprint": "388c1eb0dae934e2137cd3921e4ad069ff109fbc882a06bead04d9cb0f962c04",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "exmo": {
-            "name": "EXMO",
-            "countries": [
-                "LT"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "30m",
-                "45m",
-                "1h",
-                "2h",
-                "3h",
-                "4h",
-                "1d",
-                "1w",
-                "1M"
-            ],
-            "logo": "https://user-images.githubusercontent.com/1294454/27766491-1b0ea956-5eda-11e7-9225-40d67b481b8d.jpg",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/exmo.php": "2183caf195e4b8798f6ef39d7cb6da678ee67e926b11439c767d106f40713407",
-                "php/exmo.php": "ae819e80e476dadd2711884d15f8716f64241ec4ad914b032f04936083083a4b"
-            },
-            "source_fingerprint": "7bc9462fa683a785e06841864c3ef17367dbaddb2373b37c3f3de83aadea175f",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "extended": {
@@ -2199,22 +1935,22 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/309d44db-2a50-4529-a27f-8f4492aec299",
+            "logo": "https://github.com/user-attachments/assets/e2fe2bdf-6b28-4af8-b30f-38db496dc079",
             "required_credentials": [
                 "apiKey",
                 "privateKey"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/extended.php": "c411168231955498d918d41db490104fec76e6a18ca6d555fbafa09a8a16374c",
-                "php/extended.php": "f8f2e54e1c9254d71e31d0ca04f188ceef17ec0e03da7ac2286a7752020a79b6"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/extended.php": "1285cfec34b9c86270325801207f3f9618cbf71dd0f128135e95716cfe492400",
+                "php/extended.php": "bc8e018a4b01af4d24b4262c317a288a4cef9105565bcf6c44ff5b4cb1b79f3c"
             },
-            "source_fingerprint": "ade2f06b16a9e4ebb5ba137b6539f013a0b9a7638ea22d8d804de6e5060bbed2",
+            "source_fingerprint": "498835ca810d7f2e0d98194e199e5564fceb21ef0d2899267d9ad7d58a5bbab3",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "fmfwio": {
@@ -2242,18 +1978,18 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/fmfwio.php": "4b0e8f23d35c83b49124194273712fd680f8f45dd68f827a540c927d6bd5a517",
-                "php/abstract/hitbtc.php": "12fa8d71fe9900cb4379eddc4100fdd8a066d4be204c7e8891ca8e9bfa282bf9",
-                "php/fmfwio.php": "ace9c1ef921e54130ab4ff35b183dcb9709d80133564de35341437e1a009f7c1",
-                "php/hitbtc.php": "a5c69e7dd566386f7c2c91abb1ef51a9f581706e34fc369c2d19cc1b75653b61"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/fmfwio.php": "30cf542e7e1a8cb01f1a9b15d2d73461c2063cf427ffd6e4d7c65dcf1e13e74a",
+                "php/abstract/hitbtc.php": "9bdec8ab7ff711145922893ade6fdcbf06cb7f62a8f6be2c5d79d02640945617",
+                "php/fmfwio.php": "77d567bd3ea2209f5a174f56156ac1bb93eb3d338a327b303d1a9cb4e37989b4",
+                "php/hitbtc.php": "b1ed5ace6dc3fc0c70012466471298e2784f0378df98065bef43f7110f392a59"
             },
-            "source_fingerprint": "c5999ed9460efaf21b5d9eba58e389de3a0996a176bbafa232dc8ea61b3be920",
+            "source_fingerprint": "2a8896a2739925cc59c2a6ad7ae920463653a38d7bd495d527fabc1d4dcfdffb",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "foxbit": {
@@ -2284,16 +2020,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/foxbit.php": "8936ab898bbde3cc076f813cf01612366fe0936378eeb096201745edcb6e614f",
-                "php/foxbit.php": "bdeb19c869f10e2cfa7bc0493be6ef0a5aef1d4dfdfe135aaf4368e69220ab5d"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/foxbit.php": "9b78d8024f4995cea90a9512f910c436c6773a8259197957fb7b0f8784321811",
+                "php/foxbit.php": "4860e09f9c9a4af48f73bd2c6475599843e1155d8841d8d46916cfa238376fe3"
             },
-            "source_fingerprint": "bee7e99c4619e5c6ac1f5c835c5be61e6c08dd972d20fa94d9e4ca36b36b98d2",
+            "source_fingerprint": "733543960ba611a1fe6596d3d52ba6796d12313e67b87f105ad0cc722bcce71f",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "gate": {
@@ -2317,22 +2053,63 @@
                 "7d",
                 "1w"
             ],
-            "logo": "https://github.com/user-attachments/assets/64f988c5-07b6-4652-b5c1-679a6bf67c85",
+            "logo": "https://github.com/user-attachments/assets/b4fd9d41-eaed-46fe-8a7b-b2677edface0",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/gate.php": "aa28fc3a037d5c31daacfd9b5f844ea01afaee9c86f12255861fc8e6cded864b",
-                "php/gate.php": "6c1ed2c0c9ff2b7ba49089a31ddc2b458c356265281864bf6e1189373968a87e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/gate.php": "7574056f8c8c44fd66d3bad3fe08ec2d57f140af0194c9d2a952db3cf3de4f32",
+                "php/gate.php": "e3bfc3b2f6bdf0793fdb5dbaaa8d183fdbe428473c920d3e89e5b5409ac9a5cf"
             },
-            "source_fingerprint": "0bc9f2a5fc716df2a73362abb1da815800f4e2c23a34f47c3d4c886de535e97d",
+            "source_fingerprint": "35d7e7739cace0feccde44c382be6f7b7025ccdc5db1d88fc409dd1a9ac5e0bb",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
+            }
+        },
+        "gateeu": {
+            "name": "Gate EU",
+            "countries": [
+                "EU"
+            ],
+            "spot": true,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "10s",
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "4h",
+                "8h",
+                "1d",
+                "7d",
+                "1w"
+            ],
+            "logo": "https://github.com/user-attachments/assets/b4fd9d41-eaed-46fe-8a7b-b2677edface0",
+            "required_credentials": [
+                "apiKey",
+                "secret"
+            ],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/gate.php": "7574056f8c8c44fd66d3bad3fe08ec2d57f140af0194c9d2a952db3cf3de4f32",
+                "php/abstract/gateeu.php": "e127534aa054de75ae9aa635f19b2dfbaffb3ec4100edbfa5ca220bccfb59132",
+                "php/gate.php": "e3bfc3b2f6bdf0793fdb5dbaaa8d183fdbe428473c920d3e89e5b5409ac9a5cf",
+                "php/gateeu.php": "f8b76270c4b089faf4c16259be275e750769c9fa15532c6a78582cb8f646d3d5"
+            },
+            "source_fingerprint": "ac97df8babcfd079abd9f2cde2044e29e8a847cf05231ea63975692b40afc1dc",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "gemini": {
@@ -2357,16 +2134,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/gemini.php": "4e44685d56309ca463fbde6faa0074130994ee9bb7f6206b54bcac28a256ee5c",
-                "php/gemini.php": "a7d9d6cfacee2339a47670f87b8ea3ea8c058719dbbc2c8ba4a71a8e85a1f803"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/gemini.php": "796dad4722fb3d8329ad62bdecb6be3c936e4e39bf9efe35326a99a0eebf074f",
+                "php/gemini.php": "c396357377c48e14119afc21a4db0a19cff01a46509d0869cd4d767b8068c907"
             },
-            "source_fingerprint": "25b3658e53a40e38b24471f6fe31111011c0a061fef24c9a94838398c9af062e",
+            "source_fingerprint": "d5b271580a636dc81bc4495f977159989a05f71dd16dc0044bb2a4bb46d5ec5c",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "grvt": {
@@ -2396,21 +2173,21 @@
                 "3w",
                 "4w"
             ],
-            "logo": "https://github.com/user-attachments/assets/7a2e8108-29f6-45d1-822d-48eb1c8cbbe6",
+            "logo": "https://github.com/user-attachments/assets/cff0d37c-e594-40cb-88b3-90650ddadc18",
             "required_credentials": [
                 "privateKey"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/grvt.php": "9f7b5daa21319f1cb93066fec0ecb2086c37d1db5b1a8b1a273fd7ac3abc264e",
-                "php/grvt.php": "ad85d0b0ae49e1ae0cded7506a79d1c34ab3abf41e350b9403d6b3be9d7c25a0"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/grvt.php": "0851b20bce6a95574b25804c38b1be13aa533a40f477239c584e353ae13a1413",
+                "php/grvt.php": "a4cbf79d308476553fd229271f8c4ca2423a95a62661a0add62f904a47ca1450"
             },
-            "source_fingerprint": "b6330c71e94fa1895d702a1a86a3429034d5f5749d6c35efcef9b1da2d6fb846",
+            "source_fingerprint": "44ed614fe26424b79bf285c685f2553da467c90c39fb78ea5860b996b0b987d4",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "hashkey": {
@@ -2436,22 +2213,22 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/6dd6127b-cc19-4a13-9b29-a98d81f80e98",
+            "logo": "https://github.com/user-attachments/assets/3dd65db2-5da9-4ecc-93ac-6d420f36261c",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/hashkey.php": "77b18b2a00adb72834e9e53804255318fff44ad73f8dfc4d41343dc28d54b5dc",
-                "php/hashkey.php": "6ee5a719f332ff327b5a1bdfda7f9d5f948ddefcd6d089e7e48ce2e5cbb2306e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/hashkey.php": "807fe869d8aa2dc01f5ba79a8d6c124aa02597110d43d7050c141a7002ac2cfb",
+                "php/hashkey.php": "d9943092d3952cb8313ff12c8d6a167d358ae4429007074cd41d5f6a52ddee40"
             },
-            "source_fingerprint": "087a8634dfcc388218eaf7e19b201ee27388d29b991c6dd88f7eee9b0f012e4c",
+            "source_fingerprint": "e46bedfc9f6deed212af6a6406cf9530c74456024e3184545a9824f32de960dc",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "hibachi": {
@@ -2470,23 +2247,23 @@
                 "1d",
                 "1w"
             ],
-            "logo": "https://github.com/user-attachments/assets/7301bbb1-4f27-4167-8a55-75f74b14e973",
+            "logo": "https://github.com/user-attachments/assets/f267bf5b-5c6c-45e2-9ce4-fb0af8a9d9ab",
             "required_credentials": [
                 "apiKey",
                 "accountId",
                 "privateKey"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/hibachi.php": "2b11aecaba5af541f2c55f0c8d44490af1694fe63f3dfdc69e53cd640ef04f3c",
-                "php/hibachi.php": "b86e24def920bc3bdbe3523a1147b1b7e3f961ca26595fd5b457ae04147a534c"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/hibachi.php": "cb67b9e0950e21e13ca156b7db0a1f9f0bdecad8bfa6bcad507d6f6c5563047f",
+                "php/hibachi.php": "9fd5497be468685e0bfc1d52b8bdf7e5444c78c0535156bf2aecbb7f337e1b24"
             },
-            "source_fingerprint": "dad4d41828a5d84bfa2ea2f0dc8569225bebbbc124ff26c18e42322cb5e7f7f1",
+            "source_fingerprint": "6d53cc5d71f6dee1dcd0c8ddafb9d17060a167baf7f1fc7306e961d1a975ef80",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "hitbtc": {
@@ -2514,16 +2291,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/hitbtc.php": "12fa8d71fe9900cb4379eddc4100fdd8a066d4be204c7e8891ca8e9bfa282bf9",
-                "php/hitbtc.php": "a5c69e7dd566386f7c2c91abb1ef51a9f581706e34fc369c2d19cc1b75653b61"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/hitbtc.php": "9bdec8ab7ff711145922893ade6fdcbf06cb7f62a8f6be2c5d79d02640945617",
+                "php/hitbtc.php": "b1ed5ace6dc3fc0c70012466471298e2784f0378df98065bef43f7110f392a59"
             },
-            "source_fingerprint": "47cbb05f985c07dccbc5ec02f665bdea43d6f92848b7243990fcb83e19b3fa82",
+            "source_fingerprint": "4c76073be693eca0c08f93f410466f145ca2e252d119c8316cda7310b256329f",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "hollaex": {
@@ -2548,16 +2325,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/hollaex.php": "f413315732cf2418ea83662294994e80203ba246393cea78ecc450dd44f1c5ae",
-                "php/hollaex.php": "e1c904ab68b003fd99dee6d9dee9765f7c8107fb22984b03c3020e63b477af41"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/hollaex.php": "bf04b40033bb18553080b7301f66d743be2e6ff57e1cd7029be847ed95cbd7ca",
+                "php/hollaex.php": "e36131fe4abd9f580bae8e3804eb0220ea65063867ff7f8632ae5c8b4774f126"
             },
-            "source_fingerprint": "8b5f72644cc85d598e8ef663861e7c71604967469f400b6790536e21cba900a1",
+            "source_fingerprint": "5be77b75ae5b7142c0898cb01309a155e05917e476f1487bb5adbaf62ea28f46",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "htx": {
@@ -2585,55 +2362,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/htx.php": "e5dceccde72455ece5f8c6b5b05f61316b97f5bf0011338a0327fcc39c23d860",
-                "php/htx.php": "6072abf84f9e46907ac64274d1872fa058ad2d1216af3a162044adea358fe214"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/htx.php": "a0ca44212dde8a7e170aaa26a46774bbdbbc63dacafd81759e9faf593b148bc3",
+                "php/htx.php": "16940dc350b2c0e5a78037dd1d10746088a1d820ba0b79497ae8b2b5982c344e"
             },
-            "source_fingerprint": "0ea7015576ac26f893fc1374f509023136497d3288cf6a3a0649f69403e94cd7",
+            "source_fingerprint": "041c48db06240e8dca636a716e751f8fed3a49f89080012a4c1f25ff3c2895d4",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "huobi": {
-            "name": "HTX",
-            "countries": [
-                "CN"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "4h",
-                "1d",
-                "1w",
-                "1M",
-                "1y"
-            ],
-            "logo": "https://user-images.githubusercontent.com/1294454/76137448-22748a80-604e-11ea-8069-6e389271911d.jpg",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/htx.php": "e5dceccde72455ece5f8c6b5b05f61316b97f5bf0011338a0327fcc39c23d860",
-                "php/abstract/huobi.php": "a0fb4a9df1bf41bf98303b08397185fa1c762c1e7e496444bb36b017934f9292",
-                "php/htx.php": "6072abf84f9e46907ac64274d1872fa058ad2d1216af3a162044adea358fe214",
-                "php/huobi.php": "439a8caecaafd9e392606ede55c3f35dd54c0371c1fb12e321443f32ab929f4f"
-            },
-            "source_fingerprint": "f114d3c2b08e339e4791cba0455e25052716e0b446462efb28e081ed1e3fcd07",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "hyperliquid": {
@@ -2657,22 +2395,22 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/ccxt/ccxt/assets/43336371/b371bc6c-4a8c-489f-87f4-20a913dd8d4b",
+            "logo": "https://github.com/user-attachments/assets/550769b3-d270-461e-9e02-8e8b8c0210b8",
             "required_credentials": [
                 "privateKey",
                 "walletAddress"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/hyperliquid.php": "a52988246857263082a6fa5259a6529ff948c33cac2f3520b613dac0e7a2ab35",
-                "php/hyperliquid.php": "1391827498857e62c37d30cc2aeaa2a0a5fdf3e6f708e8860e5e875929391ecc"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/hyperliquid.php": "8d6b0244c39b638a1e508e820d10cec87bf43f07f2005d043a38a3e6ff4f5737",
+                "php/hyperliquid.php": "255c375f80ce09a95b497f081ffe88fbf0a06f0fb435eb22423200c897610c19"
             },
-            "source_fingerprint": "91bd20e6e5848a4bf914d2266bec5f8bd2124899cf5ac9a38af8b07f7b1bb33b",
+            "source_fingerprint": "aac726c3a187acd0ec8dbdb6a568c21c55e6c6f84842852e2e1f9b28d6cf8cba",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "independentreserve": {
@@ -2690,16 +2428,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/independentreserve.php": "0bbb2390e7345f4d43584d5e607fcc540601450fedf0962ea3f501547258ad76",
-                "php/independentreserve.php": "676b2fb95b7aa3a361762ab5cd77a4dd10c7cc54fe342142c6922eff4c900e05"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/independentreserve.php": "0dbabdbced1edc63abb678cc451614cb787bad100af0709d431f285c28e4d6dd",
+                "php/independentreserve.php": "e67a2d818d1fbe3b55a91163fd12e14788e5f693b71fd74f4b84242a3c7dfe20"
             },
-            "source_fingerprint": "4768fc8221a00078e68faa68126fb35cab9ea2559edd9723ab41cf2fcc50f4d9",
+            "source_fingerprint": "3f8777881a18075f04147814bc895350bd783a0c628554edfa92de85c49ff20e",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "indodax": {
@@ -2708,7 +2446,7 @@
                 "ID"
             ],
             "spot": true,
-            "fetchOHLCV": false,
+            "fetchOHLCV": true,
             "timeframes": [
                 "1m",
                 "15m",
@@ -2725,16 +2463,55 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/indodax.php": "23610c542e231c5c7f27a7f413c26f502ec396f3b2eb37665f39da3c9b19c3fa",
-                "php/indodax.php": "1b113d837f02fa6ef20b39b43a37ab080e9bfa028b6c81c63570fddb454debf4"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/indodax.php": "0f101277d980e86b093166736293a6442234cd7058bf7618775d0b0972270447",
+                "php/indodax.php": "05cdb51db03b052fbee30b3ce005085993ae7eb8619fe0410e88a988301de329"
             },
-            "source_fingerprint": "576cd143f32ceb3e1d2c08143b15e587b5f5cabd07b386cb2bc7ce909f096468",
+            "source_fingerprint": "574a0e605d1fe4f3321cd2d2f87791b448d7e1b0e68d0d7c4d5f7a53c1f39fc1",
             "access": {
                 "state": "unknown",
-                "markets": "public",
-                "candles": "public",
-                "reason": "ohlcv_not_supported"
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
+            }
+        },
+        "interactivebrokers": {
+            "name": "Interactive Brokers",
+            "countries": [
+                "US"
+            ],
+            "spot": true,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "1m",
+                "2m",
+                "3m",
+                "5m",
+                "10m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "3h",
+                "4h",
+                "8h",
+                "1d",
+                "1w",
+                "1M"
+            ],
+            "logo": "https://github.com/user-attachments/assets/47a035dd-6321-4321-adf5-19a6072e5540",
+            "required_credentials": [],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/interactivebrokers.php": "babe9df6ac2136d86c4d50bd91271a706e95c5fff7221f15c4c33c0c2194c049",
+                "php/interactivebrokers.php": "49e4c4adb34de3e853c98159bb13681e1f2d3144f2c6ced8d86f329345488eb2"
+            },
+            "source_fingerprint": "98d52fe41ec708d31d448d47cb448d7f0105cf789b6e458cec8c79db5ae675bd",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "kraken": {
@@ -2761,11 +2538,11 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/kraken.php": "86de402a188cf4b8d6470a6d2262d7e8a07bdb48060ad1e25041803878a64617",
-                "php/kraken.php": "ed5f6a5361e04854d7ecfa5eee2866ce0db0a55bb7526a37528d0a0acbee4384"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/kraken.php": "5f5524ccebda0b68f59e1a944ab3f3919ba02e8b8d3b48aabf4f2ec44a7e696a",
+                "php/kraken.php": "736bc5ca09ddd477eecc6ceb18288e9cf27c15c9eb56ad13c9b5bfcd39deb01c"
             },
-            "source_fingerprint": "b5d2db5f36e8ea037f52d65164bf886a3176b1b486844adf9c39b4f22bb389f1",
+            "source_fingerprint": "0c6d1f59a3d58e41c45ed1b463813a5e7f29c9e557154c472e79fb9e66ab5ca6",
             "access": {
                 "state": "public",
                 "markets": "public",
@@ -2797,16 +2574,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/krakenfutures.php": "50c4b4064c29b4d220872c48795cc542db73213fe1617eeccba9cfffcefc1216",
-                "php/krakenfutures.php": "229f4a2047f8981e5a8927186c302713f508339c23d85b02ffbfdb32a4a0a6ca"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/krakenfutures.php": "b08f2d2f6a7d17717e2fcdb27a1f36be8a97558faa555dddf2d3a4104a5c74fa",
+                "php/krakenfutures.php": "97d54f90f87580e48191398c8ff23ad8c37316538a9a5ee6035ac6a4ac41f14f"
             },
-            "source_fingerprint": "39e5afa897e6c1b350392058a44b924d64f285f8ceaa70c60141afeeb681b010",
+            "source_fingerprint": "a6a290e9e8234e6e57569a7cb781d7cd27f5f95edbce7ab25b802e7ab190de69",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "kucoin": {
@@ -2839,16 +2616,16 @@
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/kucoin.php": "25c52e4709f2c313981edc578c34bd63aa32d653108e421ea7445fb7341f10b1",
-                "php/kucoin.php": "25ebc95d6f2115fffba75856dfa09db0e79cfa376003703f1cc55aef7866c99b"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/kucoin.php": "0327c16c889f23335022d257b2400e7bb3395db0baa1d9acb927090fdf934946",
+                "php/kucoin.php": "6fb07dc9f4bde079961fae48c85c7e447dc7a7288629b265daed74fab76f3066"
             },
-            "source_fingerprint": "212d672710c766dd73da15d3e81a96c331fb205b80a3388bd4471dac680e119e",
+            "source_fingerprint": "8dc751449bebbbe158a7851b70b79ef8f583c5b977d716f4876d47577ba2ea87",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "kucoinfutures": {
@@ -2881,18 +2658,18 @@
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/kucoin.php": "25c52e4709f2c313981edc578c34bd63aa32d653108e421ea7445fb7341f10b1",
-                "php/abstract/kucoinfutures.php": "a058fc999c9b9e947f88cd113f89a4873feaae01729bb1217818ec86097ce53d",
-                "php/kucoin.php": "25ebc95d6f2115fffba75856dfa09db0e79cfa376003703f1cc55aef7866c99b",
-                "php/kucoinfutures.php": "e04043bb59957f3475adb9a1fadf2b04f1590d9466ab9d0899224c7a34c17350"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/kucoin.php": "0327c16c889f23335022d257b2400e7bb3395db0baa1d9acb927090fdf934946",
+                "php/abstract/kucoinfutures.php": "65b57d0af54f5dfd974bcb15ef2824e75b3ac36f4dee274c97ef147a7635f09b",
+                "php/kucoin.php": "6fb07dc9f4bde079961fae48c85c7e447dc7a7288629b265daed74fab76f3066",
+                "php/kucoinfutures.php": "370a9a3c8fdef767743f2e88b40d0751c6960487c4da4fa8cabda0a91e798d20"
             },
-            "source_fingerprint": "389706c94975067cb95b84e2adb469b054bbb8c4d66bc7125f9d7b35bbed7edd",
+            "source_fingerprint": "4e742ae0c639aa190ae8fd3985c1c683ee41f3766b442c300e19ffcc309c9b18",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "latoken": {
@@ -2909,16 +2686,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/latoken.php": "4ba747e3051d3edc86128a6ab732e6c9e8f4eb48af1fac2b7a656df45765ada4",
-                "php/latoken.php": "a1d986bd403b3e011f706c3e0ffa7b73c165b9e6595d32c6f8285d1406466b6d"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/latoken.php": "cd2b21e9365cf7b7a0bf50afc80d4ce2f8b885e952338e010c53f3a7b8d61b85",
+                "php/latoken.php": "4f45de6917bd45e676c5389a3ee9e7b81f894e602ab5973291d6cc2706a977b2"
             },
-            "source_fingerprint": "d559bbff3adee5bfbfdf3b76373cc2b4f90771d90e06d0bc205a4c2d8a1d4680",
+            "source_fingerprint": "51f83d9094f768b07a4474d3f4e1383d8877326c2f452a59ca86a44c2dc6a49c",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "lbank": {
@@ -2948,22 +2725,22 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/lbank.php": "83a10900dc1d119c513d00ba5000bbd09cf0b89f97a204cc686a66389f8ee87e",
-                "php/lbank.php": "08bc8e5fbb0d41bbacea7eeb68c06da891d421bb936aa12d34954002c193631c"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/lbank.php": "8e2d77e16062a909a9b7bb572ad24e0eb78e3a37f15d8ead4fc59bba52e6ef5d",
+                "php/lbank.php": "ec8e7a212536910ca956310e86a4eba04c4da91f01e803266d7e4a15ea5ed547"
             },
-            "source_fingerprint": "4f03b4c804ea4c25847e13bcbf06ba4e513ab4499e56540d74fc59f6c61d3c6d",
+            "source_fingerprint": "25727f546396fa1bf7b450178db38bf58043e0427186214a437af34154eb910f",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "lighter": {
             "name": "Lighter",
             "countries": [],
-            "spot": false,
+            "spot": true,
             "fetchOHLCV": true,
             "timeframes": [
                 "1m",
@@ -2973,28 +2750,27 @@
                 "1h",
                 "4h",
                 "12h",
-                "1d",
-                "1w"
+                "1d"
             ],
-            "logo": "https://github.com/user-attachments/assets/ff1aaf96-bffb-4545-a750-5eba716e75d0",
+            "logo": "https://github.com/user-attachments/assets/5aa1158d-0734-49fc-9155-501d94b76a0b",
             "required_credentials": [
                 "privateKey"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/lighter.php": "c56063f0e4653d0f7a6f7aa70a0e6fd2010181988acc613d930d467e6cb9a88a",
-                "php/lighter.php": "977de486e79e55c65a59788ded5e2595ffa7f86a03af760c1bf61bc947b7419e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/lighter.php": "e4712c863dac1b37277c1d55a9df8a0f1ab99927e8f22a308595464c37cb35ba",
+                "php/lighter.php": "6158d0afaee9024502804408feb003edc7c3437340e01e85591de0ca080baff3"
             },
-            "source_fingerprint": "e8818b2c28b0c677e3c1033d21d3f56ba0f77fdffc91049736205e93f5be889a",
+            "source_fingerprint": "3896cf06201ca14bb13f02baa60b3a5ada93011d41f67a047c3d269f195e0667",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "luno": {
-            "name": "luno",
+            "name": "Luno",
             "countries": [
                 "GB",
                 "SG",
@@ -3020,11 +2796,11 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/luno.php": "2049b6338a5c99d89f0cf6dbb88b40c0c90090ea6aec2f9be73a7373c9b3e01d",
-                "php/luno.php": "397cf3045bfeae7881d6a74a3491828f9fbcf40fc0cfc54b4f63662ebcc49939"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/luno.php": "7e146ddae6131c635687a2bddd2782888b7392483e4aba49930d81a9d740b777",
+                "php/luno.php": "e2738cc9978170aca150f0c218bf8a63d55520a5a82ec484ef5a12e40cb50488"
             },
-            "source_fingerprint": "1ae293e3a473181190ccfbd9c20bd87055e131added07b272d33a9b00da4bfa4",
+            "source_fingerprint": "772bd1914a59189d1d93c549d83f1118ab59e2eb2ba57604dd034a1657e8abd7",
             "access": {
                 "state": "authentication_required",
                 "markets": "public",
@@ -3053,16 +2829,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/mercado.php": "d9e3fa838c9f84b432bf4ece3d7d123104dd21e1430bb8e61d5704137e675a35",
-                "php/mercado.php": "30fea6fd296455e1cb6619f861efef00ca67e1546bf1654f587bb3b8dbf5f253"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/mercado.php": "cfc1b450e24ba0ad0ce45e138b2f31a868ba6f5b2c2568917021e41a34abe247",
+                "php/mercado.php": "04ab734b60f29876fae8e86587a62f4d3da26e3eb96795c1dd38d18ab4c11e62"
             },
-            "source_fingerprint": "33b387f8be5805c0167960e435e21e2484a100674ff9d7fbbc14bdf59d140bc5",
+            "source_fingerprint": "e4c0d8ee6175dc47c178727d622af82e133fa7bba7f1b2d7341c9a9feeb49f4f",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "mexc": {
@@ -3090,16 +2866,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/mexc.php": "868168dae65b11fe9757fe33e5e6379e45f194975e1a800b407d1206db2f47f1",
-                "php/mexc.php": "db15be84d790afdccaaa579b9354e54edd6c8e67599da814c92e4f2a21be5f9a"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/mexc.php": "6d4163a24f71c14245e40a3a90b1b8e970488eae21c8e7ec0a7753ec88e4f031",
+                "php/mexc.php": "f932a8c892cb7fbe6d3a3be06b0a076d970d3d6460d3f1455ecf9077081135b8"
             },
-            "source_fingerprint": "c3511bcab5589439e0baea1cac8348e0c0537950deef4cc18ac82d87c3b3902a",
+            "source_fingerprint": "2098a785e2e39ca2732570ccd25ca130c99265f1ad26229791ead85c8aeed18c",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "modetrade": {
@@ -3122,23 +2898,62 @@
                 "1M",
                 "1y"
             ],
-            "logo": "https://github.com/user-attachments/assets/cec2b7f1-3b2b-4502-971b-447ee1937d6b",
+            "logo": "https://github.com/user-attachments/assets/bbde7d00-6e40-404f-8f34-8fb15893eb24",
             "required_credentials": [
                 "apiKey",
                 "secret",
                 "accountId"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/modetrade.php": "5a4d66d966221ade7a2b7f5e660541f3927bbe793b895698edfb68163bf02d65",
-                "php/modetrade.php": "d2fd24dfef296f69fcbebe6d913f843968001eafa8a99b362c518b60351af6f1"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/modetrade.php": "1f14020edeae2791218562b9217e9a4a64ccba8535aa060ef4bcedee92cc460e",
+                "php/modetrade.php": "bedf59cd40c51f388eaaefeaa0a27e14a44dd249313685bea9cba3dbee58326d"
             },
-            "source_fingerprint": "302a96577e058bbd579c8da83e716c4be74b1fb97f465d9aedf5db3ba15e6f6f",
+            "source_fingerprint": "b29ac7fece758106669499b830264fddd2c57e9e682ee1d7ee2a98f07fd83411",
             "access": {
-                "state": "authentication_required",
-                "markets": "public",
-                "candles": "authentication_required",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
+            }
+        },
+        "mudrex": {
+            "name": "Mudrex",
+            "countries": [
+                "IN"
+            ],
+            "spot": false,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "1m",
+                "3m",
+                "5m",
+                "10m",
+                "15m",
+                "30m",
+                "1h",
+                "4h",
+                "6h",
+                "12h",
+                "1d",
+                "1w",
+                "1M"
+            ],
+            "logo": "https://github.com/user-attachments/assets/72368864-84ed-43eb-8c75-d4fb77023b42",
+            "required_credentials": [
+                "secret"
+            ],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/mudrex.php": "f605ad499640407130834b4c7aa71d0698fca91e5a112ec0fde66ec82f10db13",
+                "php/mudrex.php": "0b84eb9d1d3f829ce8f5edf59c6dae7ae068a45ea35c007ba90881fbcf87a16f"
+            },
+            "source_fingerprint": "b5c74e12c63539b44a6b91f72a4e921d5afe5a655b533047f29084d57917fd45",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "myokx": {
@@ -3172,18 +2987,54 @@
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/myokx.php": "858f8c07fd62cd7563b50660d81f619d13e352cd58d476767c7b66171c342b56",
-                "php/abstract/okx.php": "4c5f1b9fefdcd4c001d8f1a4a9b72105c25b79bedf6869e22087a57a7ac94c32",
-                "php/myokx.php": "4996884a6ed6cd66e451e095214494c1b32b524a3b26b7a059d0d2b5fe23e7c6",
-                "php/okx.php": "80a67a3c23519f95c026007c6a6dbe3baccca1eb9189f670d661e37fa67e97a0"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/myokx.php": "c0d1ff638b51894b2222dff0d886351bff3661abbe2f99abf52c28e08fdf35ca",
+                "php/abstract/okx.php": "ebd586496288b2748c26b50c5f176045f93ac6c8e1c6246d2c5d15ae27ae85e5",
+                "php/myokx.php": "f51eceb233c3afaadc76810d1658d33bdb6ba879dc886568ec11a4849de1dcc2",
+                "php/okx.php": "41c81fd55d00f052cc0f0f97e1be0a01770f0b6ffdabd7d73dbfd82d261a0d51"
             },
-            "source_fingerprint": "35871c7f9a02f7c5ff45367b7fb893ed981db1aef162c3965a342a5aaf30c287",
+            "source_fingerprint": "7f8034160f3f6101ccad6492f2c94517a20be0eaf5e42e9a1a6972dc41094bbf",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
+            }
+        },
+        "nado": {
+            "name": "Nado",
+            "countries": [
+                "KY"
+            ],
+            "spot": true,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "1m",
+                "5m",
+                "15m",
+                "1h",
+                "2h",
+                "4h",
+                "1d",
+                "1w",
+                "4w"
+            ],
+            "logo": "https://github.com/user-attachments/assets/811f4e1a-a8b5-4b9e-84c2-0f88997bd274",
+            "required_credentials": [
+                "privateKey",
+                "walletAddress"
+            ],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/nado.php": "e7f3c89bfaf936637ce57067d0e833e25ff54e49705d8def50d7e767a6b5c845",
+                "php/nado.php": "015ad6c68a6684393a48702775dbbcfd23503c7601adf5d8b032e2dddcbe53d5"
+            },
+            "source_fingerprint": "e5c8e77d9b3d58bbf995a0734d328a8fbe83e073e92a4c6ad32575e611ce77f5",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "ndax": {
@@ -3217,46 +3068,11 @@
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/ndax.php": "101677f3be62c2f0c82ddcf595c8e211031d52c014e66a9d7b6a64b927e039ba",
-                "php/ndax.php": "d24261cb004a2acf17a700e633d15731a5417d4f3365cb7550386543e03253eb"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/ndax.php": "611446292baa0230cadf854e7c2ce59fd48fade2ecf3b396568b8452bc0433f8",
+                "php/ndax.php": "6805693d995c42eef6288e4573415cdce56300893c4866d25d5b79e8d57923fc"
             },
-            "source_fingerprint": "6750f83d2c795bcfecbeabe79acf26d8378407c1ed5f6caa089b91179fd77712",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "novadax": {
-            "name": "NovaDAX",
-            "countries": [
-                "BR"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "1d",
-                "1w",
-                "1M"
-            ],
-            "logo": "https://user-images.githubusercontent.com/1294454/92337550-2b085500-f0b3-11ea-98e7-5794fb07dd3b.jpg",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/novadax.php": "85e149b60545a57e368c497807fb16cf944242dbe2fb27b92b73482603ebcb03",
-                "php/novadax.php": "d6ab583136cc20167c05200ef5c701aaab972fb20549990b69683a7f4be3cbad"
-            },
-            "source_fingerprint": "2d72bef70a4763a049de8b0946798e50a5c9e8551bb7fe326f03eac9f6b58e2a",
+            "source_fingerprint": "d38799870b1565674ad75ac04428923f98f585e18ff3c7458f06823ec5e52665",
             "access": {
                 "state": "public",
                 "markets": "public",
@@ -3295,16 +3111,16 @@
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/okx.php": "4c5f1b9fefdcd4c001d8f1a4a9b72105c25b79bedf6869e22087a57a7ac94c32",
-                "php/okx.php": "80a67a3c23519f95c026007c6a6dbe3baccca1eb9189f670d661e37fa67e97a0"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/okx.php": "ebd586496288b2748c26b50c5f176045f93ac6c8e1c6246d2c5d15ae27ae85e5",
+                "php/okx.php": "41c81fd55d00f052cc0f0f97e1be0a01770f0b6ffdabd7d73dbfd82d261a0d51"
             },
-            "source_fingerprint": "aa976e6f61faa6adc324d8e92e5aedb751384ad787268f2b817ffddbd48c330a",
+            "source_fingerprint": "e25a5bb6dabda73808ba058ad21c37b3315627cd5fb25c1d5fdc3f3c284dd908",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "okxus": {
@@ -3338,18 +3154,18 @@
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/okx.php": "4c5f1b9fefdcd4c001d8f1a4a9b72105c25b79bedf6869e22087a57a7ac94c32",
-                "php/abstract/okxus.php": "bed74f544d4e8e77e078a565e96613c0fdf9a800f9f9c665a6f9073fef412112",
-                "php/okx.php": "80a67a3c23519f95c026007c6a6dbe3baccca1eb9189f670d661e37fa67e97a0",
-                "php/okxus.php": "01554730e34b0aaaa3adcda5a872cf4b3f55e0aedad28f133ec3652fe7f59237"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/okx.php": "ebd586496288b2748c26b50c5f176045f93ac6c8e1c6246d2c5d15ae27ae85e5",
+                "php/abstract/okxus.php": "c1f1f741f9756ade929100c7453b7f2db3460db6b478b6e1d0d3ff30e2d21e67",
+                "php/okx.php": "41c81fd55d00f052cc0f0f97e1be0a01770f0b6ffdabd7d73dbfd82d261a0d51",
+                "php/okxus.php": "dfc4174833da1edc19efdd006482f5b93bfaba82a5da2f6f49a6926d2a6d1d10"
             },
-            "source_fingerprint": "a1eeebbf8335c6d2ab1604a367cc89333d2e705cb15508f585bc59729aeca419",
+            "source_fingerprint": "22923943cc18fccb33fe41f839ac4a1e1403d2e8fb52c9a019ba1c00b60c38e6",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "onetrading": {
@@ -3370,21 +3186,21 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/ccxt/ccxt/assets/43336371/bdbc26fd-02f2-4ca7-9f1e-17333690bb1c",
+            "logo": "https://github.com/user-attachments/assets/341a1b01-7660-402a-9a2b-876391e52f15",
             "required_credentials": [
                 "apiKey"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/onetrading.php": "d86549771febf72d5f2a7fcc99ad2b6ed94f691dc0ec4c85c1513b86c24d184d",
-                "php/onetrading.php": "1722851781b8583fbfc05724aed19bf137f0bd3a81b7de45f5603cc383af51f5"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/onetrading.php": "6adf9d64c626911f819571d877d60dd43b3a98f0e7b06faba1ed9457a0d02813",
+                "php/onetrading.php": "3dcf8f9b19cbc2b63a044a56ea555b4b75f6e95fdc036b02f017421c0c2fa03b"
             },
-            "source_fingerprint": "a8c61da014dc1ed79228f7ff8d50a79ca69f7e587dd5da0e7aebe9842ce8f4fa",
+            "source_fingerprint": "09c93092c9cf45495fd14da6d9b07b94de50da6b4ccfbf39b0208b5100250e1e",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "p2b": {
@@ -3399,28 +3215,28 @@
                 "1h",
                 "1d"
             ],
-            "logo": "https://github.com/ccxt/ccxt/assets/43336371/8da13a80-1f0a-49be-bb90-ff8b25164755",
+            "logo": "https://github.com/user-attachments/assets/122f0c86-f3a6-4334-910f-4d8edc865696",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/p2b.php": "7244a5417af77bbd2f9e24dd6497093ef6acc55f5b4408f33c49c916753ccac1",
-                "php/p2b.php": "831ca24a8b0d6dfb6a9ff7d13debfee4f411c49bb82b8eea4ba5e680d00fbcc8"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/p2b.php": "569558268baee7153391c689295447f0630db1e42debb8259644e6477f513a73",
+                "php/p2b.php": "8ac5fcd8fa71cb5148f80e6ccc8d6c7ee7c6454c7eaf11e8021d07b80b9f678c"
             },
-            "source_fingerprint": "15678ef315d4d2a67bc3970a46c1a7b3e520ec37d58dc78335842abfe51aeea6",
+            "source_fingerprint": "792f5d563803fe73777cbc411ca0c76d4e363a8ecf849bdf72f59857b56a6eaf",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "pacifica": {
             "name": "Pacifica",
             "countries": [],
-            "spot": false,
+            "spot": true,
             "fetchOHLCV": true,
             "timeframes": [
                 "1m",
@@ -3433,29 +3249,31 @@
                 "4h",
                 "8h",
                 "12h",
-                "1d"
+                "1d",
+                "1w",
+                "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/f795515a-828e-4a04-8fca-bf19fcf17ea4",
+            "logo": "https://github.com/user-attachments/assets/03ed021f-cdec-43c8-acb4-941f1282f610",
             "required_credentials": [
                 "privateKey"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/pacifica.php": "ea87f292eed1e57f3b6098436203bd83c737009e097ead966dfcdec41e9a6f5c",
-                "php/pacifica.php": "3545ad59e724bf1d1a5fd8e4e49e4090206a0915d54d1527370509bf4355845d"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/pacifica.php": "83be94e8d8b6419bc1bac23f8341aee09acea83dff61cdb0c2b8b1d43587501a",
+                "php/pacifica.php": "75b68715789c5aadfe370cafa3c6311aa87e62e77ffdcf3d47d56fe324053314"
             },
-            "source_fingerprint": "d3bbd5d8d59a1f8d043613a37778ac393f8b601df3c429350adc41e4ef07f17e",
+            "source_fingerprint": "032e0fd6e898294d04cd323de6345beb02b2e0e3a821d7667663a7f0fbdf8ba4",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "paradex": {
             "name": "Paradex",
             "countries": [],
-            "spot": false,
+            "spot": true,
             "fetchOHLCV": true,
             "timeframes": [
                 "1m",
@@ -3471,16 +3289,16 @@
                 "walletAddress"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/paradex.php": "aa44e2ed130e633d94eb477ddd1d20d4ed3a35e67edbced68cd19ca6894e967a",
-                "php/paradex.php": "4b8103d512783fd30b069eeabb37b9ad1f98ed1d53af5c615ec0d9d630465e1e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/paradex.php": "8f87c0b7ba4885039093890a631d3dce6a857b736477a7391ec54d094da4cc23",
+                "php/paradex.php": "b5a18da35f44c2250c177aa528961530b76e0a71b431ac67c180cef16817d79b"
             },
-            "source_fingerprint": "50971dd3f5c7ffc2a35a9e2eec5a3a6671c1936d8efb4b3d80242800180ca353",
+            "source_fingerprint": "69263981968520bfb9d9ac39a068743d771aa6ee3407b7750e7dc2c8fecdbacc",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "paymium": {
@@ -3498,16 +3316,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/paymium.php": "d17fbed7adbe0f41bc70d85ffd77b9a143c12a2ef1222e2f525561ae26705c58",
-                "php/paymium.php": "bb0401ebd1485d098026c68c9a411f5f72d3c1b6c3954b69cf00dfdc8b931830"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/paymium.php": "83ffd202e5ee700cb9adac81d29166fd119da8c722b8258cf090cebce5bfb910",
+                "php/paymium.php": "905a55b0012a96c554ace34ecd2bb95eaeba4a2b42cebaaeabd5b18bf569da02"
             },
-            "source_fingerprint": "702ed6ce9d25b32756730957ff7209dd617d67f6bfcc9d102bfa3fe8e9224f8b",
+            "source_fingerprint": "d65ec772f4103593841d27f135aa56e7edc6d247fa340ee8887853af01751b8f",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "phemex": {
@@ -3541,16 +3359,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/phemex.php": "48445fd84585af662fe4ec52f6aec4972b54b31ca24d0334cc2d1466176a59ec",
-                "php/phemex.php": "39b0c69d7a9f803b9995a2821b1b2144bbc4ccbbf4b9b6f0e27b7aaa5a0e9ff3"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/phemex.php": "fc596e40a5b64274840e1d27c7e4ee6092cfd1974bcba3e7bc417c8cc53d425c",
+                "php/phemex.php": "795f8816704b410a56d9a8245577e0b797f6dd3865e93c5831201f5e4173dccc"
             },
-            "source_fingerprint": "cbb92a9eb58ecbc70411018f77023f784b977569bfd51ebfd67b16774beed03e",
+            "source_fingerprint": "07009c849f433ad99512feb2e04d01c796c152f8e4b0a2bfef1fdbdda0cf4ad5",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "poloniex": {
@@ -3582,16 +3400,92 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/poloniex.php": "a7245e8893c0c02db8322cb48e406353506b7785cb191c6c70f95bcb34f1b3ef",
-                "php/poloniex.php": "cd9e994b82725d6b65b9f5900b1dce70a4d7834a7863f427220bbc827544f09a"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/poloniex.php": "ba061d2100997e28dc7fb37ca5faa5a411c3e4a5655dc36e1e7b0c287412f49b",
+                "php/poloniex.php": "26bfb1b1ed59cdc71c36bd56bdbf2592c7540799a54e89046ee4b092910a3cb2"
             },
-            "source_fingerprint": "1efaecf023f0fe3123bbbc3fd3cc4c7e05e2b6259db2f48fb6488ed6ffad7765",
+            "source_fingerprint": "1e0ed1ceee1e31c0f2a314f118572e4ab89117eea3c9ae9804839a651fec798e",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
+            }
+        },
+        "polymarket": {
+            "name": "Polymarket",
+            "countries": [
+                "US"
+            ],
+            "spot": false,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "1s",
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "4h",
+                "6h",
+                "12h",
+                "1d",
+                "1w"
+            ],
+            "logo": "https://github.com/user-attachments/assets/89e1a2c4-a682-44e7-ad50-9fb15b534437",
+            "required_credentials": [
+                "privateKey"
+            ],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/polymarket.php": "9148fa93507d53e7adedb14deadb139804cbd143f01b9784f131b1e80192dae2",
+                "php/polymarket.php": "7d6c61a971b1e6611d144bb149e306016304b187645599d6825880f21efa91b9"
+            },
+            "source_fingerprint": "8cb114841050ed9a6d277d3b56d40020754914a7fd26a2584f14e766feb47709",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
+            }
+        },
+        "revolutx": {
+            "name": "Revolut X",
+            "countries": [
+                "GB"
+            ],
+            "spot": true,
+            "fetchOHLCV": true,
+            "timeframes": [
+                "1m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "4h",
+                "1d",
+                "2d",
+                "4d",
+                "1w",
+                "2w",
+                "4w"
+            ],
+            "logo": "https://github.com/user-attachments/assets/594ab1a5-3985-4f79-89f4-c40ef7c33867",
+            "required_credentials": [
+                "apiKey",
+                "privateKey"
+            ],
+            "source_files": {
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/revolutx.php": "63d008096e7388a57314e56f317fa9fe9684b95860a9e077a4f58112e8156825",
+                "php/revolutx.php": "b355f7bf9465d8ff8e5479a38687ab1cb86d884112e46bca525e37cac6443859"
+            },
+            "source_fingerprint": "a1ff77057dba462ac015f4d66babce857f16b4b6d60796268ba185d9b1b1527b",
+            "access": {
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "not_reviewed"
             }
         },
         "tokocrypto": {
@@ -3624,16 +3518,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/tokocrypto.php": "d035ac98c828d5ceb9d62233c3b1396b77fdffb8af0839e353dd6d9c90b88337",
-                "php/tokocrypto.php": "67d2a1dc17a224a801cce720988eb9299a7fb2eeead5fc50cc97f7d0b936e682"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/tokocrypto.php": "b912219672ef9a6ca82eff86a601f617fc4db99520178788fb84599cf70b3e49",
+                "php/tokocrypto.php": "203a3a4df4ee0a515cfc0c826aa3f79610b2b759f34ca534add6efe0d6c61e3b"
             },
-            "source_fingerprint": "7b7bba3e0c03acfbee9841d4e0b7552a64b45aa6c2a211888f45cfee01cce54c",
+            "source_fingerprint": "d58511005855669934385c448e552243cc831e74bd2365724076d8fe81368973",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "toobit": {
@@ -3659,22 +3553,22 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/0c7a97d5-182c-492e-b921-23540c868e0e",
+            "logo": "https://github.com/user-attachments/assets/58e1b718-c6fd-49e2-8a49-797da6b9c008",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/toobit.php": "073125fd68db2c284b0812ab57d410207bd9925d8f73eac6a80e0947909115f6",
-                "php/toobit.php": "426ea9885f2d5cdd086d06e8572709ffacc10e32956536ef5bd4829598acf99c"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/toobit.php": "e6d7689d1f7725d25b218053b6e550b8ee44995edbc584011e32c941a2ef9e92",
+                "php/toobit.php": "b75ec26df24c2e65eacb8be9c8cd3667a5dae527c5a5bd30e0ac8b40992a32bc"
             },
-            "source_fingerprint": "e21722c1477a47be09115fc637fef9bed474f6c27a84ffba9d95ad15a677e107",
+            "source_fingerprint": "d2aaa492e24293446056526d06e3b0ebbd54bddff77909744eaf150907cf79aa",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "upbit": {
@@ -3708,56 +3602,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/upbit.php": "7996463098db692030312e7967bf0d67616a8b771e0ee1e5e824347fdf3eb420",
-                "php/upbit.php": "c66db3abea89f4444de3cd8f6794322f57d7757f1253b5e46546e3a1a1cddd8c"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/upbit.php": "981808ccc2cde11d03df3e5f1f59c49e37e73a7cf9ebd51fab6d71cb97d982d1",
+                "php/upbit.php": "20e6ba88fe58ff7c9f48406aca99c269e0ff09e8dd3bcd582d5e9d3665f3d3cb"
             },
-            "source_fingerprint": "dfc78e07e4850bdda4e0f683c5bafa98eda85ae9090684a47ca5eb9c61f1ee0e",
+            "source_fingerprint": "38fc06f0c478105a525c1f006f614d0dd1fd3f6b8181faf2e237fbf6908ab45b",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "wavesexchange": {
-            "name": "Waves.Exchange",
-            "countries": [
-                "CH"
-            ],
-            "spot": true,
-            "fetchOHLCV": true,
-            "timeframes": [
-                "1m",
-                "5m",
-                "15m",
-                "30m",
-                "1h",
-                "2h",
-                "3h",
-                "4h",
-                "6h",
-                "12h",
-                "1d",
-                "1w",
-                "1M"
-            ],
-            "logo": "https://user-images.githubusercontent.com/1294454/84547058-5fb27d80-ad0b-11ea-8711-78ac8b3c7f31.jpg",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/wavesexchange.php": "d441e319c509080be686ba60d90cc3348934b34651cfc4c8badce1a02b115255",
-                "php/wavesexchange.php": "c48225d646c095e085d3fa2752b67f0d0d33889c8c56434b007dfa661a69b6f8"
-            },
-            "source_fingerprint": "2846f6dafc1ff79034b2f2c0c08bd27546e6ded2af0e49ac49e012630db6c3c8",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "weex": {
@@ -3782,23 +3636,23 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://github.com/user-attachments/assets/ccbadb2d-5035-403d-898f-dce831bdc936",
+            "logo": "https://github.com/user-attachments/assets/bc67b9f2-75d2-4b8d-963a-18f2fcd9d13c",
             "required_credentials": [
                 "apiKey",
                 "secret",
                 "password"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/weex.php": "057bd8342775ead0f913af2120fb538784c19c606240af9fb294b234ed0aaa86",
-                "php/weex.php": "592b82acd1ed7d7abd2ffb6c9d52f3c7d8552ccf48973d0ff5b23360d154446a"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/weex.php": "cb225e5a833f5fbb499b11aeceeb95288791f32a6d45118bb5dd63d8e8d77f1e",
+                "php/weex.php": "8fd52706e69edcbc98fbd2a80d5aeb9b7bc55ed401165c3f8eb6ceb87b60a0d1"
             },
-            "source_fingerprint": "137e6dd60b975f7651708e72cdce84fd6836d8270c8f324ab726d75d433c80c7",
+            "source_fingerprint": "aa165ebfa486a0040b6603dcd5e9fcf46dff2f6627e4b11a049d3a1a76217f13",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "whitebit": {
@@ -3831,16 +3685,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/whitebit.php": "38cd036669caa63b443baeaf5c19c785c3d0d0364e0370149662e3e5beccc9e7",
-                "php/whitebit.php": "c569e18b2b95af0a1dae8c0f8849339bb8ba33e616b88427c1678a1a5e223044"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/whitebit.php": "a8f884dbb31d9f9b4f3a6a60c4ebf0f316e8583ee355369e210b8be3d1ee0157",
+                "php/whitebit.php": "c8394eaf86bf2ddca7c28b3018f1c8038103260957638a6a0bf7600733ab3e77"
             },
-            "source_fingerprint": "8af3cd35cd5aabe493f7d643f58a7fe13c1a1db90e0e54301da94a732cb471c6",
+            "source_fingerprint": "17ad155323852b50ece8418ba4f9056dec70adf17d014af552f6ea751c18fd69",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "woo": {
@@ -3869,16 +3723,16 @@
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/woo.php": "aa16c6200dfc0a406610ac34bb6ab41fb85c6582f83d366369b9678cd337e17c",
-                "php/woo.php": "4d30dc0fb9360117ac1f6de843a97bf183a7970de06302acd6b1db1ed1363c78"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/woo.php": "d092abb5a55ac865d797abfb2662d745e74294fde01e0bccf4c546812a6f01c9",
+                "php/woo.php": "a2c1ae57a1c59e083366a23941f77a9bf14ddcfad7814b6ef1f2579f9efcb8b3"
             },
-            "source_fingerprint": "838d8ca69d47f5376550d73384dd68f58cacbb3e05c0aca6d2b7f877dc1683a8",
+            "source_fingerprint": "d36dd9bf6b00cce9538577be2da222272b3376abc54b78535cdb1fe660b3387a",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "woofipro": {
@@ -3908,16 +3762,16 @@
                 "accountId"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/woofipro.php": "af2847c6c951fe8e76ad320c411ebdec51a2ee18a63f15a9a439ad1e1bc30463",
-                "php/woofipro.php": "4252988566eb9ee6436009e56372a303d776d7388c6f69ca8435ee047f267884"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/woofipro.php": "03e9960a3777fbddcb47c60716b4031544b741fab64467617c2794676df44154",
+                "php/woofipro.php": "2b7d6eb97df529da740273eb1457fb9da9a7bc2b91d0efc7369b027c715d9999"
             },
-            "source_fingerprint": "cbe53a422a5f3aef75c698410293ae9ddc96936de8f9d2d9fc74c49dd1870592",
+            "source_fingerprint": "9ccab8eee1703785bf984faa747ef1ae0cdd490a41e3668a4d7da4fc439c70a2",
             "access": {
-                "state": "authentication_required",
-                "markets": "public",
-                "candles": "authentication_required",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         },
         "xt": {
@@ -3942,48 +3796,22 @@
                 "1w",
                 "1M"
             ],
-            "logo": "https://user-images.githubusercontent.com/14319357/232636712-466df2fc-560a-4ca4-aab2-b1d954a58e24.jpg",
+            "logo": "https://github.com/user-attachments/assets/1f916564-6507-4549-af96-22837bb0a0c7",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/xt.php": "3901afec10839bf5a57011cd72164d21f3182750179bc5018a273ba6bc35bb5d",
-                "php/xt.php": "e923665cef4b8c645a1227653dd41ccc358683c8c4442ce56f7d9a171846671e"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/xt.php": "1f7feea60b4a610aa9a615c9d646784ea223e37a76ed7b047c93b1da58e11ae7",
+                "php/xt.php": "55611eaeae23e58e60ac3fc81c4ab5e835c444e03d8d50b4a1ecca64c6feae32"
             },
-            "source_fingerprint": "7c1ac6e8deb0cde86107eeb394f9f97a59b02e7bd0b1a17c2f9c7fbf91ea26bb",
-            "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
-            }
-        },
-        "yobit": {
-            "name": "YoBit",
-            "countries": [
-                "RU"
-            ],
-            "spot": true,
-            "fetchOHLCV": false,
-            "timeframes": [],
-            "logo": "https://user-images.githubusercontent.com/1294454/27766910-cdcbfdae-5eea-11e7-9859-03fea873272d.jpg",
-            "required_credentials": [
-                "apiKey",
-                "secret"
-            ],
-            "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/yobit.php": "7429f7a8bc81c55de10a6925239750189088bd83718911e76f3deb8384d84caa",
-                "php/yobit.php": "3e3d46faa02a837dbecbc08cb73173882701e2adf55ecb0b5bbf099c41f796fa"
-            },
-            "source_fingerprint": "36cdaecbf88f8851d009d50482d98642137b44162a6040e43bbdd59f48b93312",
+            "source_fingerprint": "d4638da2bfae41c738d02ba922d1f8a830d614e8d983982085fef720e00dd110",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "zaif": {
@@ -3994,22 +3822,22 @@
             "spot": true,
             "fetchOHLCV": false,
             "timeframes": [],
-            "logo": "https://user-images.githubusercontent.com/1294454/27766927-39ca2ada-5eeb-11e7-972f-1b4199518ca6.jpg",
+            "logo": "https://github.com/user-attachments/assets/c6c97d18-5bde-46ed-8eb1-85404d36150e",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/zaif.php": "b454c7759fdec2bbb1515174ba639403b10ddfa6677e2a6a376a94462f837e18",
-                "php/zaif.php": "674ce87b9b1f75dc808e1f8880b3c4ede89ff825783ef97405748ba24c824711"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/zaif.php": "b379119fcb25abb5dd9506494796f7e8411588a93b28ffcbc35f33e19abce185",
+                "php/zaif.php": "7c26da69cd41e5fddcced2c96bbbe4f675ed525161eaf5a6f46b5c039b1a7f96"
             },
-            "source_fingerprint": "4aa9cb89d4ea694840a95d3ec5100239ec6410ae18f65ff53a95405790986bb4",
+            "source_fingerprint": "aedd07784f9f1c9d204f7223f46397d051d9b3dfa394f93b07f26c44b31b9259",
             "access": {
                 "state": "unknown",
-                "markets": "public",
+                "markets": "unknown",
                 "candles": "unknown",
-                "reason": "ohlcv_not_supported"
+                "reason": "source_changed"
             }
         },
         "zebpay": {
@@ -4031,22 +3859,22 @@
                 "1d",
                 "1w"
             ],
-            "logo": "https://github.com/user-attachments/assets/8094e7be-55a7-46f4-a087-0ca31b48ecad",
+            "logo": "https://github.com/user-attachments/assets/0e88d86a-a1cd-49df-a826-054cd8caafa6",
             "required_credentials": [
                 "apiKey",
                 "secret"
             ],
             "source_files": {
-                "php/Exchange.php": "016bdff54c5c79a54d09be57ee356d5a0e361591db485712be48feb6d7dff277",
-                "php/abstract/zebpay.php": "8e51cd06f83961eea7ddb2e947cef3f31061a2daf679af2b4064daf9a47a416d",
-                "php/zebpay.php": "094f858b191101068f9ee9b253649862f49e7b267b12a4cc3a3e0b4a0b219a08"
+                "php/Exchange.php": "f3f076deaa6c5eac41fe9f8845b4a1a4f618d4601ed89737c466e50f72aee346",
+                "php/abstract/zebpay.php": "e793b56e04428a2af6737bb48223522f34e69c502c21101d42e5091af329e78d",
+                "php/zebpay.php": "c559d1703298beb9315ff8b4bc6f75dc0b789fe3ddc1220346c402ccc8506626"
             },
-            "source_fingerprint": "e3561160ddf084cd65cb17754b4430fd05a743ca48e59989fe0966ab8b8e8032",
+            "source_fingerprint": "0f5a2da18134e8261ddf175d6db30c2148354bc63a83b1e10c5cb8efb6082a48",
             "access": {
-                "state": "public",
-                "markets": "public",
-                "candles": "public",
-                "reason": "source_reviewed"
+                "state": "unknown",
+                "markets": "unknown",
+                "candles": "unknown",
+                "reason": "source_changed"
             }
         }
     }
