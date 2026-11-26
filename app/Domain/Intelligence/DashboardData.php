@@ -135,23 +135,32 @@ final class DashboardData
         $page = $this->markets($user, $selectedId, $search, $scope, $favoritesOnly);
         ['subscriptions' => $subscriptions, 'cards' => $cards] = $page;
         $selected = $selectedId === null ? $subscriptions->first()
-            : $this->scopedSubscriptions($user, $scope, $favoritesOnly)->find($selectedId);
+            : ($subscriptions->getCollection()->first(fn (MarketSubscription $item): bool => $item->getKey() === $selectedId)
+                ?? $this->scopedSubscriptions($user, $scope, $favoritesOnly)->find($selectedId));
         $selected ??= $subscriptions->first();
-        $keys = $subscriptions->getCollection()->map(fn ($item) => $this->key($item->market))->all();
+        $reports = $cards->mapWithKeys(fn (array $card): array => [$this->key($card['subscription']->market) => $card['report']]);
+        $trainingReports = $cards->mapWithKeys(fn (array $card): array => [$this->key($card['subscription']->market) => $card['training_report']]);
         if ($selected !== null) {
-            $keys[] = $this->key($selected->market);
+            $selectedKey = $this->key($selected->market);
+            if (! $trainingReports->has($selectedKey)) {
+                $reports->put($selectedKey, $this->reports([$selectedKey])->get($selectedKey));
+                $trainingReports->put($selectedKey, $this->models->latestReports([$selectedKey])->get($selectedKey));
+            }
         }
-        $reports = $this->reports($keys);
-        $trainingReports = $this->models->latestReports($keys);
+        $trainingStates = $trainingReports->map(fn (?array $report): array => ModelStore::knnReadiness($report));
         $totals = ['followed' => 0, 'outcome' => 0, 'action' => 0, 'coingecko' => 0];
         $this->scopedSubscriptions($user, $scope, false)->setEagerLoads([])->with('market.exchange', 'market.feed')
-            ->chunkById(100, function ($items) use (&$totals): void {
-                $trainingReports = $this->models->latestReports($items->map(fn ($item) => $this->key($item->market))->all());
+            ->chunkById(100, function ($items) use (&$totals, $trainingStates): void {
+                $keys = $items->map(fn ($item) => $this->key($item->market))->unique()->diff($trainingStates->keys());
+                $latestReports = $this->models->latestReports($keys->values()->all());
+                foreach ($keys as $key) {
+                    $trainingStates->put($key, ModelStore::knnReadiness($latestReports->get($key)));
+                }
                 $contexts = $this->contextReadiness->forMarkets($items->pluck('market'));
                 foreach ($items as $item) {
                     $totals['followed']++;
                     $totals['coingecko'] += (int) ($contexts->get($this->key($item->market))['ready'] ?? false);
-                    foreach (ModelStore::knnReadiness($trainingReports->get($this->key($item->market))) as $name => $state) {
+                    foreach ($trainingStates->get($this->key($item->market)) as $name => $state) {
                         $totals[$name] += (int) $state['ready'];
                     }
                 }

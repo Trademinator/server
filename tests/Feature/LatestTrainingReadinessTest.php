@@ -10,6 +10,7 @@ use App\Models\MarketFeed;
 use App\Models\MarketSignal;
 use App\Models\MarketSubscription;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -201,4 +202,54 @@ it('keeps latest training diagnostics within the active subscription access boun
         ->assertViewHas('totals', ['followed' => 1, 'outcome' => 0, 'action' => 1, 'coingecko' => 0])
         ->assertDontSee($privateReport['model_id'])->assertDontSee('PRIVATE/MXN');
     $this->get(route('markets.index'))->assertOk()->assertDontSee('PRIVATE/MXN');
+});
+
+it('reuses latest reports for filtered owner cards selected details and all subscription totals', function () {
+    $this->travelTo('2026-11-26 04:00:00 UTC');
+    $owner = User::factory()->create();
+    $other = User::factory()->create();
+    config(['operations.owner_uuid' => $owner->getKey(), 'dashboard.page_size' => 2,
+        'features.coingecko.enabled' => false]);
+    $visible = latestReadinessSubscription($owner);
+    $visible->forceFill(['created_at' => now()->subMinutes(4)])->save();
+    $visibleReport = latestReadinessModel($visible);
+    $unbuilt = latestReadinessSubscription($owner, 'SOL/MXN');
+    $unbuilt->forceFill(['created_at' => now()->subMinutes(3)])->save();
+    $selected = latestReadinessSubscription($other, 'ETH/USD');
+    $selectedReport = latestReadinessModel($selected, [
+        'status' => 'ready', 'reason' => 'validated',
+        'outcome' => ['status' => 'ready', 'reason' => 'validated'],
+    ]);
+    MarketSubscription::query()->create([
+        'user_id' => $other->getKey(), 'market_id' => $visible->market_id, 'active' => true,
+    ]);
+    $keys = [
+        ModelStore::marketKey('bitso', 'BTC/MXN', '4h'),
+        ModelStore::marketKey('bitso', 'SOL/MXN', '4h'),
+        ModelStore::marketKey('bitso', 'ETH/USD', '4h'),
+    ];
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+
+    try {
+        $response = $this->actingAs($owner)->get(route('dashboard', [
+            'q' => 'mxn', 'scope' => 'all', 'subscription' => $selected->getKey(),
+        ]));
+        $queries = DB::getQueryLog();
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    $response->assertOk()
+        ->assertViewHas('cards', fn (Collection $cards): bool => $cards->pluck('subscription.market.symbol')->all() === ['BTC/MXN', 'SOL/MXN']
+            && $cards[0]['training_report']['model_id'] === $visibleReport['model_id']
+            && $cards[1]['training_report'] === null)
+        ->assertViewHas('details', fn (array $details): bool => $details['subscription']->getKey() === $selected->getKey()
+            && $details['training_report']['model_id'] === $selectedReport['model_id'])
+        ->assertViewHas('totals', ['followed' => 4, 'outcome' => 1, 'action' => 3, 'coingecko' => 0]);
+    $lookups = collect($queries)->filter(fn (array $query): bool => str_contains($query['query'], 'intelligence_models')
+        && str_contains($query['query'], 'report') && ! str_contains($query['query'], 'intelligence_heads'));
+    $requested = $lookups->flatMap(fn (array $query): array => $query['bindings'])
+        ->filter(fn (mixed $binding): bool => is_string($binding) && in_array($binding, $keys, true))->all();
+    expect(array_count_values($requested))->toEqual(array_fill_keys($keys, 1));
 });

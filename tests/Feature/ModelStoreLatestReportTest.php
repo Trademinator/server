@@ -91,3 +91,50 @@ it('returns no latest report for an unbuilt market and skips queries for an empt
     expect($reports)->toBeEmpty();
     expect($queries)->toBeEmpty();
 });
+
+it('returns the latest reports across batches while deduplicating keys and omitting unbuilt markets', function () {
+    $expected = [];
+    foreach (range(1, 101) as $number) {
+        $key = ModelStore::marketKey('bitso', 'COIN'.$number.'/MXN', '4h');
+        $latest = (string) Str::uuid7();
+        latestReportFixture($key, (string) Str::uuid7(), '2026-11-24 00:00:00', ['status' => 'ready']);
+        latestReportFixture($key, $latest, '2026-11-25 00:00:00', ['status' => 'abstaining']);
+        $expected[$key] = $latest;
+    }
+    $keys = array_keys($expected);
+    $missing = ModelStore::marketKey('bitso', 'UNBUILT/MXN', '4h');
+    $requested = [...$keys, $missing, $keys[0], $keys[100], $missing];
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+
+    try {
+        $reports = app(ModelStore::class)->latestReports($requested);
+        $queries = DB::getQueryLog();
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    expect($reports->map(fn (array $report): string => $report['model_id'])->all())->toEqual($expected);
+    expect($queries)->toHaveCount(2);
+    expect(array_count_values(array_merge(...array_column($queries, 'bindings'))))
+        ->toEqual(array_fill_keys([...$keys, $missing], 1));
+});
+
+it('sees newer builds and newly built markets when reusing the same store', function () {
+    $key = ModelStore::marketKey('bitso', 'BTC/MXN', '4h');
+    $unbuilt = ModelStore::marketKey('bitso', 'ETH/MXN', '4h');
+    $first = (string) Str::uuid7();
+    latestReportFixture($key, $first, '2026-11-24 00:00:00', ['status' => 'ready']);
+    $store = app(ModelStore::class);
+    expect($store->latestReports([$key, $unbuilt])->map(fn (array $report): string => $report['model_id'])->all())
+        ->toEqual([$key => $first]);
+    $newer = (string) Str::uuid7();
+    $newlyBuilt = (string) Str::uuid7();
+    latestReportFixture($key, $newer, '2026-11-25 00:00:00', ['status' => 'abstaining']);
+    latestReportFixture($unbuilt, $newlyBuilt, '2026-11-25 00:00:00', ['status' => 'ready']);
+
+    $reports = $store->latestReports([$key, $unbuilt]);
+
+    expect($reports->map(fn (array $report): string => $report['model_id'])->all())
+        ->toEqual([$key => $newer, $unbuilt => $newlyBuilt]);
+});

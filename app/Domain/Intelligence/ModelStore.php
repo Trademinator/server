@@ -7,7 +7,6 @@ use App\Domain\Operations\ActionLog;
 use App\Domain\Research\FeatureSchema;
 use Closure;
 use Composer\InstalledVersions;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -380,28 +379,25 @@ final class ModelStore
     /** @return Collection<string, array> Latest completed reports, including candidates that were not promoted. */
     public function latestReports(array $marketKeys): Collection
     {
-        if ($marketKeys === []) {
-            return collect();
+        $reports = collect();
+        foreach (array_chunk(array_values(array_unique($marketKeys)), 100) as $keys) {
+            $query = null;
+            foreach ($keys as $key) {
+                // Stop at the first indexed row instead of comparing every historical model.
+                $latest = DB::table('intelligence_models')->select('market_key', 'model_id', 'created_at', 'report')
+                    ->where('market_key', $key)->orderByDesc('created_at')->orderByDesc('model_id')->limit(1);
+                $branch = DB::query()->fromSub($latest, 'latest_model');
+                $query = $query === null ? $branch : $query->unionAll($branch);
+            }
+            foreach ($query->get() as $row) {
+                $reports->put($row->market_key, array_replace(
+                    json_decode($row->report, true, flags: JSON_THROW_ON_ERROR),
+                    ['model_id' => $row->model_id, 'created_at' => $row->created_at]
+                ));
+            }
         }
 
-        return DB::table('intelligence_models as models')
-            ->whereIn('models.market_key', array_values(array_unique($marketKeys)))
-            ->whereNotExists(function (Builder $newer): void {
-                $newer->selectRaw('1')->from('intelligence_models as newer')
-                    ->whereColumn('newer.market_key', 'models.market_key')
-                    ->where(function (Builder $order): void {
-                        $order->whereColumn('newer.created_at', '>', 'models.created_at')
-                            ->orWhere(function (Builder $tie): void {
-                                $tie->whereColumn('newer.created_at', 'models.created_at')
-                                    ->whereColumn('newer.model_id', '>', 'models.model_id');
-                            });
-                    });
-            })
-            ->get(['models.market_key', 'models.model_id', 'models.created_at', 'models.report'])
-            ->mapWithKeys(fn ($row): array => [$row->market_key => array_replace(
-                json_decode($row->report, true, flags: JSON_THROW_ON_ERROR),
-                ['model_id' => $row->model_id, 'created_at' => $row->created_at]
-            )]);
+        return $reports;
     }
 
     public function knowledge(array $artifact): iterable
