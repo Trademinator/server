@@ -199,12 +199,13 @@
                         <li class="market-row">
                             <div>
                                 <strong class="market-row-title">{{ $subscription->market->symbol }}{{ $subscription->market->feed?->selected_period ? ' · '.$subscription->market->feed->selected_period : '' }}
-                                    <x-knn-readiness :report="$subscriptionReports->get($subscription->getKey())" :coingecko="$subscriptionContexts->get($subscription->getKey())" class="ml-2" />
+                                    <x-knn-readiness :report="$subscriptionTrainingReports->get($subscription->getKey())" :coingecko="$subscriptionContexts->get($subscription->getKey())" class="ml-2" />
                                 </strong>
                                 <p class="market-meta">
                                     <span class="market-badge {{ $subscription->active ? 'is-active' : '' }}">{{ $subscription->active ? 'Active' : 'Inactive' }}</span>
                                     Feed: {{ $subscription->market->feed->status ?? 'pending' }}{{ $subscription->market->feed?->selected_period ? '' : ' · Period: selecting' }}
                                 </p>
+                                <p class="market-meta">Badges: latest training readiness. Production: {{ \App\Domain\Intelligence\ModelStore::isReadyReport($subscriptionReports->get($subscription->getKey())) ? 'Available' : 'Unavailable' }}.</p>
                             </div>
                             <div class="market-actions">
                                 @if ($subscription->active)

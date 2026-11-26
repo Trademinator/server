@@ -1,10 +1,15 @@
 <?php
 
+use App\Domain\Features\FeatureEngine;
+use App\Domain\Intelligence\IntelligenceTrainer;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\Research\FeatureSchema;
 use App\Models\Exchange;
 use App\Models\Market;
 use App\Models\MarketFeed;
+use App\Models\MarketSubscription;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -207,4 +212,93 @@ it('shows the selected candle period and keeps older periods in model history', 
 
     $this->get(route('owner.intelligence', ['history' => 1]))
         ->assertOk()->assertViewHas('models', fn ($models) => count(array_intersect($models->pluck('model_id')->all(), [$older, $current, $otherOlder])) === 3);
+});
+
+it('shows the latest validated Action component while production is unavailable', function (bool $hasHead) {
+    $this->travelTo(new CarbonImmutable('2026-11-26 00:30:00', 'UTC'));
+    $owner = intelligenceTableOwner();
+    $report = [
+        'exchange' => 'bitso', 'symbol' => 'BTC/MXN', 'period' => '4h',
+        'feature_version' => FeatureEngine::VERSION,
+        'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
+        'keys' => FeatureSchema::keys('core'), 'training_data' => ['schema' => 'core'],
+        'trained_as_of_ms' => now()->subHour()->getTimestampMs(),
+        'status' => 'abstaining', 'reason' => 'outcome_knn_unavailable',
+        'outcome' => ['status' => 'abstaining', 'reason' => 'no_eligible_k'],
+        'action' => ['status' => 'ready', 'reason' => 'validated',
+            'algorithmic' => ['status' => 'abstaining', 'reason' => 'holdout_failed'],
+            'human' => ['status' => 'validated', 'influence' => true]],
+    ];
+    $head = $hasHead ? intelligenceTableModel(array_replace($report, [
+        'trained_as_of_ms' => now()->subDays(35)->getTimestampMs(),
+    ]), builtAt: '2026-10-22 03:29:19') : null;
+    $latest = intelligenceTableModel($report, current: false, builtAt: '2026-11-26 00:12:40');
+    $exchange = Exchange::query()->firstOrCreate(['class' => 'bitso'], ['name' => 'Bitso', 'config' => '{}']);
+    $market = Market::query()->firstOrCreate(['exchange_id' => $exchange->exchange_id, 'symbol' => 'BTC/MXN'], ['tick_size' => '0.01']);
+    MarketFeed::query()->updateOrCreate(['market_id' => $market->market_id], ['selected_period' => '4h', 'status' => 'ready']);
+    MarketSubscription::query()->create(['user_id' => $owner->user_id, 'market_id' => $market->market_id, 'active' => true]);
+
+    $response = $this->actingAs($owner)->get(route('owner.intelligence'));
+
+    $response->assertOk()
+        ->assertSee('Action KNN: Ready via human-trained fallback')
+        ->assertSee('Outcome KNN: Not ready')
+        ->assertSee('Production: Unavailable.')
+        ->assertSee($latest)
+        ->assertDontSee('Never trained');
+    if ($hasHead) {
+        $response->assertViewHas('models', fn ($models) => $models->first()->model_id === $head
+            && $models->first()->training_summary['model_id'] === $latest);
+        $this->assertDatabaseHas('intelligence_heads', ['model_id' => $head]);
+    } else {
+        $response->assertSee('Subscribed markets awaiting publication')
+            ->assertSee('No production model has been published. Latest training result: outcome_knn_unavailable.')
+            ->assertViewHas('untrained', fn ($untrained) => $untrained->isEmpty())
+            ->assertViewHas('unpublished', fn ($unpublished) => $unpublished->first()->training_report['model_id'] === $latest);
+        $this->assertDatabaseCount('intelligence_heads', 0);
+    }
+})->with(['expired production record' => [true], 'no production record' => [false]]);
+
+it('keeps historical report selection separate from the latest training attempt', function () {
+    $owner = intelligenceTableOwner();
+    $historical = intelligenceTableModel(['reason' => 'historical_outcome_failure']);
+    intelligenceTableModel(['reason' => 'latest_outcome_failure'], current: false, builtAt: '2026-11-26 00:12:40');
+
+    $response = $this->actingAs($owner)->get(route('owner.intelligence', ['history' => 1]));
+
+    $response->assertOk()
+        ->assertViewHas('models', fn ($models) => $models->every(fn ($model) => $model->training_summary === null))
+        ->assertDontSee('Latest completed training:');
+    $this->get(route('owner.intelligence.show', $historical))
+        ->assertOk()->assertViewHas('report', fn ($report) => $report['reason'] === 'historical_outcome_failure')
+        ->assertDontSee('latest_outcome_failure');
+});
+
+it('keeps production availability when a newer training attempt does not qualify', function () {
+    $this->freezeTime();
+    $owner = intelligenceTableOwner();
+    $report = [
+        'feature_version' => FeatureEngine::VERSION,
+        'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
+        'keys' => FeatureSchema::keys('core'), 'training_data' => ['schema' => 'core'],
+        'trained_as_of_ms' => now()->subHour()->getTimestampMs(),
+        'status' => 'ready', 'reason' => 'validated',
+        'outcome' => ['status' => 'ready', 'reason' => 'validated'],
+        'action' => ['status' => 'ready', 'reason' => 'validated'],
+    ];
+    $head = intelligenceTableModel($report, builtAt: now()->subHour()->toDateTimeString());
+    $latest = intelligenceTableModel(array_replace($report, [
+        'status' => 'abstaining', 'reason' => 'outcome_knn_unavailable',
+        'outcome' => ['status' => 'abstaining', 'reason' => 'no_eligible_k'],
+    ]), current: false, builtAt: now()->toDateTimeString());
+
+    $response = $this->actingAs($owner)->get(route('owner.intelligence'));
+
+    $response->assertOk()->assertSee('Production: Available.')
+        ->assertSee('Outcome KNN: Not ready')
+        ->assertViewHas('models', fn ($models) => $models->first()->model_id === $head
+            && $models->first()->training_summary['model_id'] === $latest);
+    $this->assertDatabaseHas('intelligence_heads', ['model_id' => $head]);
 });

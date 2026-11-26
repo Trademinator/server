@@ -75,3 +75,49 @@ it('escapes diagnostic reasons in readiness tooltips', function () {
         ->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false)
         ->assertDontSee('<script>alert(1)</script>', false);
 });
+
+it('identifies a validated human fallback without treating the failed automatic pathway as ready', function () {
+    $this->freezeTime();
+    $report = [
+        'status' => 'abstaining',
+        'keys' => FeatureSchema::keys('core'),
+        'training_data' => ['schema' => 'core'],
+        'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
+        'trained_as_of_ms' => now()->getTimestampMs(),
+        'outcome' => ['status' => 'abstaining', 'reason' => 'no_eligible_k'],
+        'action' => [
+            'status' => 'ready', 'reason' => 'validated',
+            'algorithmic' => ['status' => 'abstaining', 'reason' => 'holdout_failed'],
+            'human' => ['status' => 'validated'],
+        ],
+    ];
+
+    $this->blade('<x-knn-readiness :report="$report" />', ['report' => $report])
+        ->assertSee('Outcome KNN: Not ready — Tuning validation has not passed')
+        ->assertSee('Action KNN: Ready via human-trained fallback')
+        ->assertSee('Action (human)');
+});
+
+it('keeps the automatic readiness label when human guidance also validates', function (string $algorithmicStatus) {
+    $this->freezeTime();
+    $report = [
+        'status' => 'ready',
+        'keys' => FeatureSchema::keys('core'),
+        'training_data' => ['schema' => 'core'],
+        'validation_version' => IntelligenceTrainer::VERSION,
+        'rubix_ml_major' => \Rubix\ML\VERSION,
+        'trained_as_of_ms' => now()->getTimestampMs(),
+        'outcome' => ['status' => 'ready', 'reason' => 'validated'],
+        'action' => [
+            'status' => 'ready', 'reason' => 'validated',
+            'algorithmic' => ['status' => $algorithmicStatus],
+            'human' => ['status' => 'validated'],
+        ],
+    ];
+
+    $this->blade('<x-knn-readiness :report="$report" />', ['report' => $report])
+        ->assertSee('Action KNN: Ready')
+        ->assertDontSee('human-trained fallback')
+        ->assertDontSee('Action (human)');
+})->with(['ready', 'validated']);

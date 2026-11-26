@@ -136,7 +136,7 @@ class ReportController extends Controller
         return view('owner.market', compact('market', 'subscriptions', 'period', 'candles', 'features', 'head', 'backfill'));
     }
 
-    public function intelligence(Request $request, CoinGeckoReadiness $contextReadiness, KnowledgeWaterfall $waterfall): View
+    public function intelligence(Request $request, CoinGeckoReadiness $contextReadiness, KnowledgeWaterfall $waterfall, ModelStore $store): View
     {
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
@@ -149,7 +149,7 @@ class ReportController extends Controller
         $sort = $filters['sort'] = $filters['sort'] ?? 'created_at';
         $direction = $filters['direction'] = $filters['direction'] ?? ($sort === 'created_at' ? 'desc' : 'asc');
         $query = DB::table('intelligence_models as models')->leftJoin('intelligence_heads as heads', 'heads.model_id', '=', 'models.model_id')
-            ->select('models.model_id', 'models.dataset_id', 'models.status', 'models.created_at', 'models.report', 'heads.model_id as current_id')
+            ->select('models.model_id', 'models.market_key', 'models.dataset_id', 'models.status', 'models.created_at', 'models.report', 'heads.model_id as current_id')
             ->when(! ($filters['history'] ?? false), function ($query): void {
                 $query->whereNotNull('heads.model_id')
                     ->whereExists(function ($active): void {
@@ -191,13 +191,18 @@ class ReportController extends Controller
         }
         $models = $query->orderBy('models.model_id')->paginate(25)->appends($filters);
         $models->through(function ($row) {
-            $row->summary = json_decode($row->report, true, flags: JSON_THROW_ON_ERROR);
+            $row->summary = array_replace(json_decode($row->report, true, flags: JSON_THROW_ON_ERROR), [
+                'model_id' => $row->model_id, 'dataset_id' => $row->dataset_id, 'created_at' => $row->created_at,
+            ]);
             unset($row->report);
 
             return $row;
         });
+        $latestReports = ($filters['history'] ?? false) ? collect()
+            : $store->latestReports($models->getCollection()->pluck('market_key')->all());
         $contexts = $contextReadiness->forStreams($models->getCollection()->pluck('summary'));
-        $models->through(function ($row) use ($contexts) {
+        $models->through(function ($row) use ($contexts, $latestReports) {
+            $row->training_summary = $latestReports->get($row->market_key);
             $row->coingecko = $contexts->get(ModelStore::marketKey($row->summary['exchange'] ?? '',
                 $row->summary['symbol'] ?? '', $row->summary['period'] ?? ''));
 
@@ -230,10 +235,11 @@ class ReportController extends Controller
             return $row;
         });
 
-        // The current model table intentionally excludes markets never trained.
-        // Keep those pairs visible on this SAME page, with red first-build stages.
+        // Markets without a production head may already have completed training.
+        // Keep those attempts separate from markets that have never been trained.
         $untrained = collect();
-        if (! ($filters['status'] ?? null) && ! ($filters['history'] ?? false)) {
+        $unpublished = collect();
+        if (! ($filters['history'] ?? false)) {
             $terms = preg_split('/\s+/u', Str::lower($filters['q']), flags: PREG_SPLIT_NO_EMPTY);
             $feeds = MarketFeed::query()->with('market.exchange')->whereNotNull('selected_period')
                 ->whereHas('market.subscriptions', fn ($q) => $q->where('active', true))
@@ -242,28 +248,43 @@ class ReportController extends Controller
                 $keys = $batch->map(fn ($feed) => ModelStore::marketKey($feed->market->exchange->class,
                     $feed->market->symbol, $feed->selected_period))->all();
                 $published = DB::table('intelligence_heads')->whereIn('market_key', $keys)->pluck('market_key')->flip();
+                $latestReports = $store->latestReports($keys);
+                $contexts = $contextReadiness->forStreams($latestReports);
                 foreach ($batch as $feed) {
                     $exchange = $feed->market->exchange->class;
                     $symbol = $feed->market->symbol;
                     $period = $feed->selected_period;
-                    if (isset($published[ModelStore::marketKey($exchange, $symbol, $period)])) {
+                    $key = ModelStore::marketKey($exchange, $symbol, $period);
+                    if (isset($published[$key])) {
                         continue;
                     }
-                    $identity = Str::lower($exchange.' '.$symbol.' '.$period);
+                    $trainingReport = $latestReports->get($key);
+                    if (($filters['status'] ?? null) && ($trainingReport['status'] ?? null) !== $filters['status']) {
+                        continue;
+                    }
+                    $identity = Str::lower(implode(' ', [$exchange, $symbol, $period,
+                        $trainingReport['reason'] ?? '', $trainingReport['status'] ?? '', $trainingReport['model_id'] ?? '']));
                     if (array_any($terms, fn ($term) => ! str_contains($identity, $term))) {
                         continue;
                     }
+                    $feed->training_report = $trainingReport;
+                    $feed->coingecko = $contexts->get($key);
                     $feed->waterfall = $waterfall->describe($exchange, $symbol, $period,
-                        marketId: $feed->market_id);
-                    $untrained->push($feed);
-                    if ($untrained->count() >= 10) {
+                        datasetId: $trainingReport['dataset_id'] ?? null,
+                        marketId: $feed->market_id, latestReport: $trainingReport);
+                    if ($trainingReport === null) {
+                        $untrained->push($feed);
+                    } else {
+                        $unpublished->push($feed);
+                    }
+                    if ($untrained->count() + $unpublished->count() >= 10) {
                         break 2;
                     }
                 }
             }
         }
 
-        return view('owner.intelligence', compact('models', 'filters', 'sort', 'direction', 'untrained'));
+        return view('owner.intelligence', compact('models', 'filters', 'sort', 'direction', 'untrained', 'unpublished'));
     }
 
     public function model(string $model, ModelStore $store, CoinGeckoReadiness $contextReadiness): View

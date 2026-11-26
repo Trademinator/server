@@ -17,13 +17,18 @@ class KnnReadiness extends Component
         $states['coingecko'] = $coingecko ?? ['ready' => false, 'reason' => 'coingecko_features_unavailable'];
         foreach (['outcome' => 'Outcome KNN', 'action' => 'Action KNN', 'coingecko' => 'CoinGecko context'] as $name => $label) {
             $ready = $counts !== null || $states[$name]['ready'];
+            $humanFallback = $counts === null && $ready && in_array($name, ['outcome', 'action'], true)
+                && ! in_array($report[$name]['algorithmic']['status'] ?? null, ['ready', 'validated'], true)
+                && ($report[$name]['human']['status'] ?? null) === 'validated';
             $description = $counts !== null
                 ? $label.': '.Decimal::format($counts[$name] ?? 0).' of '.Decimal::format($total).' ready'
-                : $label.': '.($ready ? 'Ready' : 'Not ready — '.$this->explanation($states[$name]['reason']));
+                : $label.': '.($ready
+                    ? ($humanFallback ? 'Ready via human-trained fallback' : 'Ready')
+                    : 'Not ready — '.$this->explanation($states[$name]['reason']));
             $this->indicators[$name] = ['ready' => $ready, 'description' => $description,
-                'label' => match ($name) {
+                'label' => (match ($name) {
                     'outcome' => 'Outcome', 'action' => 'Action', default => 'CoinGecko'
-                },
+                }).($humanFallback ? ' (human)' : ''),
                 'count' => $counts[$name] ?? 0];
         }
     }

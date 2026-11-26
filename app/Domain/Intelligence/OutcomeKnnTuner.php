@@ -25,10 +25,6 @@ final class OutcomeKnnTuner
                 'selection' => 'supported_macro_f1_then_baseline_improvement_accuracy_confidence_coverage',
                 'reason' => 'no_k_can_satisfy_effective_neighbor_floor'];
         }
-        $initialCandidates = array_values(array_unique(array_filter([5, 9, 17, 33, 65, $maximum],
-            fn (int $k): bool => $k >= $minimum && $k <= $maximum)));
-        sort($initialCandidates);
-
         $rows = TrainingRows::from($rows);
 
         $reports = [];
@@ -65,13 +61,6 @@ final class OutcomeKnnTuner
             $budget->checkpointCandidate($k);
         }
         unset($report);
-        $initialReports = array_intersect_key($reports, array_flip($initialCandidates));
-        $best = $this->best($initialReports);
-        $center = $best ?? $maximum;
-        $selected = array_values(array_unique([...$initialCandidates,
-            ...range(max($minimum, $center - 3), min($maximum, $center + 3))]));
-        sort($selected);
-        $reports = array_intersect_key($reports, array_flip($selected));
         ksort($reports);
 
         $result = ['k' => $this->best($reports), 'k_min' => $minimum, 'k_max' => $maximum, 'folds' => $folds,

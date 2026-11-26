@@ -61,8 +61,8 @@
             @endif
             <p class="guide-help">Confidence describes the supported evidence (Action KNN alone in Action-only mode); it is not a calibrated probability of profit. Market state is the supported Outcome class, when available. The Client still applies trading fees, balances and execution rules.</p>
             @if ($progress['evidence_evaluated'])
-                <x-intelligence-progress label="Effective neighbors required" :value="$signal['effective_neighbors']" :target="$progress['settings']['min_effective_neighbors']" :decimals="1" />
-                <x-intelligence-progress label="Final KNN confidence required" :value="$signal['confidence'] * 100" :target="$progress['settings']['min_confidence'] * 100" :decimals="1" suffix="%" />
+                <x-intelligence-progress label="Effective neighbors required" :value="$signal['effective_neighbors']" :target="$signalSettings['min_effective_neighbors']" :decimals="1" />
+                <x-intelligence-progress label="Final KNN confidence required" :value="$signal['confidence'] * 100" :target="$signalSettings['min_confidence'] * 100" :decimals="1" suffix="%" />
                 <p class="guide-help">These evidence meters can rise or fall with each market state. They are not training progress. Published confidence remains zero while the model abstains.</p>
             @endif
         </section>
@@ -70,9 +70,9 @@
         @include('markets.intelligence-lead-lag')
         @if($report)
             <section class="guide-panel"><h2>Outcome + Action scoring</h2>
-                <x-knn-readiness :report="$report" :coingecko="$coingecko" />
-                <p><strong>Outcome KNN</strong> predicts SUPER BEAR, BEAR, NEUTRAL, BULL or SUPER BULL over the market-derived horizon. <strong>Action KNN</strong> predicts BUY, HOLD or SELL. Human Training adjusts each KNN independently and never replaces its algorithmic training.</p>
-                <p class="guide-help">Readiness badges describe training-time model validation, not how many neighbours support this particular candle. Current-candle support and neighbours are shown separately below.</p>
+                <p class="guide-help">Recorded scoring from published model <code>{{ $report['model_id'] ?? 'Not recorded' }}</code>.</p>
+                <p><strong>Outcome KNN</strong> predicts SUPER BEAR, BEAR, NEUTRAL, BULL or SUPER BULL over the market-derived horizon. <strong>Action KNN</strong> predicts BUY, HOLD or SELL. Each component combines algorithmic training and eligible Human Training. A validated human source can support its component when algorithmic validation is unavailable.</p>
+                <p class="guide-help">Latest training validation appears above. The values below describe the recorded production candle and its supported neighbours.</p>
                 <div class="review-table-wrap"><table>
                     <thead><tr><th scope="col">KNN</th><th scope="col">Prediction</th><th scope="col">Reason</th><th scope="col">Neighbors</th><th scope="col">Effective neighbors</th><th scope="col">Confidence</th><th scope="col">Algorithmic weight</th><th scope="col">Human weight</th></tr></thead>
                     <tbody>
@@ -131,28 +131,31 @@
                 <p class="guide-help">Completion means the remaining candles meet the stated pattern definition. It does not establish a profitable trade.</p>
             @endif
         </section>
-        @if ($report)
+        @if ($trainingReport)
+            @php
+                $outcomeHoldout = $trainingReport['outcome']['algorithmic']['holdout'] ?? $trainingReport['holdout'] ?? [];
+            @endphp
             <section class="guide-panel">
-                <h2>Model validation</h2>
+                <h2>Model validation · latest training</h2>
                 <dl>
-                    <dt>Intelligence readiness</dt><dd><x-knn-readiness :report="$report" :coingecko="$coingecko" /></dd>
-                    <dt>Outcome K</dt><dd>{{ $report['k'] ?? 'No eligible value' }}</dd>
-                    <dt>Action K</dt><dd>{{ $report['action_k'] ?? 'No eligible value' }}</dd>
-                    <dt>Shared knowledge rows</dt><dd>{{ \App\Helpers\Decimal::format($report['knowledge_rows']) }} retained examples</dd>
-                    @if (isset($report['training_data']['window']))
+                    <dt>Intelligence readiness</dt><dd><x-knn-readiness :report="$trainingReport" :coingecko="$coingecko" /></dd>
+                    <dt>Outcome K</dt><dd>{{ $trainingReport['k'] ?? 'No eligible value' }}</dd>
+                    <dt>Action K</dt><dd>{{ $trainingReport['action_k'] ?? 'No eligible value' }}</dd>
+                    <dt>Shared knowledge rows</dt><dd>{{ \App\Helpers\Decimal::format($trainingReport['knowledge_rows']) }} retained examples</dd>
+                    @if (isset($trainingReport['training_data']['window']))
                         <dt>History window</dt><dd>
-                            @if (($report['training_data']['window']['policy'] ?? null) === \App\Domain\Intelligence\KnowledgeWindow::TRAINING_POLICY)
+                            @if (($trainingReport['training_data']['window']['policy'] ?? null) === \App\Domain\Intelligence\KnowledgeWindow::TRAINING_POLICY)
                                 All available eligible history
                             @else
-                                {{ \App\Helpers\Decimal::format($report['training_data']['window']['days']) }} days, starting <x-display-time :value="$report['training_data']['window']['from_ms']" unit="milliseconds" />
+                                {{ \App\Helpers\Decimal::format($trainingReport['training_data']['window']['days']) }} days, starting <x-display-time :value="$trainingReport['training_data']['window']['from_ms']" unit="milliseconds" />
                             @endif
                         </dd>
                     @endif
-                    <dt>Training cutoff</dt><dd><x-display-time :value="$report['trained_as_of_ms']" unit="milliseconds" /></dd>
-                    @if ($report['holdout'])
-                        <dt>Outcome macro F1</dt><dd>{{ \App\Helpers\Decimal::format(($report['holdout']['macro_f1'] ?? 0) * 100, 1) }}%</dd>
-                        <dt>Outcome accuracy</dt><dd>{{ \App\Helpers\Decimal::format(($report['holdout']['accuracy'] ?? 0) * 100, 1) }}%</dd>
-                        <dt>Outcome coverage</dt><dd>{{ \App\Helpers\Decimal::format(($report['holdout']['coverage'] ?? 0) * 100, 1) }}%</dd>
+                    <dt>Training cutoff</dt><dd><x-display-time :value="$trainingReport['trained_as_of_ms']" unit="milliseconds" /></dd>
+                    @if (($outcomeHoldout['evaluated'] ?? 0) > 0)
+                        <dt>Outcome macro F1</dt><dd>{{ \App\Helpers\Decimal::format(($outcomeHoldout['macro_f1'] ?? 0) * 100, 1) }}%</dd>
+                        <dt>Outcome accuracy</dt><dd>{{ \App\Helpers\Decimal::format(($outcomeHoldout['accuracy'] ?? 0) * 100, 1) }}%</dd>
+                        <dt>Outcome coverage</dt><dd>{{ \App\Helpers\Decimal::format(($outcomeHoldout['coverage'] ?? 0) * 100, 1) }}%</dd>
                     @endif
                 </dl>
                 <p class="guide-help">New builds retain every eligible example within the configured history window. The validation minimum does not cap the knowledge pool.</p>
@@ -184,7 +187,7 @@
                 @endif
                 <h3>Outcome K selection requirements</h3>
                 @if ($progress['tuning'])
-                    <p>{{ $report['k'] === null ? 'Closest candidate by number of passed checks' : 'Selected candidate' }}: K = {{ $progress['tuning']['k'] }}. All checks must pass for the same candidate.</p>
+                    <p>{{ $trainingReport['k'] === null ? 'Closest candidate by number of passed checks' : 'Selected candidate' }}: K = {{ $progress['tuning']['k'] }}. All checks must pass for the same candidate.</p>
                     @include('markets.intelligence-gates', ['gates' => $progress['tuning']['gates']])
                 @else
                     <p>No tuning results are available yet.</p>
@@ -195,9 +198,9 @@
                 @else
                     <p>Not evaluated: K selection must pass first.</p>
                 @endif
-                @if (($report['patterns'] ?? []) !== [])
+                @if (($trainingReport['patterns'] ?? []) !== [])
                     <h3>Pattern training history</h3>
-                    @foreach ($report['patterns'] as $type => $patternReport)
+                    @foreach ($trainingReport['patterns'] as $type => $patternReport)
                         <x-intelligence-progress :label="ucwords(str_replace('_', ' ', $type)).' samples'" :value="$patternReport['samples']" :target="$progress['pattern_minimum']" />
                         <p class="guide-help">{{ match ($patternReport['status']) {
                             'validated' => 'Validated. A calibrated pattern model is available.',
@@ -210,9 +213,9 @@
                 @endif
                 <p class="guide-help">K is tuned on earlier chronological folds. These later-period results come from a separate held-out block. Models retrain weekly, after successful backfill, and daily for eligible overlapping markets when lead/lag refresh is enabled.</p>
             </section>
-            @if (auth()->user()->isOwner() && isset($report['build_performance']))
+            @if (auth()->user()->isOwner() && isset($trainingReport['build_performance']))
                 @php
-                    $performance = $report['build_performance'];
+                    $performance = $trainingReport['build_performance'];
                     $stageLabels = [
                         'dataset_ms' => 'Dataset construction / loading',
                         'patterns_ms' => 'Pattern models',
@@ -244,7 +247,7 @@
                                 <dt>Started from checkpoint</dt><dd>{{ ($performance['feature_replay']['checkpoint_used'] ?? false) ? 'Yes' : 'No' }}</dd>
                             @endif
                         </dl>
-                        <p class="guide-help">OWNER-only diagnostics for the most recently published model. Timings are persisted in the model report and also emitted to the action/syslog stream.</p>
+                        <p class="guide-help">OWNER-only diagnostics for the latest completed training build. Timings are persisted in the model report and also emitted to the action/syslog stream.</p>
                     </details>
                 </section>
             @endif

@@ -41,6 +41,41 @@ function outcomeTuningRows(int $count = 80): array
     return $rows;
 }
 
+it('considers intermediate Outcome K values without relaxing validation', function (float $minimumMacroF1, ?int $expectedK, array $failedGates) {
+    $settings = array_replace(outcomeValidationSettings(), [
+        'min_train_size' => 12, 'test_size' => 5, 'k_cap' => 12,
+        'min_validation_rows' => 5, 'min_effective_neighbors' => 3.0, 'min_confidence' => 0.6,
+    ]);
+    $settings['outcome']['min_macro_f1'] = $minimumMacroF1;
+    $labels = ['neutral', 'neutral', 'super_bull', 'super_bull', 'super_bull', 'super_bull',
+        'super_bull', 'neutral', 'neutral', 'neutral', 'neutral', 'neutral'];
+    $rows = [];
+    foreach ($labels as $index => $label) {
+        $rows[] = ['vector' => [($index + 1) / 1000], 'label' => $label,
+            'decision_at_ms' => $index * 1000, 'label_available_at_ms' => $index * 1000 + 1];
+    }
+    for ($index = 12; $index < 17; $index++) {
+        $rows[] = ['vector' => [0.0], 'label' => 'super_bull',
+            'decision_at_ms' => $index * 1000, 'label_available_at_ms' => $index * 1000 + 1];
+    }
+    $tuner = new OutcomeKnnTuner(new WeightedKnn(0.25, 3.0, 0.6), new OutcomeKnn($settings), static fn (): float => 0.0);
+
+    $report = $tuner->tunePrepared(TrainingRows::from($rows), $settings, 1.0);
+
+    expect($report['k'])->toBe($expectedK);
+    expect(array_column($report['candidates'], 'k'))->toBe(range(4, 12));
+    $candidates = array_column($report['candidates'], null, 'k');
+    expect($candidates[7]['supported'])->toBe(5)
+        ->and($candidates[7]['macro_f1'])->toBe(0.2)
+        ->and($candidates[7]['failed_gates'])->toBe($failedGates);
+    foreach ([5, 9, 12] as $coarseK) {
+        expect($candidates[$coarseK]['supported'])->toBe(0);
+    }
+})->with([
+    'eligible intermediate K despite coarse abstentions' => [0.20, 7, []],
+    'no eligible K after quality rejection' => [0.21, null, ['macro_f1']],
+]);
+
 it('preserves Outcome selection when independent K voting exceeds one candidates allowance in total', function () {
     $settings = array_replace(outcomeValidationSettings(), ['min_train_size' => 10]);
     $knn = new WeightedKnn(1.0, 1.0, 0.5);

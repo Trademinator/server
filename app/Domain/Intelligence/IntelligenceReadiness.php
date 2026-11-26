@@ -21,7 +21,8 @@ final class IntelligenceReadiness
 
     public function __construct(private CandleTimeframe $timeframe) {}
 
-    public function describe(string $exchange, string $symbol, ?string $period, ?MarketFeed $feed, ?array $report, array $signal): array
+    public function describe(string $exchange, string $symbol, ?string $period, ?MarketFeed $feed, ?array $report, array $signal,
+        ?string $trainingReason = null): array
     {
         $settings = $report['settings'] ?? config('intelligence.knn');
         $outcomeSettings = $settings['outcome'] ?? config('intelligence.outcome');
@@ -35,7 +36,7 @@ final class IntelligenceReadiness
             'queue' => config('intelligence.queue'), 'source' => $this->source($report), 'schema' => null, 'full_schema' => null,
             'evidence_evaluated' => in_array($signal['reason'], ['supported', 'degraded_action_only', 'no_similar_history',
                 'insufficient_effective_neighbors', 'tied_votes', 'weak_consensus', 'tied_model_scores', 'weak_model_consensus'], true),
-            'action' => $this->action($signal['reason']),
+            'action' => $this->action($trainingReason ?? $signal['reason']),
             'pattern_minimum' => $report['pattern_settings']['min_samples'] ?? config('intelligence.patterns.min_samples'),
         ];
         $data['schema'] = $data['source']['schema'] ?? (string) config('intelligence.schema');
@@ -68,8 +69,9 @@ final class IntelligenceReadiness
             if ($candidate !== null) {
                 $data['tuning'] = ['k' => $candidate['k'], 'gates' => $gatesFor($candidate)];
             }
-            if ($report['holdout'] ?? null) {
-                $data['holdout'] = $gatesFor($report['holdout']);
+            $holdout = $report['outcome']['algorithmic']['holdout'] ?? $report['holdout'] ?? null;
+            if (($holdout['evaluated'] ?? 0) > 0) {
+                $data['holdout'] = $gatesFor($holdout);
             }
         }
         if ($period === null) {

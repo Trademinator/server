@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Markets;
 
 use App\Domain\Intelligence\CoinGeckoReadiness;
 use App\Domain\Intelligence\IntelligenceReadiness;
-use App\Domain\Intelligence\SignalFreshness;
 use App\Domain\Intelligence\ModelStore;
+use App\Domain\Intelligence\SignalFreshness;
 use App\Domain\Intelligence\SignalJournal;
 use App\Domain\Intelligence\WeightedKnn;
 use App\Domain\MarketData\MarketCatalog;
@@ -27,10 +27,12 @@ final class IntelligenceController extends Controller
         $coingecko = $contextReadiness->forMarkets([$item->market])->get(ModelStore::marketKey(
             $item->market->exchange->class, $item->market->symbol, $period ?? ''));
         $report = null;
+        $trainingReport = null;
         $signal = [...WeightedKnn::abstain($period === null ? 'period_pending' : 'no_model'), 'patterns' => []];
         if ($period !== null) {
             try {
                 $report = $models->currentReport($item->market->exchange->class, $item->market->symbol, $period);
+                $trainingReport = $models->latestReport($item->market->exchange->class, $item->market->symbol, $period);
                 $modelReady = ModelStore::isReadyReport($report);
                 $reason = match (true) {
                     $report === null => 'no_model',
@@ -65,9 +67,17 @@ final class IntelligenceController extends Controller
             }
         }
         $explanation = SignalJournal::explain($signal['reason']);
+        if ($signal['reason'] === 'no_model' && $trainingReport !== null) {
+            $explanation = 'No model is published for production. Review the latest training validation below.';
+        }
 
+        $trainingStates = ModelStore::knnReadiness($trainingReport);
+        $trainingReason = $period === null ? 'period_pending'
+            : (! $trainingStates['outcome']['ready'] ? $trainingStates['outcome']['reason']
+                : (! $trainingStates['action']['ready'] ? $trainingStates['action']['reason'] : 'awaiting_recording'));
         $progress = $readiness->describe($item->market->exchange->class, $item->market->symbol, $period,
-            $item->market->feed, $report, $signal);
+            $item->market->feed, $trainingReport, $signal, $trainingReason);
+        $signalSettings = $report['settings'] ?? config('intelligence.knn');
 
         $exchangeChoices = collect();
         try {
@@ -96,6 +106,7 @@ final class IntelligenceController extends Controller
             ->sortBy(fn (array $peer): string => mb_strtolower($peer['label']))
             ->values();
 
-        return view('markets.intelligence', compact('item', 'period', 'signal', 'report', 'explanation', 'progress', 'peerMarkets', 'coingecko'));
+        return view('markets.intelligence', compact('item', 'period', 'signal', 'report', 'trainingReport', 'explanation',
+            'progress', 'signalSettings', 'peerMarkets', 'coingecko'));
     }
 }

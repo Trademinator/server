@@ -24,7 +24,7 @@
         @if (session('status'))<p class="guide-notice" role="status">{{ session('status') }}</p>@endif
         <div class="grid gap-3 sm:grid-cols-2 {{ auth()->user()->can('manage-server') ? ($attentionCount > 0 ? 'xl:grid-cols-4' : 'xl:grid-cols-3') : 'lg:grid-cols-3' }}" aria-label="Dashboard overview" data-dashboard-overview>
             <a class="dashboard-stat" href="#subscriptions"><span>{{ $ownerViewingAll ? 'Markets followed by users' : 'Markets you follow' }}</span><strong>{{ $totals['followed'] }}</strong><small>Active subscriptions in this scope</small></a>
-            <a class="dashboard-stat" href="#subscriptions"><span>Intelligence readiness</span><div class="my-2"><x-knn-readiness :counts="$totals" :total="$totals['followed']" /></div><small>{{ $ownerViewingAll ? 'Across all active subscriptions' : 'Across all markets you follow' }}</small></a>
+            <a class="dashboard-stat" href="#subscriptions"><span>Latest training readiness</span><div class="my-2"><x-knn-readiness :counts="$totals" :total="$totals['followed']" /></div><small>{{ $ownerViewingAll ? 'Across all active subscriptions' : 'Across all markets you follow' }}</small></a>
             @can('manage-server')
             <button type="button" class="dashboard-stat" data-attention-toggle aria-controls="attention" aria-expanded="false" @if ($attentionCount === 0) hidden @endif><span>Needs attention</span><strong data-attention-count>{{ $attentionCount }}</strong><small>Collection or history on this page</small></button>
             @endcan
@@ -123,7 +123,7 @@
                 </div>
             </section>
             <section class="guide-panel" aria-labelledby="readiness-title">
-                <h2 id="readiness-title">Intelligence readiness · {{ $market->symbol }}</h2>
+                <h2 id="readiness-title">Latest training readiness · {{ $market->symbol }}</h2>
                 <p>{{ $progress['action'] }}</p>
                 <div class="grid gap-3 lg:grid-cols-3 mt-4">
                     <div class="dashboard-stat">
@@ -134,16 +134,17 @@
                         <p class="guide-help">Estimate before source checks and model-specific exclusions.</p>
                     </div>
                     <div class="dashboard-stat">
-                        <h3>2. Model build</h3>
-                        <p>{{ $details['report'] ? 'A model build has completed.' : 'No model build recorded yet.' }}</p>
-                        @if ($details['report'])<p class="guide-help">Model {{ $details['report']['model_id'] }}</p>@endif
+                        <h3>2. Latest model build</h3>
+                        <p>{{ $details['training_report'] ? 'A model build has completed.' : 'No model build recorded yet.' }}</p>
+                        @if ($details['training_report'])<p class="guide-help">Model {{ $details['training_report']['model_id'] }}</p>@endif
                     </div>
                     <div class="dashboard-stat">
                         <h3>3. Validation</h3>
-                        <x-knn-readiness :report="$details['report']" :coingecko="$details['coingecko']" />
-                        <p class="guide-help">Green: Outcome KNN. Blue: Action KNN. Yellow: fresh CoinGecko core context (optional 24-hour trends and category data may still be warming up). Each KNN check requires its own current, validated model with a positive scoring weight. Readiness does not guarantee a signal for every candle.</p>
+                        <x-knn-readiness :report="$details['training_report']" :coingecko="$details['coingecko']" />
+                        <p class="guide-help">Green: Outcome KNN. Blue: Action KNN. Yellow: fresh CoinGecko core context (optional 24-hour trends and category data may still be warming up). Each KNN check describes a current, validated component in the latest training build. Production availability is shown below. Readiness does not guarantee a signal for every candle.</p>
                     </div>
                 </div>
+                <x-training-model-status :training-report="$details['training_report']" :production-report="$details['report']" class="mt-3" />
                 @if ($progress['eta'])<p><strong>Earliest data estimate: <x-display-time :value="$progress['eta']" /></strong></p>@endif
                 <p class="guide-help">{{ $progress['eta_note'] }} Validated-model ETA: unknown.</p>
                 @if ($progress['issues'])<ul class="list-disc pl-5 mt-3">@foreach ($progress['issues'] as $issue)<li>{{ $issue }}</li>@endforeach</ul>@endif

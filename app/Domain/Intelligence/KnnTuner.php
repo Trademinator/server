@@ -39,10 +39,6 @@ final class KnnTuner
                 'selection' => 'semantic_precision_then_confidence_coverage_stability',
                 'reason' => 'no_k_can_satisfy_effective_neighbor_floor'];
         }
-        $initialCandidates = array_values(array_unique(array_filter([5, 9, 17, 33, 65, $maximum],
-            fn (int $k): bool => $k >= $minimum && $k <= $maximum)));
-        sort($initialCandidates);
-
         $rows = TrainingRows::from($rows);
 
         // Score every feasible K incrementally while each neighbor list is hot.
@@ -75,19 +71,12 @@ final class KnnTuner
             unset($training);
         }
 
-        $allReports = [];
+        $reports = [];
         $budget->checkpointShared();
         foreach ($accumulators as $k => $accumulator) {
-            $allReports[$k] = $this->finishAccumulator($accumulator, $settings);
+            $reports[$k] = $this->finishAccumulator($accumulator, $settings);
             $budget->checkpointCandidate($k);
         }
-        $initialReports = array_intersect_key($allReports, array_flip($initialCandidates));
-        $best = $this->best($initialReports);
-        $center = $best ?? $maximum;
-        $selected = array_values(array_unique([...$initialCandidates,
-            ...range(max($minimum, $center - 3), min($maximum, $center + 3))]));
-        sort($selected);
-        $reports = array_intersect_key($allReports, array_flip($selected));
         ksort($reports);
 
         $winner = $this->best($reports);

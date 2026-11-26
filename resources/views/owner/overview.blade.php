@@ -20,9 +20,9 @@
         <section class="owner-panel"><h2>Collector status</h2><table class="owner-table"><thead><tr><th>Status</th><th>Feeds</th></tr></thead><tbody>
             @forelse($feeds as $feed)<tr><td>{{ $feed->status }}</td><td>{{ $feed->total }}</td></tr>@empty<tr><td colspan="2">No feeds yet.</td></tr>@endforelse
         </tbody></table></section>
-        <section class="owner-panel"><h2>Current intelligence models</h2>
+        <section class="owner-panel"><h2>Current production models</h2>
             <x-knn-readiness :counts="$modelTotals" :total="$modelTotals['total']" />
-            <p class="owner-muted">Ready KNN models and current CoinGecko context across all {{ \App\Helpers\Decimal::format($modelTotals['total']) }} current market builds.</p>
+            <p class="owner-muted">Readiness of the {{ \App\Helpers\Decimal::format($modelTotals['total']) }} current production model records and their CoinGecko context. Latest training attempts are shown separately in the <a href="{{ route('owner.intelligence') }}">intelligence report</a>.</p>
         </section>
     </div>
 </x-owner.layout>

@@ -1,24 +1,29 @@
 <x-owner.layout title="Global intelligence report">
+    @php
+        $showHistory = (bool) ($filters['history'] ?? false);
+    @endphp
     <section class="owner-panel">
         <form class="owner-filters" method="GET" action="{{ route('owner.intelligence') }}" role="search">
-            <label>Search models<input type="search" name="q" value="{{ $filters['q'] }}" maxlength="120" placeholder="Exchange, pair, period or build reason"></label>
-            <label>Versions<select name="history"><option value="0">Current models</option><option value="1" @selected(request('history') == '1')>All model versions</option></select></label>
-            <label>Build result<select name="status"><option value="">All results</option><option value="ready" @selected(request('status') === 'ready')>Ready at build</option><option value="abstaining" @selected(request('status') === 'abstaining')>Abstaining</option></select></label>
+            <label>{{ $showHistory ? 'Search model builds' : 'Search production records' }}<input type="search" name="q" value="{{ $filters['q'] }}" maxlength="120" placeholder="Exchange, pair, period or {{ $showHistory ? 'build' : 'production record' }} reason"></label>
+            <label>Versions<select name="history"><option value="0">Current production records</option><option value="1" @selected(request('history') == '1')>All model versions</option></select></label>
+            <label>{{ $showHistory ? 'Build result' : 'Production record result' }}<select name="status"><option value="">All results</option><option value="ready" @selected(request('status') === 'ready')>Ready at build</option><option value="abstaining" @selected(request('status') === 'abstaining')>Abstaining</option></select></label>
             <input type="hidden" name="sort" value="{{ $sort }}">
             <input type="hidden" name="direction" value="{{ $direction }}">
             <button type="submit">Filter models</button>
             @if ($filters['q'] !== '')<a href="{{ route('owner.intelligence', array_diff_key($filters, ['q' => true])) }}">Clear search</a>@endif
         </form>
         <p><a href="{{ route('owner.evaluations.index') }}">Visual Outcome / Action evaluations →</a></p>
-        <p class="owner-muted">{{ \App\Helpers\Decimal::format($models->total()) }} matching models. Markets awaiting their first model are listed below.</p>
+        <p class="owner-muted">{{ \App\Helpers\Decimal::format($models->total()) }} matching {{ $showHistory ? 'model builds' : 'production records' }}.
+            @if (! $showHistory)The table searches, filters and sorts production records. Latest training results are shown alongside them. Markets awaiting publication or their first build are listed below.@endif
+        </p>
         <div class="owner-scroll">
             <table class="owner-table owner-intelligence-table">
                 <thead>
                     <tr>
-                        @foreach (['market' => 'Market', 'reason' => 'Readiness / build reason', 'knowledge_rows' => 'Knowledge rows', 'k' => 'K', 'created_at' => 'Built at'] as $column => $label)
+                        @foreach (['market' => 'Market', 'reason' => $showHistory ? 'Readiness / build reason' : 'Latest readiness / production reason', 'knowledge_rows' => 'Knowledge rows', 'k' => 'K', 'created_at' => 'Built at'] as $column => $label)
                             @php
                                 $nextDirection = $sort === $column ? ($direction === 'asc' ? 'desc' : 'asc') : ($column === 'created_at' ? 'desc' : 'asc');
-                                $sortLabel = $column === 'reason' ? 'Build reason' : $label;
+                                $sortLabel = $column === 'reason' ? 'Build reason'.($showHistory ? '' : ' (production record)') : $label;
                             @endphp
                             <th scope="col" @if ($sort === $column) aria-sort="{{ $direction === 'asc' ? 'ascending' : 'descending' }}" @endif>
                                 <a href="{{ route('owner.intelligence', array_replace($filters, ['sort' => $column, 'direction' => $nextDirection])) }}"
@@ -35,14 +40,35 @@
                     @forelse ($models as $model)
                         <tr class="owner-intelligence-model">
                             <td class="owner-intelligence-market-cell"><strong class="owner-intelligence-market-name">{{ $model->summary['exchange'] ?? 'Unknown' }} · {{ $model->summary['symbol'] ?? 'Unknown' }}</strong>
-                                <small>{{ $model->summary['period'] ?? 'Unknown' }} · {{ $model->current_id ? 'Current model' : 'Historical version' }}</small>
+                                <small>{{ $model->summary['period'] ?? 'Unknown' }} · {{ $model->current_id ? 'Current production record' : 'Historical version' }}</small>
                             </td>
-                            <td data-label="Readiness"><x-knn-readiness :report="$model->summary" :coingecko="$model->coingecko" /><small>{{ $model->summary['reason'] ?? 'Unknown' }}</small></td>
+                            <td data-label="Readiness">
+                                @if (! ($filters['history'] ?? false))
+                                    <small>Latest completed build</small>
+                                    <x-knn-readiness :report="$model->training_summary ?? $model->summary" :coingecko="$model->coingecko" />
+                                    <small>{{ $model->training_summary['reason'] ?? $model->summary['reason'] ?? 'Unknown' }}</small>
+                                    @if (($model->training_summary['reason'] ?? null) !== ($model->summary['reason'] ?? null))
+                                        <small>Production record reason: {{ $model->summary['reason'] ?? 'Unknown' }}</small>
+                                    @endif
+                                @else
+                                    <x-knn-readiness :report="$model->summary" :coingecko="$model->coingecko" />
+                                    <small>{{ $model->summary['reason'] ?? 'Unknown' }}</small>
+                                @endif
+                            </td>
                             <td data-label="Knowledge rows">{{ \App\Helpers\Decimal::format($model->summary['knowledge_rows'] ?? 0) }}</td>
                             <td data-label="Neighbors">Outcome {{ $model->summary['k'] ?? '—' }}<small>Action {{ $model->summary['action_k'] ?? '—' }}</small></td>
                             <td data-label="Built at"><x-display-time :value="$model->created_at" /></td>
-                            <td data-label="Report"><a href="{{ route('owner.intelligence.show', $model->model_id) }}">Validation details</a></td>
+                            <td data-label="Report"><a href="{{ route('owner.intelligence.show', $model->model_id) }}">Validation details</a>
+                                @if ($model->training_summary !== null && $model->training_summary['model_id'] !== $model->model_id)
+                                    <small><a href="{{ route('owner.intelligence.show', $model->training_summary['model_id']) }}">Latest training details</a></small>
+                                @endif
+                            </td>
                         </tr>
+                        @if ($model->training_summary !== null)
+                            <tr class="owner-intelligence-training">
+                                <td colspan="6"><x-training-model-status :training-report="$model->training_summary" :production-report="$model->summary" /></td>
+                            </tr>
+                        @endif
                         @if ($model->waterfall !== null)
                             <tr class="owner-intelligence-waterfall">
                                 <td colspan="6">
@@ -81,7 +107,7 @@
                                         <p class="owner-muted">This model predates persisted auto-label diagnostics. Rebuild it with the current intelligence version.</p>
                                     @endif
                                     <p class="owner-muted"><strong>d</strong> = candle distance between consecutive opposite BUY/SELL pivots inside one contiguous candle run. Distances never cross a gap.</p>
-                                    <p class="owner-muted"><strong>H</strong> = round(Σ(d × frequency) / Σfrequency), using every valid d in the full <code>INTELLIGENCE_MAX_MODEL_AGE_DAYS</code> window. At least 30 valid d observations are required.</p>
+                                    <p class="owner-muted"><strong>H</strong> = round(Σ(d × frequency) / Σfrequency), using every valid d across all available eligible history. At least 30 valid d observations are required.</p>
                                     <p class="owner-muted"><strong>K<sub>O</sub></strong> and <strong>K<sub>A</sub></strong> are tuned independently. K<sub>min</sub> = floor(min effective neighbors) + 1; K<sub>max</sub> = min(configured K cap, training warmup size, available rows). Validation selects the final K inside that range.</p>
                                 </details>
                                 <details class="owner-details">
@@ -98,6 +124,26 @@
         </div>
         {{ $models->links() }}
     </section>
+    @if ($unpublished->isNotEmpty())
+        <section class="owner-panel">
+            <h2>Subscribed markets awaiting publication</h2>
+            <p class="owner-muted">These markets have completed training, but no production model has been published. Showing {{ $unpublished->count() }} matching markets.</p>
+            <div class="owner-untrained-grid">
+                @foreach ($unpublished as $feed)
+                    <article class="owner-untrained-market">
+                        <strong>{{ $feed->market->exchange->class }} · {{ $feed->market->symbol }}</strong>
+                        <small>{{ $feed->selected_period }} · Latest completed build</small>
+                        <x-knn-readiness :report="$feed->training_report" :coingecko="$feed->coingecko" />
+                        <x-training-model-status :training-report="$feed->training_report" />
+                        <p><a href="{{ route('owner.intelligence.show', $feed->training_report['model_id']) }}">Latest training details</a></p>
+                        @include('owner.partials.knowledge-waterfall', [
+                            'waterfall' => $feed->waterfall, 'marketId' => $feed->market_id,
+                        ])
+                    </article>
+                @endforeach
+            </div>
+        </section>
+    @endif
     @if ($untrained->isNotEmpty())
         <section class="owner-panel">
             <h2>Subscribed markets awaiting their first model</h2>

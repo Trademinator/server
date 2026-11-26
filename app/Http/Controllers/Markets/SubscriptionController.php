@@ -20,7 +20,7 @@ use Throwable;
 
 final class SubscriptionController extends Controller
 {
-    public function index(Request $request, MarketCatalog $catalog, CoinGeckoReadiness $contextReadiness): View
+    public function index(Request $request, MarketCatalog $catalog, CoinGeckoReadiness $contextReadiness, ModelStore $models): View
     {
         $catalogueError = null;
         try {
@@ -50,6 +50,10 @@ final class SubscriptionController extends Controller
         $subscriptionReports = $marketKeys->map(
             fn (?string $key): ?array => $key === null ? null : $modelReports->get($key)
         );
+        $trainingReports = $models->latestReports($keys->all());
+        $subscriptionTrainingReports = $marketKeys->map(
+            fn (?string $key): ?array => $key === null ? null : $trainingReports->get($key)
+        );
         $contexts = $contextReadiness->forMarkets($subscriptions->pluck('market'));
         $subscriptionContexts = $subscriptions->mapWithKeys(fn (MarketSubscription $item): array => [
             $item->getKey() => $contexts->get(ModelStore::marketKey($item->market->exchange->class,
@@ -77,6 +81,7 @@ final class SubscriptionController extends Controller
             'catalogueError' => $catalogueError,
             'subscriptionGroups' => $subscriptionGroups,
             'subscriptionReports' => $subscriptionReports,
+            'subscriptionTrainingReports' => $subscriptionTrainingReports,
             'subscriptionContexts' => $subscriptionContexts,
             'prefillExchange' => is_string($request->query('exchange')) ? $request->query('exchange') : '',
             'prefillSymbol' => is_string($request->query('symbol')) ? $request->query('symbol') : '',

@@ -22,7 +22,7 @@ final class DashboardData
 {
     public function __construct(private MarketChart $charts, private IntelligenceReadiness $readiness,
         private CandleTimeframe $timeframe, private MarketDiscovery $discovery, private CoinGeckoReadiness $contextReadiness,
-        private SignalFreshness $freshness) {}
+        private SignalFreshness $freshness, private ModelStore $models) {}
 
     public function subscriptions(User $user): Builder
     {
@@ -52,7 +52,9 @@ final class DashboardData
         }
         $subscriptions = $query->orderBy('created_at')->orderBy('market_subscription_id')
             ->paginate(max(1, min(24, (int) config('dashboard.page_size'))))->withQueryString();
-        $reports = $this->reports($subscriptions->getCollection()->map(fn ($item) => $this->key($item->market))->all());
+        $keys = $subscriptions->getCollection()->map(fn ($item) => $this->key($item->market))->all();
+        $reports = $this->reports($keys);
+        $trainingReports = $this->models->latestReports($keys);
         $contexts = $this->contextReadiness->forMarkets($subscriptions->getCollection()->pluck('market'));
         try {
             $metadata = app(ExchangeMetadata::class)->all();
@@ -60,7 +62,7 @@ final class DashboardData
             $metadata = [];
         }
         $canManage = $user->can('manage-server');
-        $cards = $subscriptions->getCollection()->map(function (MarketSubscription $item) use ($reports, $contexts, $metadata, $canManage, $user): array {
+        $cards = $subscriptions->getCollection()->map(function (MarketSubscription $item) use ($reports, $trainingReports, $contexts, $metadata, $canManage, $user): array {
             $chart = $this->charts->data($item->market, 48);
             $report = $reports->get($this->key($item->market));
             $ready = $this->ready($report);
@@ -69,6 +71,7 @@ final class DashboardData
             $issues = $canManage ? app(CollectionAttention::class)->describe($item->market, $chart) : [];
 
             return ['subscription' => $item, 'chart' => $chart, 'report' => $report, 'ready' => $ready,
+                'training_report' => $trainingReports->get($this->key($item->market)),
                 'coingecko' => $contexts->get($this->key($item->market)),
                 'is_mine' => $item->user_id === $user->user_id,
                 'is_favorite' => (bool) $item->is_favorite,
@@ -139,15 +142,16 @@ final class DashboardData
             $keys[] = $this->key($selected->market);
         }
         $reports = $this->reports($keys);
+        $trainingReports = $this->models->latestReports($keys);
         $totals = ['followed' => 0, 'outcome' => 0, 'action' => 0, 'coingecko' => 0];
         $this->scopedSubscriptions($user, $scope, false)->setEagerLoads([])->with('market.exchange', 'market.feed')
             ->chunkById(100, function ($items) use (&$totals): void {
-                $reports = $this->reports($items->map(fn ($item) => $this->key($item->market))->all());
+                $trainingReports = $this->models->latestReports($items->map(fn ($item) => $this->key($item->market))->all());
                 $contexts = $this->contextReadiness->forMarkets($items->pluck('market'));
                 foreach ($items as $item) {
                     $totals['followed']++;
                     $totals['coingecko'] += (int) ($contexts->get($this->key($item->market))['ready'] ?? false);
-                    foreach (ModelStore::knnReadiness($reports->get($this->key($item->market))) as $name => $state) {
+                    foreach (ModelStore::knnReadiness($trainingReports->get($this->key($item->market))) as $name => $state) {
                         $totals[$name] += (int) $state['ready'];
                     }
                 }
@@ -170,16 +174,23 @@ final class DashboardData
         if ($selected !== null) {
             $market = $selected->market;
             $report = $reports->get($this->key($market));
+            $trainingReport = $trainingReports->get($this->key($market));
+            $trainingStates = ModelStore::knnReadiness($trainingReport);
+            $trainingReason = $market->feed?->selected_period === null ? 'period_pending'
+                : (! $trainingStates['outcome']['ready'] ? $trainingStates['outcome']['reason']
+                    : (! $trainingStates['action']['ready'] ? $trainingStates['action']['reason'] : 'awaiting_recording'));
             $signal = $market->latestSignal;
             $fresh = $this->fresh($market, $signal, $report);
             $current = $fresh ? $signal->payload : WeightedKnn::abstain($market->feed?->selected_period === null ? 'period_pending'
                 : ($report === null ? 'no_model' : ($this->ready($report) ? 'awaiting_recording' : ($report['reason'] ?? 'model_unavailable'))));
-            $cacheKey = 'trademinator:dashboard-readiness:v2:'.hash('sha256', json_encode([
-                $this->key($market), $report['model_id'] ?? null, $current['reason'], $market->feed?->updated_at?->getTimestamp(),
+            $cacheKey = 'trademinator:dashboard-readiness:v3:'.hash('sha256', json_encode([
+                $this->key($market), $report['model_id'] ?? null, $trainingReport['model_id'] ?? null,
+                $trainingReason, $current['reason'], $market->feed?->updated_at?->getTimestamp(),
             ], JSON_THROW_ON_ERROR));
             $progress = Cache::remember($cacheKey, 60, fn () => $this->readiness->describe($market->exchange->class,
-                $market->symbol, $market->feed?->selected_period, $market->feed, $report, $current));
+                $market->symbol, $market->feed?->selected_period, $market->feed, $trainingReport, $current, $trainingReason));
             $details = ['subscription' => $selected, 'report' => $report, 'signal' => $signal, 'signal_fresh' => $fresh,
+                'training_report' => $trainingReport,
                 'coingecko' => $this->contextReadiness->forMarkets([$market])->get($this->key($market)),
                 'progress' => $progress, 'chart' => $this->chart($user, $market),
                 'history' => MarketSignal::query()->where('market_id', $market->getKey())

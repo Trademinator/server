@@ -34,6 +34,7 @@ final class KnowledgeWaterfall
         ?array $report = null,
         ?string $datasetId = null,
         ?string $marketId = null,
+        ?array $latestReport = null,
     ): array {
         $nowMs = now()->getTimestampMs();
         $scope = ['exchange' => $exchange, 'symbol' => $symbol, 'period' => $period];
@@ -181,7 +182,11 @@ final class KnowledgeWaterfall
         }
 
         if ($report === null) {
-            $ai = $this->stage('red', 'Never trained: no published intelligence model exists.');
+            $ai = $latestReport === null
+                ? $this->stage('red', 'Never trained: no completed intelligence model exists.')
+                : $this->stage('red', 'No production model has been published. Latest training result: '
+                    .($latestReport['reason'] ?? $latestReport['status'] ?? 'unavailable').'.',
+                    is_int($latestReport['trained_as_of_ms'] ?? null) ? $latestReport['trained_as_of_ms'] : null);
         } else {
             $readiness = ModelStore::knnReadiness($report);
             $actionReady = $readiness['action']['ready'] ?? false;

@@ -24,6 +24,45 @@ function tuningSettings(): array
         'min_semantic_precision' => 0.55, 'min_coverage' => 0.01, 'max_contradiction_rate' => 0.05];
 }
 
+it('considers intermediate Action K values without relaxing validation', function (float $minimumWilsonLower, ?int $expectedK, array $failedGates) {
+    $settings = array_replace(tuningSettings(), [
+        'min_train_size' => 24, 'test_size' => 10, 'gap' => 0, 'k_cap' => 12,
+        'min_directional_wilson_lower' => $minimumWilsonLower,
+    ]);
+    $rows = [];
+    foreach (['buy' => 0.1, 'sell' => 0.8] as $action => $center) {
+        $labels = ['hodl', 'hodl', $action, $action, $action, $action,
+            $action, 'hodl', 'hodl', 'hodl', 'hodl', 'hodl'];
+        foreach ($labels as $neighbor => $label) {
+            $index = count($rows);
+            $rows[] = ['vector' => [$center + ($neighbor + 1) / 1000], 'label' => $label,
+                'decision_at_ms' => $index * 1000, 'label_available_at_ms' => $index * 1000 + 1];
+        }
+    }
+    for ($index = 24; $index < 34; $index++) {
+        $buy = $index % 2 === 0;
+        $rows[] = ['vector' => [$buy ? 0.1 : 0.8], 'label' => $buy ? 'buy' : 'sell',
+            'decision_at_ms' => $index * 1000, 'label_available_at_ms' => $index * 1000 + 1,
+            'semantic_bottom' => $buy, 'semantic_top' => ! $buy];
+    }
+    $tuner = new KnnTuner(new WeightedKnn(0.25, 3.0, 0.6), static fn (): float => 0.0);
+
+    $report = $tuner->tunePrepared(TrainingRows::from($rows), $settings, 1.0);
+
+    expect($report['k'])->toBe($expectedK);
+    expect(array_column($report['candidates'], 'k'))->toBe(range(4, 12));
+    $candidates = array_column($report['candidates'], null, 'k');
+    expect($candidates[7]['directional'])->toBe(10)
+        ->and($candidates[7]['correct'])->toBe(10)
+        ->and($candidates[7]['failed_gates'])->toBe($failedGates);
+    foreach ([5, 9, 12] as $coarseK) {
+        expect($candidates[$coarseK]['supported'])->toBe(0);
+    }
+})->with([
+    'eligible intermediate K despite coarse abstentions' => [0.55, 7, []],
+    'no eligible K after quality rejection' => [0.80, null, ['directional_wilson_lower']],
+]);
+
 it('sizes K from the first-fold training capacity and purges unfinished labels', function () {
     $report = (new KnnTuner(new WeightedKnn))->tune(tuningRows(), tuningSettings(), microtime(true) + 10);
 

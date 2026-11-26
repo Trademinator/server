@@ -25,7 +25,9 @@
                                 <div class="flex flex-wrap justify-between gap-2"><strong>{{ $card['label'] }}</strong></div>
                                 @if ($card['attention'])<p class="dashboard-warning">Collection or history needs attention</p>@endif
                                 <p class="guide-help">Last candle closed: <x-display-time :value="$card['chart']['last_closed_at_ms']" unit="milliseconds" /></p>
-                                <x-knn-readiness :report="$card['report']" :coingecko="$card['coingecko']" class="mt-3" />
+                                <p class="guide-help">Latest training readiness</p>
+                                <x-knn-readiness :report="$card['training_report']" :coingecko="$card['coingecko']" class="mt-3" />
+                                <p class="guide-help">Production: {{ $card['ready'] ? 'Available' : 'Unavailable' }}.</p>
                             </a>
                             <form method="POST" action="{{ route($card['is_favorite'] ? 'dashboard.favorites.destroy' : 'dashboard.favorites.store', $favoriteParams) }}">
                                 @csrf
