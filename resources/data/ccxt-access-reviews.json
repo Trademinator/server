@@ -725,232 +725,304 @@
       }
     },
     "binance": {
-      "source_fingerprint": "3423e0dba51023c717d0fd7ee361fd4e848c9b41cd2081b4b4f7f8adb124e79c",
+      "source_fingerprint": "be666009871133f505b29442e7033583bd0945a9ed390c8bbe69e4b3ae801823",
       "markets": "public",
       "candles": "public",
-      "note": "Spot exchangeInfo and klines are public. Private margin/currency enrichment is conditional on credentials; Trademinator spot discovery disables that enrichment and restricts market types.",
+      "note": "Re-reviewed synchronous PHP CCXT 4.5.94 at 3b6820067fccdfd1fe8a47dc7f269b0e117d234a. A fresh client without credentials skips private currency discovery and margin enrichment. Default spot/linear/inverse market discovery uses unsigned exchangeInfo routes; default spot fetch_ohlcv loads markets and uses unsigned public klines. Trademinator spot discovery also disables currency/margin enrichment and restricts market types. SAPI currency/margin and opt-in stock discovery require credentials; historicalTrades and user-stream exceptions are outside the reviewed OHLCV path. Custom options, credentials, and regional availability are not covered by the public classification. Source/endpoint review only; no live exchange requests.",
       "evidence": [
+        {
+          "method": "describe",
+          "file": "php/binance.php",
+          "line": 12
+        },
+        {
+          "method": "load_markets",
+          "file": "php/Exchange.php",
+          "line": 2326
+        },
         {
           "method": "fetch_ohlcv",
           "file": "php/binance.php",
-          "line": 4708
+          "line": 5130
         },
         {
           "method": "fetch_markets",
           "file": "php/binance.php",
-          "line": 3155
+          "line": 3421
         },
         {
           "method": "fetch_currencies",
           "file": "php/binance.php",
-          "line": 2914
+          "line": 3167
         },
         {
           "method": "sign",
           "file": "php/binance.php",
-          "line": 12059
+          "line": 13329
         },
         {
           "method": "market",
           "file": "php/binance.php",
-          "line": 2791
+          "line": 2890
         },
         {
           "method": "eapiPublicGetKlines",
           "file": "php/abstract/binance.php",
-          "line": 4180
+          "line": 8779
         },
         {
           "method": "dapiPublicGetMarkPriceKlines",
           "file": "php/abstract/binance.php",
-          "line": 3664
+          "line": 7711
         },
         {
           "method": "fapiPublicGetMarkPriceKlines",
           "file": "php/abstract/binance.php",
-          "line": 3859
+          "line": 8137
         },
         {
           "method": "dapiPublicGetIndexPriceKlines",
           "file": "php/abstract/binance.php",
-          "line": 3661
+          "line": 7705
         },
         {
           "method": "fapiPublicGetIndexPriceKlines",
           "file": "php/abstract/binance.php",
-          "line": 3862
+          "line": 8143
         },
         {
           "method": "dapiPublicGetPremiumIndexKlines",
           "file": "php/abstract/binance.php",
-          "line": 3667
+          "line": 7717
         },
         {
           "method": "fapiPublicGetPremiumIndexKlines",
           "file": "php/abstract/binance.php",
-          "line": 3865
+          "line": 8149
         },
         {
           "method": "fapiPublicGetKlines",
           "file": "php/abstract/binance.php",
-          "line": 3853
+          "line": 8125
         },
         {
           "method": "dapiPublicGetKlines",
           "file": "php/abstract/binance.php",
-          "line": 3655
+          "line": 7693
         },
         {
           "method": "publicGetKlines",
           "file": "php/abstract/binance.php",
-          "line": 4318
+          "line": 9061
         },
         {
           "method": "publicGetExchangeInfo",
           "file": "php/abstract/binance.php",
-          "line": 4339
+          "line": 9103
         },
         {
           "method": "sapiGetMarginAllPairs",
           "file": "php/abstract/binance.php",
-          "line": 2401
+          "line": 5041
         },
         {
           "method": "sapiGetMarginIsolatedAllPairs",
           "file": "php/abstract/binance.php",
-          "line": 2488
+          "line": 5215
         },
         {
           "method": "fapiPublicGetExchangeInfo",
           "file": "php/abstract/binance.php",
-          "line": 3835
+          "line": 8089
         },
         {
           "method": "dapiPublicGetExchangeInfo",
           "file": "php/abstract/binance.php",
-          "line": 3634
+          "line": 7651
         },
         {
           "method": "eapiPublicGetExchangeInfo",
           "file": "php/abstract/binance.php",
-          "line": 4165
+          "line": 8749
         },
         {
           "method": "sapiGetCapitalConfigGetall",
           "file": "php/abstract/binance.php",
-          "line": 2620
+          "line": 5479
         },
         {
           "method": "create_expired_option_market",
           "file": "php/binance.php",
-          "line": 2728
+          "line": 2831
         },
         {
           "method": "request",
           "file": "php/binance.php",
-          "line": 12330
+          "line": 13611
+        },
+        {
+          "method": "fetch_time",
+          "file": "php/binance.php",
+          "line": 3140
+        },
+        {
+          "method": "fetch2",
+          "file": "php/Exchange.php",
+          "line": 7099
+        },
+        {
+          "method": "check_required_credentials",
+          "file": "php/Exchange.php",
+          "line": 7370
+        },
+        {
+          "method": "sapiGetEquityMarketExchangeInfo",
+          "file": "php/abstract/binance.php",
+          "line": 6571
         }
       ],
       "endpoint_signing": {
         "eapiPublicGetKlines": {
           "path": "klines",
-          "api": "eapiPublic",
+          "api": [
+            "eapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "dapiPublicGetMarkPriceKlines": {
           "path": "markPriceKlines",
-          "api": "dapiPublic",
+          "api": [
+            "dapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "fapiPublicGetMarkPriceKlines": {
           "path": "markPriceKlines",
-          "api": "fapiPublic",
+          "api": [
+            "fapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "dapiPublicGetIndexPriceKlines": {
           "path": "indexPriceKlines",
-          "api": "dapiPublic",
+          "api": [
+            "dapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "fapiPublicGetIndexPriceKlines": {
           "path": "indexPriceKlines",
-          "api": "fapiPublic",
+          "api": [
+            "fapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "dapiPublicGetPremiumIndexKlines": {
           "path": "premiumIndexKlines",
-          "api": "dapiPublic",
+          "api": [
+            "dapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "fapiPublicGetPremiumIndexKlines": {
           "path": "premiumIndexKlines",
-          "api": "fapiPublic",
+          "api": [
+            "fapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "fapiPublicGetKlines": {
           "path": "klines",
-          "api": "fapiPublic",
+          "api": [
+            "fapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "dapiPublicGetKlines": {
           "path": "klines",
-          "api": "dapiPublic",
+          "api": [
+            "dapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "publicGetKlines": {
           "path": "klines",
-          "api": "public",
+          "api": [
+            "public"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "publicGetExchangeInfo": {
           "path": "exchangeInfo",
-          "api": "public",
+          "api": [
+            "public"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "sapiGetMarginAllPairs": {
           "path": "margin/allPairs",
-          "api": "sapi",
+          "api": [
+            "sapi"
+          ],
           "verb": "GET",
           "signing": "authentication_required"
         },
         "sapiGetMarginIsolatedAllPairs": {
           "path": "margin/isolated/allPairs",
-          "api": "sapi",
+          "api": [
+            "sapi"
+          ],
           "verb": "GET",
           "signing": "authentication_required"
         },
         "fapiPublicGetExchangeInfo": {
           "path": "exchangeInfo",
-          "api": "fapiPublic",
+          "api": [
+            "fapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "dapiPublicGetExchangeInfo": {
           "path": "exchangeInfo",
-          "api": "dapiPublic",
+          "api": [
+            "dapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "eapiPublicGetExchangeInfo": {
           "path": "exchangeInfo",
-          "api": "eapiPublic",
+          "api": [
+            "eapiPublic"
+          ],
           "verb": "GET",
           "signing": "no_credentials"
         },
         "sapiGetCapitalConfigGetall": {
           "path": "capital/config/getall",
-          "api": "sapi",
+          "api": [
+            "sapi"
+          ],
+          "verb": "GET",
+          "signing": "authentication_required"
+        },
+        "sapiGetEquityMarketExchangeInfo": {
+          "path": "equity/market/exchangeInfo",
+          "api": [
+            "sapi"
+          ],
           "verb": "GET",
           "signing": "authentication_required"
         }
@@ -4497,45 +4569,65 @@
       "endpoint_signing": {}
     },
     "cryptocom": {
-      "source_fingerprint": "097768ff80d8974735b671636ca61295c3f9737650999f290d1b6594565173e9",
+      "source_fingerprint": "245bc216bb2378ef9a11e75264e65e7e3524df32f4c61f29647e931b93f7b422",
       "markets": "public",
       "candles": "public",
-      "note": "Market discovery and candle routes are public. Private currency enrichment is skipped when check_required_credentials(false) fails; stored credentials can enable additional authenticated requests.",
+      "note": "Re-reviewed against the locked CCXT 4.5.94 synchronous PHP source at 3b6820067fccdfd1fe8a47dc7f269b0e117d234a. A fresh client without credentials loads instruments and candles through unsigned v1 public GET routes. Shared load_markets calls fetch_currencies first, but fetch_currencies returns immediately when check_required_credentials(false) fails. Stored credentials can enable optional authenticated currency-network enrichment; skipFetchCurrencies can suppress that enrichment. Public classification covers the default credential-free market-data path, not arbitrary configured credentials or custom endpoints. No live exchange requests were made.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/cryptocom.php",
-          "line": 1079
+          "line": 1098
         },
         {
           "method": "fetch_markets",
           "file": "php/cryptocom.php",
-          "line": 668
+          "line": 677
         },
         {
           "method": "fetch_currencies",
           "file": "php/cryptocom.php",
-          "line": 540
+          "line": 548
         },
         {
           "method": "sign",
           "file": "php/cryptocom.php",
-          "line": 3520
+          "line": 3616
+        },
+        {
+          "method": "load_markets",
+          "file": "php/Exchange.php",
+          "line": 2326
+        },
+        {
+          "method": "check_required_credentials",
+          "file": "php/Exchange.php",
+          "line": 7370
+        },
+        {
+          "method": "request",
+          "file": "php/Exchange.php",
+          "line": 7154
+        },
+        {
+          "method": "fetch2",
+          "file": "php/Exchange.php",
+          "line": 7099
         },
         {
           "method": "v1PublicGetPublicGetCandlestick",
           "file": "php/abstract/cryptocom.php",
-          "line": 409
+          "line": 859
         },
         {
           "method": "v1PublicGetPublicGetInstruments",
           "file": "php/abstract/cryptocom.php",
-          "line": 403
+          "line": 847
         },
         {
           "method": "v1PrivatePostPrivateGetCurrencyNetworks",
           "file": "php/abstract/cryptocom.php",
-          "line": 502
+          "line": 1045
         }
       ],
       "endpoint_signing": {

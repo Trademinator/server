@@ -37,43 +37,57 @@ it('covers every installed adapter and distinguishes market discovery from candl
     sort($actual);
     expect($actual)->toBe($ids)->and($metadata)->toHaveCount(count($ids));
     $counts = array_count_values(array_column(array_column($metadata, 'access'), 'state'));
-    expect($counts)->toEqual(['public' => 5, 'authentication_required' => 2, 'unknown' => 98])
+    expect($counts)->toEqual(['public' => 7, 'authentication_required' => 2, 'unknown' => 96])
         ->and($metadata['alpaca']['access'])->toMatchArray(['markets' => 'authentication_required', 'candles' => 'public', 'state' => 'authentication_required'])
         ->and($metadata['luno']['access'])->toMatchArray(['markets' => 'public', 'candles' => 'authentication_required'])
-        ->and($metadata['binance']['access'])->toMatchArray(['state' => 'unknown', 'reason' => 'source_changed'])
+        ->and($metadata['binance']['access'])->toMatchArray(['state' => 'public', 'reason' => 'source_reviewed'])
+        ->and($metadata['cryptocom']['access'])->toMatchArray(['state' => 'public', 'reason' => 'source_reviewed'])
         ->and($metadata['indodax']['access'])->toMatchArray(['state' => 'unknown', 'reason' => 'source_changed'])
-        ->and(array_filter($metadata, ExchangeMetadata::eligible(...)))->toHaveCount(6);
+        ->and(array_filter($metadata, ExchangeMetadata::eligible(...)))->toHaveCount(8);
     $reviews = ExchangeMetadataBuilder::read(resource_path('data/ccxt-access-reviews.json'));
     foreach ($metadata as $id => $entry) {
         expect($entry['access'])->toBe(ExchangeMetadataBuilder::classify($entry, $reviews['exchanges'][$id] ?? null));
     }
 });
 
-it('ignores an obsolete runtime snapshot and rejects changed source even with populated caches', function () {
+it('offers reviewed Binance and Crypto.com spot markets without requiring credentials', function () {
+    $registry = app(ExchangeMetadata::class);
+    foreach (['binance' => 'Binance', 'cryptocom' => 'Crypto.com'] as $id => $name) {
+        $exchange = Exchange::query()->create(['class' => $id, 'name' => $name, 'config' => '{}']);
+        expect($registry->assertUsable($exchange)['access']['state'])->toBe('public');
+    }
+
+    $this->actingAs(User::factory()->create())->get(route('markets.index'))
+        ->assertOk()->assertSee('<option value="binance"', false)
+        ->assertSee('<option value="cryptocom"', false);
+});
+
+it('ignores an obsolete runtime snapshot and rejects changed source even with populated caches', function (string $exchangeId) {
     $path = tempnam(sys_get_temp_dir(), 'ccxt-registry-');
     $bundle = ExchangeMetadataBuilder::read(resource_path('data/ccxt-exchanges.json'));
     $registry = temporaryExchangeRegistry($path);
     app()->instance(ExchangeMetadata::class, $registry);
-    $exchange = Exchange::query()->create(['class' => 'kraken', 'name' => 'Kraken', 'config' => '{}']);
+    $exchange = Exchange::query()->create(['class' => $exchangeId, 'name' => $exchangeId, 'config' => '{}']);
     try {
         ExchangeMetadataBuilder::write($path, [...$bundle, 'ccxt_reference' => 'obsolete']);
-        expect($registry->all()['kraken']['access']['state'])->toBe('public');
-        $this->actingAs(User::factory()->create())->get(route('markets.index'))->assertOk()->assertSee('<option value="kraken"', false);
+        expect($registry->all()[$exchangeId]['access']['state'])->toBe('public');
+        $this->actingAs(User::factory()->create())->get(route('markets.index'))
+            ->assertOk()->assertSee('<option value="'.$exchangeId.'"', false);
         Cache::put(MarketCatalog::PAIRS_CACHE_PREFIX.$exchange->exchange_id, ['symbols' => [['value' => 'BTC/USD']], 'periods' => []], 300);
-        $bundle['exchanges']['kraken']['source_files']['php/kraken.php'] = str_repeat('0', 64);
+        $bundle['exchanges'][$exchangeId]['source_files']['php/'.$exchangeId.'.php'] = str_repeat('0', 64);
         ExchangeMetadataBuilder::write($path, $bundle);
         $repository = Mockery::mock(ExchangeRepository::class);
         $repository->shouldNotReceive('setExchange');
         app()->instance(ExchangeRepository::class, $repository);
-        expect($registry->all()['kraken']['access']['reason'])->toBe('source_changed');
-        $this->get(route('markets.index'))->assertOk()->assertDontSee('<option value="kraken"', false);
-        $this->getJson(route('markets.options', 'kraken'))->assertStatus(422)->assertJsonPath('code', 'access_unknown');
-        $this->post(route('markets.store'), ['exchange' => 'kraken', 'symbol' => 'BTC/USD'])->assertSessionHasErrors('exchange');
+        expect($registry->all()[$exchangeId]['access']['reason'])->toBe('source_changed');
+        $this->get(route('markets.index'))->assertOk()->assertDontSee('<option value="'.$exchangeId.'"', false);
+        $this->getJson(route('markets.options', $exchangeId))->assertStatus(422)->assertJsonPath('code', 'access_unknown');
+        $this->post(route('markets.store'), ['exchange' => $exchangeId, 'symbol' => 'BTC/USD'])->assertSessionHasErrors('exchange');
         expect(MarketSubscription::query()->count())->toBe(0);
     } finally {
         unlink($path);
     }
-});
+})->with(['kraken', 'binance', 'cryptocom']);
 
 it('shows authentication-required choices but stops Luno before fetching public pairs without credentials', function () {
     Exchange::query()->create(['class' => 'luno', 'name' => 'Luno', 'config' => '{}']);
@@ -117,7 +131,7 @@ it('refreshes twice without replacing settings users or removed exchange history
         unset($before['updated_at']);
         foreach ([1, 2] as $iteration) {
             $this->artisan('trademinator:refresh-exchanges')->assertSuccessful();
-            expect(Exchange::query()->count())->toBe(count(\ccxt\Exchange::$exchanges) + 1)
+            expect(Exchange::query()->count())->toBe(count(ccxt\Exchange::$exchanges) + 1)
                 ->and(array_diff_key($exchange->fresh()->getAttributes(), ['updated_at' => true]))->toBe($before)
                 ->and($user->fresh()->getAttributes())->toBe($userBefore)
                 ->and($removed->fresh())->not->toBeNull()

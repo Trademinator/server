@@ -2,7 +2,7 @@
     "schema": 2,
     "ccxt_version": "dev-trademinator-4.5.94-composer",
     "ccxt_reference": "3b6820067fccdfd1fe8a47dc7f269b0e117d234a",
-    "reviews_sha256": "292c9bd63f96a9b17d0997ac0e87ff2752dd1887ceef9a4e4c73295a3d87fe62",
+    "reviews_sha256": "34c078fedcf2215c31298ebbd4af3295fd203910e4e034dfbd1c0014e37b2372",
     "exchanges": {
         "alpaca": {
             "name": "Alpaca",
@@ -280,10 +280,10 @@
             },
             "source_fingerprint": "be666009871133f505b29442e7033583bd0945a9ed390c8bbe69e4b3ae801823",
             "access": {
-                "state": "unknown",
-                "markets": "unknown",
-                "candles": "unknown",
-                "reason": "source_changed"
+                "state": "public",
+                "markets": "public",
+                "candles": "public",
+                "reason": "source_reviewed"
             }
         },
         "binancecoinm": {
@@ -1662,10 +1662,10 @@
             },
             "source_fingerprint": "245bc216bb2378ef9a11e75264e65e7e3524df32f4c61f29647e931b93f7b422",
             "access": {
-                "state": "unknown",
-                "markets": "unknown",
-                "candles": "unknown",
-                "reason": "source_changed"
+                "state": "public",
+                "markets": "public",
+                "candles": "public",
+                "reason": "source_reviewed"
             }
         },
         "cryptomus": {
