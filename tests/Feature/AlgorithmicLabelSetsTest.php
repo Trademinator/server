@@ -2,10 +2,12 @@
 
 use App\Domain\Intelligence\AlgorithmicLabelBuilder;
 use App\Domain\Intelligence\AlgorithmicLabelSets;
+use App\Domain\Intelligence\KnowledgeWindow;
 use App\Domain\Intelligence\PublishedTakerFee;
 use App\Domain\Research\DatasetSnapshotBuilder;
 use App\Domain\Research\DatasetStore;
 use App\Domain\Research\SemanticLabels;
+use App\Models\Ticker;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -86,5 +88,42 @@ it('rebuilds age-limited label caches and ignores later changes to the model lif
 
     expect($rebuilt['label_set_id'])->not->toBe($first['label_set_id'])
         ->and($reused['label_set_id'])->toBe($rebuilt['label_set_id']);
+    $this->assertDatabaseCount('algorithmic_label_sets', 2);
+});
+
+it('rebuilds cached horizons that included an unclosed cutoff candle', function () {
+    config(['intelligence.min_horizon_distance_observations' => 30,
+        'exchange_fees.taker_overrides.kraken.rate' => 0.0]);
+    $start = 1_700_000_000_000;
+    $asOf = $start + 33 * 14_400_000;
+    for ($index = 0; $index < 34; $index++) {
+        $up = $index % 2 === 0;
+        Ticker::query()->create(['exchange' => 'kraken', 'symbol' => 'BTC/USD', 'period' => '4h',
+            'microtimestamp' => $start + $index * 14_400_000,
+            'payload' => json_encode(['open' => $up ? '100' : '110', 'close' => $up ? '110' : '100',
+                'high' => '111', 'low' => '99', 'volume' => '10'], JSON_THROW_ON_ERROR)]);
+    }
+    $sets = app(AlgorithmicLabelSets::class);
+    $legacy = $sets->publish('kraken', 'BTC/USD', '4h', $asOf, [
+        'as_of_ms' => $asOf,
+        'action' => ['candles_examined' => 34, 'distance_observations' => 30, 'horizon' => 1],
+        'outcome_horizon' => 1,
+    ]);
+    $legacyProfile = hash('sha256', json_encode([
+        'action_version' => AlgorithmicLabelSets::ACTION_VERSION,
+        'training_history_policy' => KnowledgeWindow::TRAINING_POLICY,
+        'outcome_version' => SemanticLabels::VERSION,
+        'lookback' => (int) config('intelligence.lookback'),
+        'minimum_pivot_distance_observations' => 30,
+        'taker_fee' => 0.0,
+    ], JSON_THROW_ON_ERROR));
+    DB::table('algorithmic_label_sets')->where('label_set_id', $legacy['label_set_id'])
+        ->update(['profile_sha256' => $legacyProfile]);
+
+    $rebuilt = app(AlgorithmicLabelBuilder::class)->build('kraken', 'BTC/USD', '4h', $asOf);
+
+    expect($rebuilt['label_set_id'])->not->toBe($legacy['label_set_id']);
+    expect($rebuilt['action'])->toMatchArray(['candles_examined' => 33, 'distance_observations' => 29]);
+    expect($rebuilt['outcome_horizon'])->toBeNull();
     $this->assertDatabaseCount('algorithmic_label_sets', 2);
 });

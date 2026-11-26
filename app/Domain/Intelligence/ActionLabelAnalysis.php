@@ -68,6 +68,9 @@ final class ActionLabelAnalysis
 
         foreach ($this->tickers->streamHistory($exchange, $symbol, $period, $fromMs, $asOfMs) as $timestamp => $candle) {
             $timestamp = (int) $timestamp;
+            if ($this->timeframe->next($timestamp, $period) > $asOfMs) {
+                break;
+            }
             if ($candles % 1024 === 0) {
                 TrainingRuntime::heartbeat();
             }
@@ -169,6 +172,9 @@ final class ActionLabelAnalysis
                 foreach ($this->tickers->streamHistory($exchange, $symbol, $period,
                     $state['previous'] === null ? KnowledgeWindow::trainingFromMs() : $state['previous'] + 1, $asOfMs) as $timestamp => $candle) {
                     $timestamp = (int) $timestamp;
+                    if ($this->timeframe->next($timestamp, $period) > $asOfMs) {
+                        break;
+                    }
                     if ($state['previous'] !== null && $this->timeframe->next($state['previous'], $period) !== $timestamp) {
                         if (count($run) > 0) {
                             $complete = false;

@@ -78,6 +78,13 @@ final class MarketIntelligence
                 if ([$manifest['exchange'], $manifest['symbol'], $manifest['period']] !== [$exchange, $symbol, $period]) {
                     throw new InvalidArgumentException('Dataset market and period do not match the requested model.');
                 }
+                $schemaSelection = [
+                    ...$schemaSelection,
+                    'requested_schema' => $manifest['schema'],
+                    'effective_schema' => $manifest['schema'],
+                    'knn_schema' => FeatureSchema::baseSchema($manifest['schema']),
+                    'reason' => 'frozen_dataset',
+                ];
             } else {
                 $query = MarketFeature::query()->where('exchange', $exchange)->where('symbol', $symbol)
                     ->where('period', $period)->where('version', FeatureEngine::VERSION)

@@ -18,6 +18,7 @@ final class AlgorithmicLabelSets
         return hash('sha256', json_encode([
             'action_version' => self::ACTION_VERSION,
             'training_history_policy' => KnowledgeWindow::TRAINING_POLICY,
+            'source_candle_policy' => 'closed_at_as_of_v1',
             'outcome_version' => SemanticLabels::VERSION,
             'lookback' => (int) config('intelligence.lookback'),
             'minimum_pivot_distance_observations' => (int) config('intelligence.min_horizon_distance_observations'),

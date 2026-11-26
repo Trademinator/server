@@ -279,7 +279,9 @@ final class OutcomeAudit
             $prepared = [
                 'decision_at_ms' => $row['decision_at_ms'],
                 'label_available_at_ms' => $available,
-                'vector' => array_map(fn (int $i): float|int => $row['vector'][$i], $positions),
+                'vector' => NormalizedVector::from(
+                    array_map(fn (int $i): float|int => $row['vector'][$i], $positions), $keys
+                ),
                 'label' => $label,
             ];
             if ($patterns) {

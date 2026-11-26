@@ -81,6 +81,45 @@ it('publishes a validated model with separate chronological tuning and untouched
     expect(app(ModelStore::class)->report($artifact['model_id']))->not->toHaveKey('knowledge');
 });
 
+it('reports the frozen Full dataset schema when the build uses the default Core profile', function () {
+    $this->travelTo('2024-01-01 04:10:00 UTC');
+    $manifest = IntelligenceFixtures::snapshot();
+    $datasets = app(DatasetStore::class);
+    [, $rows] = $datasets->load($manifest['dataset_id']);
+    $manifest['schema'] = 'full';
+    $manifest['keys'] = FeatureSchema::keys('full');
+    foreach ($rows as &$row) {
+        $value = $row['vector'][0];
+        $row['vector'] = array_map(fn (string $key): float => in_array($key, ['trend.direction', 'candle.direction'], true) ? 2 * $value - 1 : $value,
+            $manifest['keys']);
+    }
+    unset($row);
+    $bytes = implode('', array_map(fn (array $row): string => json_encode($row)."\n", $rows));
+    $manifest['rows_sha256'] = hash('sha256', $bytes);
+    $path = $datasets->directory($manifest['dataset_id']);
+    file_put_contents($path.'/rows.jsonl', $bytes);
+    file_put_contents($path.'/manifest.json', json_encode($manifest));
+    DB::table('research_datasets')->where('dataset_id', $manifest['dataset_id'])
+        ->update(['manifest' => json_encode($manifest)]);
+
+    $built = app(MarketIntelligence::class)->build('kraken', 'BTC/USD', '1m', $manifest['dataset_id']);
+
+    $store = app(ModelStore::class);
+    $report = $store->report($built['model_id']);
+    expect($report['outcome']['schema'])->toBe('full');
+    expect($report['outcome']['schema_selection'])->toMatchArray([
+        'requested_schema' => 'full', 'effective_schema' => 'full', 'knn_schema' => 'technical',
+        'schema_version' => FeatureSchema::VERSION, 'context_in_knn' => false,
+        'fallback_policy' => 'none', 'reason' => 'frozen_dataset',
+    ]);
+    expect($report['keys'])->toBe($manifest['keys'])->toHaveCount(18);
+    expect($report['source_rows_sha256'])->toBe($manifest['rows_sha256']);
+    expect(hash_file('sha256', $path.'/rows.jsonl'))->toBe($manifest['rows_sha256']);
+    $knowledge = iterator_to_array($store->knowledge($store->forPrediction($built['model_id'])), false);
+    expect($knowledge)->toHaveCount(240);
+    expect($knowledge[0]['vector'])->toHaveCount(18);
+});
+
 it('stores shared Outcome and Action KNN knowledge separately and streams it for prediction', function () {
     $this->travelTo('2024-01-01 04:05:00 UTC');
     $manifest = IntelligenceFixtures::snapshot();

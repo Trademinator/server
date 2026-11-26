@@ -2,6 +2,7 @@
 
 use App\Domain\Intelligence\ActionAutoLabeler;
 use App\Domain\Intelligence\ActionLabelAnalysis;
+use App\Domain\Intelligence\BuildCheckpoint;
 use App\Domain\Intelligence\PublishedTakerFee;
 use App\Domain\MarketData\CandleTimeframe;
 use App\Domain\MarketData\MarketCatalog;
@@ -11,7 +12,7 @@ use App\Repositories\TickerRepository;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 
-function alternatingHistory(int $count, ?int $skip = null): array
+function alternatingHistory(int $count, ?int $skip = null, int $intervalMs = 60_000): array
 {
     $rows = [];
     $start = 1_700_000_000_000;
@@ -20,7 +21,7 @@ function alternatingHistory(int $count, ?int $skip = null): array
             continue;
         }
         $up = $i % 2 === 0;
-        $rows[$start + $i * 60_000] = [
+        $rows[$start + $i * $intervalMs] = [
             'open' => $up ? '100' : '110',
             'high' => '111',
             'low' => '99',
@@ -71,6 +72,48 @@ it('requires thirty valid d observations but uses every available observation', 
         ->and($valid['status'])->toBe('validated');
 });
 
+it('derives the Outcome horizon only from four-hour candles closed at the cutoff', function (int $offset, int $candles, int $distances, ?int $horizon) {
+    $history = alternatingHistory(34, intervalMs: 14_400_000);
+    $asOf = 1_700_000_000_000 + 33 * 14_400_000 + $offset;
+
+    $analysis = actionAnalysisFor($history)->analyze('kraken', 'BTC/USD', '4h', $asOf);
+
+    expect($analysis)->toMatchArray([
+        'candles_examined' => $candles,
+        'distance_observations' => $distances,
+        'horizon' => $horizon,
+    ]);
+})->with([
+    'cutoff candle just opened' => [0, 33, 29, null],
+    'cutoff candle still open' => [7_200_000, 33, 29, null],
+    'cutoff candle just closed' => [14_400_000, 34, 30, 1],
+]);
+
+it('keeps unclosed four-hour candles out of resumable horizon analysis', function (int $offset, int $candles, int $distances, ?int $horizon) {
+    $history = alternatingHistory(34, intervalMs: 14_400_000);
+    $asOf = 1_700_000_000_000 + 33 * 14_400_000 + $offset;
+    $checkpoint = new BuildCheckpoint(['kind' => 'labels', 'exchange' => 'kraken',
+        'symbol' => 'BTC/USD', 'period' => '4h', 'as_of_ms' => $asOf]);
+    $checkpoint->state = ['stage' => 'action_read'];
+
+    try {
+        $analysis = actionAnalysisFor($history)->analyzeResumable('kraken', 'BTC/USD', '4h', $asOf,
+            static function (int $timestamp, string $label, ?int $available): void {}, $checkpoint);
+    } finally {
+        $checkpoint->close();
+    }
+
+    expect($analysis)->toMatchArray([
+        'candles_examined' => $candles,
+        'distance_observations' => $distances,
+        'horizon' => $horizon,
+    ]);
+})->with([
+    'cutoff candle just opened' => [0, 33, 29, null],
+    'cutoff candle still open' => [7_200_000, 33, 29, null],
+    'cutoff candle just closed' => [14_400_000, 34, 30, 1],
+]);
+
 it('never lets a d observation cross a missing candle', function () {
     $analysis = actionAnalysisFor(alternatingHistory(100, 50))
         ->analyze('kraken', 'BTC/USD', '1m', 1_800_000_000_000);
@@ -117,7 +160,7 @@ it('retains weighted distance statistics for sparse pivots and both median posit
 it('keeps label availability tied to the next opposite pivot and leaves the unfinished swing unavailable', function () {
     $start = 1_700_000_000_000;
 
-    $analysis = actionAnalysisFor(alternatingHistory(7))->analyze('kraken', 'BTC/USD', '1m', $start + 6 * 60_000);
+    $analysis = actionAnalysisFor(alternatingHistory(7))->analyze('kraken', 'BTC/USD', '1m', $start + 7 * 60_000);
 
     expect($analysis['_action_labels'])->toBe([
         $start + 60_000 => 'buy', $start + 120_000 => 'sell',
@@ -160,7 +203,7 @@ it('preserves completed-swing availability through long HOLD spans and separate 
         }
     }
 
-    $analysis = actionAnalysisFor($history)->analyze('kraken', 'BTC/USD', '1m', $start + 38 * 60_000);
+    $analysis = actionAnalysisFor($history)->analyze('kraken', 'BTC/USD', '1m', $start + 39 * 60_000);
 
     expect($analysis['_action_labels'])->toBe($expectedLabels);
     expect($analysis['_action_available_at_ms'])->toBe($expectedAvailability);
