@@ -2,6 +2,23 @@
 
 require dirname(__DIR__, 2).'/vendor/autoload.php';
 
+// This standalone probe creates Tests\TestCase outside the PHPUnit runner.
+// PHPUnit 12 requires its configuration registry to exist before Laravel's
+// testing lifecycle is initialized. Load the same phpunit.xml environment
+// used by the normal test suite, while preserving this probe's 128M limit.
+$memoryLimit = ini_get('memory_limit');
+
+$phpunitConfiguration = (new \PHPUnit\TextUI\Configuration\Builder)->build([
+    'phpunit',
+    '--configuration',
+    dirname(__DIR__, 2).'/phpunit.xml',
+]);
+
+(new \PHPUnit\TextUI\Configuration\PhpHandler)
+    ->handle($phpunitConfiguration->php());
+
+ini_set('memory_limit', $memoryLimit);
+
 use App\Domain\Features\FeatureBuilder;
 use App\Domain\MarketData\CandlePeriodReevaluation;
 use App\Domain\MarketData\ExchangeMetadata;
@@ -31,6 +48,32 @@ $probe = new class('testProbe') extends TestCase
         try {
             $this->artisan('migrate', ['--force' => true])->assertSuccessful();
             $this->seed(ExchangeSeeder::class);
+
+            // This is a memory-pressure probe, not an exchange-access review.
+            // Keep Binance blocked in production, but make the synthetic
+            // 5,000-pair FixtureBinance usable inside this isolated test.
+            $metadata = app(ExchangeMetadata::class)->all();
+            $metadata['binance']['access'] = [
+                'state' => 'public',
+                'markets' => 'public',
+                'candles' => 'public',
+                'reason' => 'memory_test_fixture',
+            ];
+
+            app()->instance(ExchangeMetadata::class, new class($metadata) extends ExchangeMetadata
+            {
+                public function __construct(private array $metadata) {}
+
+                public function all(): array
+                {
+                    return $this->metadata;
+                }
+            });
+
+            \Illuminate\Support\Facades\Cache::forget(
+                \App\Domain\MarketData\MarketCatalog::EXCHANGES_CACHE
+            );
+
             $user = User::factory()->create();
             if (! $collector) {
                 $this->actingAs($user)->get(route('markets.index'))->assertOk()

@@ -35,17 +35,17 @@ it('covers every installed adapter and distinguishes market discovery from candl
     sort($ids);
     $actual = array_keys($metadata);
     sort($actual);
-    expect($actual)->toBe($ids)->and($metadata)->toHaveCount(110);
+    expect($actual)->toBe($ids)->and($metadata)->toHaveCount(count($ids));
     $counts = array_count_values(array_column(array_column($metadata, 'access'), 'state'));
-    expect($counts)->toEqual(['public' => 89, 'authentication_required' => 4, 'unknown' => 17])
+    expect($counts)->toEqual(['public' => 5, 'authentication_required' => 2, 'unknown' => 98])
         ->and($metadata['alpaca']['access'])->toMatchArray(['markets' => 'authentication_required', 'candles' => 'public', 'state' => 'authentication_required'])
         ->and($metadata['luno']['access'])->toMatchArray(['markets' => 'public', 'candles' => 'authentication_required'])
-        ->and($metadata['binance']['access']['state'])->toBe('public')
-        ->and($metadata['indodax']['access']['reason'])->toBe('ohlcv_not_supported')
-        ->and(array_filter($metadata, ExchangeMetadata::eligible(...)))->toHaveCount(75);
+        ->and($metadata['binance']['access'])->toMatchArray(['state' => 'unknown', 'reason' => 'source_changed'])
+        ->and($metadata['indodax']['access'])->toMatchArray(['state' => 'unknown', 'reason' => 'source_changed'])
+        ->and(array_filter($metadata, ExchangeMetadata::eligible(...)))->toHaveCount(6);
     $reviews = ExchangeMetadataBuilder::read(resource_path('data/ccxt-access-reviews.json'));
     foreach ($metadata as $id => $entry) {
-        expect($entry['access'])->toBe(ExchangeMetadataBuilder::classify($entry, $reviews['exchanges'][$id]));
+        expect($entry['access'])->toBe(ExchangeMetadataBuilder::classify($entry, $reviews['exchanges'][$id] ?? null));
     }
 });
 
@@ -81,7 +81,7 @@ it('shows authentication-required choices but stops Luno before fetching public 
     $repository->shouldNotReceive('setExchange');
     app()->instance(ExchangeRepository::class, $repository);
     $this->actingAs(User::factory()->create())->get(route('markets.index'))
-        ->assertOk()->assertSee('luno (API access required)');
+        ->assertOk()->assertSee('Luno (API access required)');
     $this->getJson(route('markets.options', 'luno'))->assertStatus(422)->assertJsonPath('code', 'authentication_required');
 });
 
@@ -117,7 +117,7 @@ it('refreshes twice without replacing settings users or removed exchange history
         unset($before['updated_at']);
         foreach ([1, 2] as $iteration) {
             $this->artisan('trademinator:refresh-exchanges')->assertSuccessful();
-            expect(Exchange::query()->count())->toBe(111)
+            expect(Exchange::query()->count())->toBe(count(\ccxt\Exchange::$exchanges) + 1)
                 ->and(array_diff_key($exchange->fresh()->getAttributes(), ['updated_at' => true]))->toBe($before)
                 ->and($user->fresh()->getAttributes())->toBe($userBefore)
                 ->and($removed->fresh())->not->toBeNull()

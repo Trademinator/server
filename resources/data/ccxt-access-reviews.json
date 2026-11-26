@@ -69,45 +69,45 @@
       }
     },
     "alpaca": {
-      "source_fingerprint": "bf63bdd5fe3aab967fd1669da0430ebb248bde71c083eb0f4601ef1cbc544ba9",
+      "source_fingerprint": "5ceca5a6c7ba50a53e7cd7242e19e314ea567648e60864c1c8e09ec58fc6e010",
       "markets": "authentication_required",
       "candles": "public",
-      "note": "fetch_markets calls traderPrivateGetV2Assets and requires apiKey/secret. Crypto bars use marketPublicGetV1beta3CryptoLocBars, but fetch_ohlcv first calls load_markets. Effective fresh-client access therefore requires authentication.",
+      "note": "fetch_markets calls traderPrivateGetV2Assets and requires apiKey/secret. Crypto bars use marketPublicGetV1beta3CryptoLocBars, but fetch_ohlcv first calls load_markets. Effective fresh-client access therefore requires authentication. Re-reviewed against CCXT 4.5.94; access path unchanged.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/alpaca.php",
-          "line": 712
+          "line": 770
         },
         {
           "method": "fetch_markets",
           "file": "php/alpaca.php",
-          "line": 443
+          "line": 481
         },
         {
           "method": "fetch_currencies",
           "file": "php/Exchange.php",
-          "line": 2034
+          "line": 2355
         },
         {
           "method": "sign",
           "file": "php/alpaca.php",
-          "line": 1888
+          "line": 2219
         },
         {
           "method": "marketPublicGetV1beta3CryptoLocBars",
           "file": "php/abstract/alpaca.php",
-          "line": 331
+          "line": 955
         },
         {
           "method": "marketPublicGetV1beta3CryptoLocLatestBars",
           "file": "php/abstract/alpaca.php",
-          "line": 334
+          "line": 961
         },
         {
           "method": "traderPrivateGetV2Assets",
           "file": "php/abstract/alpaca.php",
-          "line": 262
+          "line": 763
         }
       ],
       "endpoint_signing": {
@@ -141,40 +141,40 @@
       }
     },
     "apex": {
-      "source_fingerprint": "dc06947d6afd7bad68db4273fe81d0f7514c1ccbb39383a0a572fae4492dfa4f",
+      "source_fingerprint": "53cac4e4a641715cca9043cfd436419bda0b0247278a8749651759ef9301d8ee",
       "markets": "public",
       "candles": "public",
-      "note": "The reviewed default market/currency discovery and OHLCV branches use unsigned public routes; sign does not require credentials for those routes.",
+      "note": "The reviewed default market/currency discovery and OHLCV branches use unsigned public routes; sign does not require credentials for those routes. Re-reviewed against CCXT 4.5.94; access path unchanged.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/apex.php",
-          "line": 804
+          "line": 818
         },
         {
           "method": "fetch_markets",
           "file": "php/apex.php",
-          "line": 575
+          "line": 583
         },
         {
           "method": "fetch_currencies",
           "file": "php/apex.php",
-          "line": 394
+          "line": 400
         },
         {
           "method": "sign",
           "file": "php/apex.php",
-          "line": 1955
+          "line": 1995
         },
         {
           "method": "publicGetV3Klines",
           "file": "php/abstract/apex.php",
-          "line": 100
+          "line": 223
         },
         {
           "method": "publicGetV3Symbols",
           "file": "php/abstract/apex.php",
-          "line": 91
+          "line": 205
         }
       ],
       "endpoint_signing": {
@@ -2677,40 +2677,40 @@
       }
     },
     "bitso": {
-      "source_fingerprint": "a3f368f8c7e7a18eba2fffe59e5eea8a5ba604e5cfdff51b8ba9e00e0abfbad8",
+      "source_fingerprint": "d893205e783031eccaf384aca17c3e887347734c3995089e44c29a00f7648d9b",
       "markets": "public",
       "candles": "public",
-      "note": "The reviewed default market/currency discovery and OHLCV branches use unsigned public routes; sign does not require credentials for those routes.",
+      "note": "The reviewed default market/currency discovery and OHLCV branches use unsigned public routes; sign does not require credentials for those routes. Re-reviewed against CCXT 4.5.94; access path unchanged.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/bitso.php",
-          "line": 752
+          "line": 832
         },
         {
           "method": "fetch_markets",
           "file": "php/bitso.php",
-          "line": 447
+          "line": 445
         },
         {
           "method": "fetch_currencies",
           "file": "php/Exchange.php",
-          "line": 2034
+          "line": 2355
         },
         {
           "method": "sign",
           "file": "php/bitso.php",
-          "line": 1838
+          "line": 1955
         },
         {
           "method": "publicGetOhlc",
           "file": "php/abstract/bitso.php",
-          "line": 139
+          "line": 295
         },
         {
           "method": "publicGetAvailableBooks",
           "file": "php/abstract/bitso.php",
-          "line": 127
+          "line": 265
         }
       ],
       "endpoint_signing": {
@@ -3656,85 +3656,85 @@
       }
     },
     "coinbase": {
-      "source_fingerprint": "0b3bb5519af0051b4b66cf8b881f92cd089bc079ef7d3e76dd59819e88bf7275",
+      "source_fingerprint": "d6600860c5a744f1b0ecaab4b5837cbbbee301e2e39323b531f21bf42c85ee8a",
       "markets": "public",
       "candles": "public",
-      "note": "Default fetchMarketsV3 and fetchOHLCV use public brokerage/market routes (usePrivate=false). Private fee discovery is conditional on credentials; opting into private routes changes access requirements.",
+      "note": "Default fetchMarketsV3 and fetchOHLCV use public brokerage/market routes (usePrivate=false). Private fee discovery is conditional on credentials; opting into private routes changes access requirements. Re-reviewed against CCXT 4.5.94; access path unchanged.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/coinbase.php",
-          "line": 3793
+          "line": 3927
         },
         {
           "method": "fetch_markets",
           "file": "php/coinbase.php",
-          "line": 1327
+          "line": 1359
         },
         {
           "method": "fetch_currencies",
           "file": "php/coinbase.php",
-          "line": 1917
+          "line": 1977
         },
         {
           "method": "sign",
           "file": "php/coinbase.php",
-          "line": 5130
+          "line": 5291
         },
         {
           "method": "v3PrivateGetBrokerageProductsProductIdCandles",
           "file": "php/abstract/coinbase.php",
-          "line": 457
+          "line": 913
         },
         {
           "method": "v3PublicGetBrokerageMarketProductsProductIdCandles",
           "file": "php/abstract/coinbase.php",
-          "line": 430
+          "line": 859
         },
         {
           "method": "fetch_markets_v3",
           "file": "php/coinbase.php",
-          "line": 1423
+          "line": 1464
         },
         {
           "method": "fetch_markets_v2",
           "file": "php/coinbase.php",
-          "line": 1350
+          "line": 1382
         },
         {
           "method": "v2PublicGetCurrencies",
           "file": "php/abstract/coinbase.php",
-          "line": 283
+          "line": 559
         },
         {
           "method": "v2PublicGetCurrenciesCrypto",
           "file": "php/abstract/coinbase.php",
-          "line": 286
+          "line": 565
         },
         {
           "method": "v2PublicGetExchangeRates",
           "file": "php/abstract/coinbase.php",
-          "line": 292
+          "line": 577
         },
         {
           "method": "v3PrivateGetBrokerageProducts",
           "file": "php/abstract/coinbase.php",
-          "line": 451
+          "line": 901
         },
         {
           "method": "v3PublicGetBrokerageMarketProducts",
           "file": "php/abstract/coinbase.php",
-          "line": 424
+          "line": 847
         },
         {
           "method": "v3PrivateGetBrokerageTransactionSummary",
           "file": "php/abstract/coinbase.php",
-          "line": 469
+          "line": 937
         },
         {
           "method": "fetch_currencies_from_cache",
           "file": "php/coinbase.php",
-          "line": 1870
+          "line": 1930
         }
       ],
       "endpoint_signing": {
@@ -6989,15 +6989,15 @@
       }
     },
     "kraken": {
-      "source_fingerprint": "b5d2db5f36e8ea037f52d65164bf886a3176b1b486844adf9c39b4f22bb389f1",
+      "source_fingerprint": "0c6d1f59a3d58e41c45ed1b463813a5e7f29c9e557154c472e79fb9e66ab5ca6",
       "markets": "public",
       "candles": "public",
-      "note": "The reviewed default market/currency discovery and OHLCV branches use unsigned public routes; sign does not require credentials for those routes.",
+      "note": "The reviewed default market/currency discovery and OHLCV branches use unsigned public routes; sign does not require credentials for those routes. Re-reviewed against CCXT 4.5.94; access path unchanged.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/kraken.php",
-          "line": 1167
+          "line": 1196
         },
         {
           "method": "fetch_markets",
@@ -7007,32 +7007,32 @@
         {
           "method": "fetch_currencies",
           "file": "php/kraken.php",
-          "line": 774
+          "line": 783
         },
         {
           "method": "sign",
           "file": "php/kraken.php",
-          "line": 3575
+          "line": 3703
         },
         {
           "method": "publicGetOHLC",
           "file": "php/abstract/kraken.php",
-          "line": 214
+          "line": 439
         },
         {
           "method": "publicGetAssetPairs",
           "file": "php/abstract/kraken.php",
-          "line": 208
+          "line": 427
         },
         {
           "method": "safe_currency_code",
           "file": "php/kraken.php",
-          "line": 899
+          "line": 919
         },
         {
           "method": "publicGetAssets",
           "file": "php/abstract/kraken.php",
-          "line": 205
+          "line": 421
         }
       ],
       "endpoint_signing": {
@@ -7834,45 +7834,45 @@
       }
     },
     "luno": {
-      "source_fingerprint": "1ae293e3a473181190ccfbd9c20bd87055e131added07b272d33a9b00da4bfa4",
+      "source_fingerprint": "772bd1914a59189d1d93c549d83f1118ab59e2eb2ba57604dd034a1657e8abd7",
       "markets": "public",
       "candles": "authentication_required",
-      "note": "Market discovery uses exchangeGetMarkets. fetch_ohlcv uses exchangePrivateGetCandles; sign requires apiKey/secret. Optional private currency discovery is skipped without credentials.",
+      "note": "Market discovery uses exchangeGetMarkets. fetch_ohlcv uses exchangePrivateGetCandles; sign requires apiKey/secret. Optional private currency discovery is skipped without credentials. Re-reviewed against CCXT 4.5.94; access path unchanged.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/luno.php",
-          "line": 970
+          "line": 1165
         },
         {
           "method": "fetch_markets",
           "file": "php/luno.php",
-          "line": 388
+          "line": 536
         },
         {
           "method": "fetch_currencies",
           "file": "php/luno.php",
-          "line": 306
+          "line": 449
         },
         {
           "method": "sign",
           "file": "php/luno.php",
-          "line": 1459
+          "line": 1706
         },
         {
           "method": "exchangePrivateGetCandles",
           "file": "php/abstract/luno.php",
-          "line": 115
+          "line": 259
         },
         {
           "method": "exchangeGetMarkets",
           "file": "php/abstract/luno.php",
-          "line": 112
+          "line": 253
         },
         {
           "method": "privateGetSendNetworks",
           "file": "php/abstract/luno.php",
-          "line": 145
+          "line": 349
         }
       ],
       "endpoint_signing": {
@@ -8287,45 +8287,45 @@
       }
     },
     "ndax": {
-      "source_fingerprint": "6750f83d2c795bcfecbeabe79acf26d8378407c1ed5f6caa089b91179fd77712",
+      "source_fingerprint": "d38799870b1565674ad75ac04428923f98f585e18ff3c7458f06823ec5e52665",
       "markets": "public",
       "candles": "public",
-      "note": "GetInstruments, GetProducts and GetTickerHistory are public routes. The public-group Authenticate routes are unrelated to this data path.",
+      "note": "GetInstruments, GetProducts and GetTickerHistory are public routes. The public-group Authenticate routes are unrelated to this data path. Re-reviewed against CCXT 4.5.94; access path unchanged.",
       "evidence": [
         {
           "method": "fetch_ohlcv",
           "file": "php/ndax.php",
-          "line": 867
+          "line": 964
         },
         {
           "method": "fetch_markets",
           "file": "php/ndax.php",
-          "line": 517
+          "line": 556
         },
         {
           "method": "fetch_currencies",
           "file": "php/ndax.php",
-          "line": 446
+          "line": 482
         },
         {
           "method": "sign",
           "file": "php/ndax.php",
-          "line": 2534
+          "line": 2696
         },
         {
           "method": "publicGetGetTickerHistory",
           "file": "php/abstract/ndax.php",
-          "line": 310
+          "line": 685
         },
         {
           "method": "publicGetGetInstruments",
           "file": "php/abstract/ndax.php",
-          "line": 322
+          "line": 709
         },
         {
           "method": "publicGetGetProducts",
           "file": "php/abstract/ndax.php",
-          "line": 316
+          "line": 697
         }
       ],
       "endpoint_signing": {

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "883ae60c2b9b59e9166c00897f116d1e",
+    "content-hash": "80138538803b1141733c8a9423b4870a",
     "packages": [
         {
             "name": "amphp/amp",
@@ -1103,62 +1103,85 @@
         },
         {
             "name": "ccxt/ccxt",
-            "version": "v4.5.57",
+            "version": "dev-trademinator-4.5.94-composer",
             "source": {
                 "type": "git",
-                "url": "https://github.com/ccxt/ccxt.git",
-                "reference": "9ebdddc8c0c0382836cd124d27fc1466fe87801b"
+                "url": "https://github.com/daniel-lucio/ccxt.git",
+                "reference": "3b6820067fccdfd1fe8a47dc7f269b0e117d234a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ccxt/ccxt/zipball/9ebdddc8c0c0382836cd124d27fc1466fe87801b",
-                "reference": "9ebdddc8c0c0382836cd124d27fc1466fe87801b",
+                "url": "https://api.github.com/repos/daniel-lucio/ccxt/zipball/3b6820067fccdfd1fe8a47dc7f269b0e117d234a",
+                "reference": "3b6820067fccdfd1fe8a47dc7f269b0e117d234a",
                 "shasum": ""
             },
             "require": {
-                "evenement/evenement": "^3.0",
+                "clue/http-proxy-react": "1.10.0",
+                "evenement/evenement": "3.0.2",
                 "ext-bcmath": "*",
                 "ext-curl": "*",
                 "ext-gmp": "*",
-                "ext-iconv": "*",
                 "ext-json": "*",
+                "ext-mbstring": "*",
                 "ext-openssl": "*",
                 "ext-pcre": "*",
-                "guzzlehttp/psr7": "^2.0",
-                "pear/console_table": "1.3.1",
+                "fig/http-message-util": "1.1.5",
+                "guzzlehttp/psr7": "^2.13.4",
+                "kornrunner/keccak": "1.1.0",
                 "php": ">=8.1.0",
-                "ratchet/pawl": "^0.4.3",
-                "ratchet/rfc6455": "^0.4.0",
-                "react/async": "^4.3.0",
-                "react/http": ">=1.11.0",
-                "react/promise": "^3.3.0",
-                "react/promise-timer": "^1.11",
-                "symfony/polyfill-mbstring": "^1.7"
+                "phpseclib/phpseclib2_compat": "^1.0.11",
+                "psr/http-factory": "1.1.0",
+                "psr/http-factory-implementation": "1.0.0",
+                "psr/http-message": "^1.1 || ^2.0",
+                "ralouphie/getallheaders": "3.0.3",
+                "ratchet/pawl": "0.4.3",
+                "ratchet/rfc6455": "0.4.1",
+                "react/async": "4.3.0",
+                "react/cache": "1.2.0",
+                "react/dns": "1.14.0",
+                "react/event-loop": "1.6.0",
+                "react/http": "^1.11",
+                "react/promise": "3.3.0",
+                "react/promise-timer": "1.11.0",
+                "react/socket": "1.17.0",
+                "react/stream": "1.4.0",
+                "symfony/deprecation-contracts": "^3.7",
+                "symfony/polyfill-mbstring": "^1.38",
+                "symfony/polyfill-php80": "^1.37"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "3.95.11"
             },
             "suggest": {
-                "clue/buzz-react": "Required for asynchronous API calls to exchanges with PHP",
-                "clue/http-proxy-react": "Required for using a proxy when doing asynchronous API calls to exchanges with PHP",
-                "react/event-loop": "Required for asynchronous API calls to exchanges with PHP",
-                "react/http": "Required for asynchronous API calls to exchanges with PHP",
-                "recoil/react": "Required for asynchronous API calls to exchanges with PHP",
-                "recoil/recoil": "Required for asynchronous API calls to exchanges with PHP"
+                "clue/socks-react": "Required for socksProxy in async/pro mode",
+                "ext-ffi": "Required for lighter signing (native signer binary)",
+                "ext-sodium": "Faster ed25519 signing"
             },
             "type": "library",
             "autoload": {
-                "files": [
-                    "ccxt.php",
-                    "php/pro/base/functions.php"
-                ],
                 "psr-4": {
                     "ccxt\\": "php/",
-                    "ccxt\\pro\\": "php/pro/",
-                    "ccxt\\async\\": "php/async/"
+                    "ccxt\\async\\": "php/async/",
+                    "ccxt\\pro\\": "php/pro/"
                 },
                 "classmap": [
                     "php/protobuf/mexc/"
+                ],
+                "files": [
+                    "ccxt.php",
+                    "php/pro/base/functions.php"
                 ]
             },
-            "notification-url": "https://packagist.org/downloads/",
+            "archive": {
+                "exclude": [
+                    "/build",
+                    "/dist",
+                    "/doc",
+                    "/js",
+                    "/python",
+                    "/wiki"
+                ]
+            },
             "license": [
                 "MIT"
             ],
@@ -1179,75 +1202,36 @@
             "description": "A cryptocurrency trading API with more than 100 exchanges in JavaScript / TypeScript / Python / C# / PHP / Go",
             "homepage": "https://github.com/ccxt/ccxt",
             "keywords": [
-                "1BTCXE",
-                "1Broker",
-                "ACX",
-                "ANX",
-                "ANXPro",
-                "BL3P",
                 "BTC Markets",
-                "BTC Trade UA",
-                "BTCC",
-                "BTCChina",
-                "BTCExchange",
-                "BTCTrader",
                 "BTCTurk",
-                "BTCX",
-                "BX.in.th",
+                "Binance",
                 "Bit2C",
-                "BitBay",
-                "BitBays",
                 "BitMEX",
-                "BitMarket",
-                "Bitcoin.co.id",
-                "Bleutrade",
-                "BlinkTrade",
+                "Bitfinex",
+                "Bitso",
+                "Bitstamp",
                 "BtcBox",
-                "Bter.com",
-                "C-CEX",
                 "CEX.IO",
-                "CHBTC",
-                "CNY",
-                "ChileBit",
+                "CoinMarketCap",
                 "CoinMate",
                 "CoinSpot",
-                "Coinsecure",
-                "Crypto Capital",
-                "DOGE",
-                "EUR",
                 "EXMO",
-                "FYB-SE",
-                "FYB-SG",
                 "FoxBit",
                 "Gatecoin",
                 "Gemini",
+                "HitBTC",
                 "Huobi",
                 "HuobiPRO",
-                "LakeBTC",
-                "Liqui",
-                "LiveCoin",
+                "Independent Reserve",
+                "Kraken",
+                "MercadoBitcoin",
                 "OKCoin",
-                "OKCoin.cn",
                 "OKCoin.com",
                 "OKEX",
+                "OKX",
                 "Paymium",
                 "Poloniex",
-                "QUOINE",
-                "Qryptos",
-                "QuadrigaCX",
-                "Southxchange",
-                "SurBitcoin",
-                "TheRockTrading",
-                "Tidex",
-                "USD",
-                "UrduBit",
-                "VBTC",
-                "Vaultoro",
-                "VirWoX",
-                "Wex",
-                "YoBit",
                 "Zaif",
-                "acx.io",
                 "algorithmic",
                 "algotrading",
                 "altcoin",
@@ -1256,83 +1240,55 @@
                 "arbitrage",
                 "backtest",
                 "backtesting",
-                "binance",
                 "binance.com",
                 "bit2c.co.il",
+                "bitFLyer",
                 "bitcoin",
-                "bitcoincoid",
-                "bitfinex",
-                "bitflyer",
                 "bitflyer.jp",
                 "bithumb",
                 "bithumb.com",
-                "bitlish",
-                "bitso",
-                "bitstamp",
-                "bittrex",
-                "bleutrade.com",
                 "bot",
                 "btc",
-                "btc-e",
-                "btc-trade.com.ua",
-                "btc-x",
                 "btcbox.co.jp",
-                "btce",
-                "btcexchange.ph",
                 "btcmarkets",
                 "btcmarkets.net",
-                "btctrader.com",
                 "btcturk.com",
-                "bter",
-                "ccex",
                 "cex",
-                "chilebit.net",
+                "cny",
                 "coin",
                 "coincheck",
-                "coingi",
-                "coingi.com",
-                "coinmarketcap",
+                "coingecko",
                 "coins",
                 "coinspot.com.au",
                 "crypto",
                 "crypto currency",
                 "crypto market",
-                "cryptocapital.co",
                 "cryptocurrency",
                 "currencies",
                 "currency",
                 "darkcoin",
                 "dash",
                 "digital currency",
+                "doge",
                 "dogecoin",
-                "dsx",
-                "dsx.uk",
                 "e-commerce",
                 "etc",
                 "eth",
                 "ether",
                 "ethereum",
+                "eur",
                 "exchange",
                 "exchanges",
-                "flowBTC",
-                "flowbtc.com",
                 "foxbit.exchange",
                 "framework",
-                "gdax",
-                "hitbtc",
+                "htx",
                 "huobi.pro",
-                "independent reserve",
                 "independentreserve.com",
                 "invest",
                 "investing",
                 "investor",
-                "itBit",
-                "jubi.com",
-                "kraken",
-                "lakebtc.com",
                 "library",
                 "light",
-                "liqui.io",
                 "litecoin",
                 "ltc",
                 "luno",
@@ -1340,17 +1296,12 @@
                 "market data",
                 "markets",
                 "mercado",
-                "mercadobitcoin",
                 "mercadobitcoin.br",
                 "merchandise",
                 "merchant",
                 "minimal",
-                "mixcoins",
-                "mixcoins.com",
-                "nova",
-                "novaexchange",
-                "novaexchange.com",
                 "okex.com",
+                "okx.com",
                 "order",
                 "order book",
                 "orderbook",
@@ -1361,37 +1312,93 @@
                 "public",
                 "ripple",
                 "strategy",
-                "surbitcoin.com",
-                "tidex.com",
                 "toolkit",
                 "trade",
                 "trader",
                 "trading",
-                "urdubit.com",
-                "vbtc.exchange",
-                "vbtc.vn",
+                "usd",
                 "volume",
-                "wex.nz",
-                "xBTCe",
                 "xbt",
-                "xbtce.com",
                 "xrp",
-                "yobit.net",
-                "yunbi",
-                "zec",
-                "zerocoin"
+                "zec"
             ],
             "support": {
-                "issues": "https://github.com/ccxt/ccxt/issues",
-                "source": "https://github.com/ccxt/ccxt/tree/v4.5.57"
+                "source": "https://github.com/daniel-lucio/ccxt/tree/trademinator-4.5.94-composer"
             },
             "funding": [
                 {
-                    "url": "https://opencollective.com/ccxt",
-                    "type": "open_collective"
+                    "type": "open_collective",
+                    "url": "https://opencollective.com/ccxt"
                 }
             ],
-            "time": "2026-06-10T11:28:27+00:00"
+            "time": "2026-11-24T17:48:28+00:00"
+        },
+        {
+            "name": "clue/http-proxy-react",
+            "version": "v1.10.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/clue/reactphp-http-proxy.git",
+                "reference": "5bd777a2a55464aa722edde4176504a8875bdbab"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/clue/reactphp-http-proxy/zipball/5bd777a2a55464aa722edde4176504a8875bdbab",
+                "reference": "5bd777a2a55464aa722edde4176504a8875bdbab",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.3",
+                "react/promise": "^3.3 || ^2.1 || ^1.2.1",
+                "react/socket": "^1.17"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^9.6 || ^8.5 || ^5.7 || ^4.8.36",
+                "react/async": "^4.3 || ^3 || ^2",
+                "react/event-loop": "^1.6",
+                "react/http": "^1.11",
+                "react/promise-timer": "^1.11"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Clue\\React\\HttpProxy\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Christian Lück",
+                    "email": "christian@clue.engineering"
+                }
+            ],
+            "description": "Async HTTP proxy connector, tunnel any TCP/IP-based protocol through an HTTP CONNECT proxy server, built on top of ReactPHP",
+            "homepage": "https://github.com/clue/reactphp-http-proxy",
+            "keywords": [
+                "async",
+                "connect",
+                "http",
+                "proxy",
+                "reactphp"
+            ],
+            "support": {
+                "issues": "https://github.com/clue/reactphp-http-proxy/issues",
+                "source": "https://github.com/clue/reactphp-http-proxy/tree/v1.10.0"
+            },
+            "funding": [
+                {
+                    "url": "https://clue.engineering/support",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/clue",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-06-29T09:33:22+00:00"
         },
         {
             "name": "codeat3/blade-phosphor-icons",
@@ -2650,6 +2657,55 @@
                 "source": "https://github.com/kelunik/certificate/tree/v1.1.3"
             },
             "time": "2023-02-03T21:26:53+00:00"
+        },
+        {
+            "name": "kornrunner/keccak",
+            "version": "1.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/kornrunner/php-keccak.git",
+                "reference": "433749d28e117fb97baf9f2631b92b5d9ab3c890"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/kornrunner/php-keccak/zipball/433749d28e117fb97baf9f2631b92b5d9ab3c890",
+                "reference": "433749d28e117fb97baf9f2631b92b5d9ab3c890",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.3",
+                "symfony/polyfill-mbstring": "^1.8"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^8.2"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "kornrunner\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Boris Momcilovic",
+                    "homepage": "https://github.com/kornrunner/php-keccak"
+                }
+            ],
+            "description": "Pure PHP implementation of Keccak",
+            "keywords": [
+                "keccak",
+                "sha-3",
+                "sha3-256"
+            ],
+            "support": {
+                "issues": "https://github.com/kornrunner/php-keccak/issues",
+                "source": "https://github.com/kornrunner/php-keccak/tree/1.1.0"
+            },
+            "time": "2020-12-07T15:40:44+00:00"
         },
         {
             "name": "laravel/framework",
@@ -4210,6 +4266,125 @@
             "time": "2026-11-07T03:57:16+00:00"
         },
         {
+            "name": "paragonie/constant_time_encoding",
+            "version": "v3.1.5",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/paragonie/constant_time_encoding.git",
+                "reference": "ceed38ba49d98b85808edfc4f04750ff61eb9739"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/paragonie/constant_time_encoding/zipball/ceed38ba49d98b85808edfc4f04750ff61eb9739",
+                "reference": "ceed38ba49d98b85808edfc4f04750ff61eb9739",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8"
+            },
+            "require-dev": {
+                "infection/infection": "^0",
+                "nikic/php-fuzzer": "^0",
+                "phpunit/phpunit": "^9|^10|^11",
+                "vimeo/psalm": "^4|^5|^6"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "ParagonIE\\ConstantTime\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Paragon Initiative Enterprises",
+                    "email": "security@paragonie.com",
+                    "homepage": "https://paragonie.com",
+                    "role": "Maintainer"
+                },
+                {
+                    "name": "Steve 'Sc00bz' Thomas",
+                    "email": "steve@tobtu.com",
+                    "homepage": "https://www.tobtu.com",
+                    "role": "Original Developer"
+                }
+            ],
+            "description": "Constant-time Implementations of RFC 4648 Encoding (Base-64, Base-32, Base-16)",
+            "keywords": [
+                "base16",
+                "base32",
+                "base32_decode",
+                "base32_encode",
+                "base64",
+                "base64_decode",
+                "base64_encode",
+                "bin2hex",
+                "encoding",
+                "hex",
+                "hex2bin",
+                "rfc4648"
+            ],
+            "support": {
+                "email": "info@paragonie.com",
+                "issues": "https://github.com/paragonie/constant_time_encoding/issues",
+                "source": "https://github.com/paragonie/constant_time_encoding"
+            },
+            "time": "2026-11-18T13:55:22+00:00"
+        },
+        {
+            "name": "paragonie/random_compat",
+            "version": "v9.99.100",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/paragonie/random_compat.git",
+                "reference": "996434e5492cb4c3edcb9168db6fbb1359ef965a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/paragonie/random_compat/zipball/996434e5492cb4c3edcb9168db6fbb1359ef965a",
+                "reference": "996434e5492cb4c3edcb9168db6fbb1359ef965a",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">= 7"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "4.*|5.*",
+                "vimeo/psalm": "^1"
+            },
+            "suggest": {
+                "ext-libsodium": "Provides a modern crypto API that can be used to generate random bytes."
+            },
+            "type": "library",
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Paragon Initiative Enterprises",
+                    "email": "security@paragonie.com",
+                    "homepage": "https://paragonie.com"
+                }
+            ],
+            "description": "PHP 5.x polyfill for random_bytes() and random_int() from PHP 7",
+            "keywords": [
+                "csprng",
+                "polyfill",
+                "pseudorandom",
+                "random"
+            ],
+            "support": {
+                "email": "info@paragonie.com",
+                "issues": "https://github.com/paragonie/random_compat/issues",
+                "source": "https://github.com/paragonie/random_compat"
+            },
+            "time": "2020-10-15T08:29:30+00:00"
+        },
+        {
             "name": "pear/console_color2",
             "version": "0.1.2",
             "source": {
@@ -4260,66 +4435,6 @@
                 "source": "https://github.com/pear/Console_Color2/tree/0.1.2"
             },
             "time": "2012-10-23T11:52:18+00:00"
-        },
-        {
-            "name": "pear/console_table",
-            "version": "v1.3.1",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/pear/Console_Table.git",
-                "reference": "1930c11897ca61fd24b95f2f785e99e0f36dcdea"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/pear/Console_Table/zipball/1930c11897ca61fd24b95f2f785e99e0f36dcdea",
-                "reference": "1930c11897ca61fd24b95f2f785e99e0f36dcdea",
-                "shasum": ""
-            },
-            "require": {
-                "php": ">=5.2.0"
-            },
-            "suggest": {
-                "pear/Console_Color2": ">=0.1.2"
-            },
-            "type": "library",
-            "autoload": {
-                "classmap": [
-                    "Table.php"
-                ]
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "BSD-2-Clause"
-            ],
-            "authors": [
-                {
-                    "name": "Jan Schneider",
-                    "homepage": "http://pear.php.net/user/yunosh"
-                },
-                {
-                    "name": "Tal Peer",
-                    "homepage": "http://pear.php.net/user/tal"
-                },
-                {
-                    "name": "Xavier Noguer",
-                    "homepage": "http://pear.php.net/user/xnoguer"
-                },
-                {
-                    "name": "Richard Heyes",
-                    "homepage": "http://pear.php.net/user/richard"
-                }
-            ],
-            "description": "Library that makes it easy to build console style tables.",
-            "homepage": "http://pear.php.net/package/Console_Table/",
-            "keywords": [
-                "console"
-            ],
-            "support": {
-                "issues": "http://pear.php.net/bugs/search.php?cmd=display&package_name[]=Console_Table",
-                "source": "https://github.com/pear/Console_Table"
-            },
-            "abandoned": true,
-            "time": "2018-01-25T20:47:17+00:00"
         },
         {
             "name": "phpoption/phpoption",
@@ -4395,6 +4510,164 @@
                 }
             ],
             "time": "2026-08-24T00:54:40+00:00"
+        },
+        {
+            "name": "phpseclib/phpseclib",
+            "version": "3.0.59",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/phpseclib/phpseclib.git",
+                "reference": "527959f6f26591d532c07cf1c426585ef7279fa9"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/phpseclib/phpseclib/zipball/527959f6f26591d532c07cf1c426585ef7279fa9",
+                "reference": "527959f6f26591d532c07cf1c426585ef7279fa9",
+                "shasum": ""
+            },
+            "require": {
+                "paragonie/constant_time_encoding": "^1|^2|^3",
+                "paragonie/random_compat": "^1.4|^2.0|^9.99.99",
+                "php": ">=5.6.1"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "*"
+            },
+            "suggest": {
+                "ext-dom": "Install the DOM extension to load XML formatted public keys.",
+                "ext-gmp": "Install the GMP (GNU Multiple Precision) extension in order to speed up arbitrary precision integer arithmetic operations.",
+                "ext-libsodium": "SSH2/SFTP can make use of some algorithms provided by the libsodium-php extension.",
+                "ext-mcrypt": "Install the Mcrypt extension in order to speed up a few other cryptographic operations.",
+                "ext-openssl": "Install the OpenSSL extension in order to speed up a wide variety of cryptographic operations."
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "phpseclib/bootstrap.php"
+                ],
+                "psr-4": {
+                    "phpseclib3\\": "phpseclib/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Jim Wigginton",
+                    "email": "terrafrost@php.net",
+                    "role": "Lead Developer"
+                },
+                {
+                    "name": "Patrick Monnerat",
+                    "email": "pm@datasphere.ch",
+                    "role": "Developer"
+                },
+                {
+                    "name": "Andreas Fischer",
+                    "email": "bantu@phpbb.com",
+                    "role": "Developer"
+                },
+                {
+                    "name": "Hans-Jürgen Petrich",
+                    "email": "petrich@tronic-media.com",
+                    "role": "Developer"
+                },
+                {
+                    "name": "Graham Campbell",
+                    "email": "graham@alt-three.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "PHP Secure Communications Library - Pure-PHP implementations of RSA, AES, SSH2, SFTP, X.509 etc.",
+            "homepage": "http://phpseclib.sourceforge.net",
+            "keywords": [
+                "BigInteger",
+                "aes",
+                "asn.1",
+                "asn1",
+                "blowfish",
+                "crypto",
+                "cryptography",
+                "encryption",
+                "rsa",
+                "security",
+                "sftp",
+                "signature",
+                "signing",
+                "ssh",
+                "twofish",
+                "x.509",
+                "x509"
+            ],
+            "support": {
+                "issues": "https://github.com/phpseclib/phpseclib/issues",
+                "source": "https://github.com/phpseclib/phpseclib/tree/3.0.59"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/terrafrost",
+                    "type": "github"
+                },
+                {
+                    "url": "https://www.patreon.com/phpseclib",
+                    "type": "patreon"
+                },
+                {
+                    "url": "https://tidelift.com/funding/github/packagist/phpseclib/phpseclib",
+                    "type": "tidelift"
+                }
+            ],
+            "time": "2026-11-20T07:39:42+00:00"
+        },
+        {
+            "name": "phpseclib/phpseclib2_compat",
+            "version": "1.0.12",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/phpseclib/phpseclib2_compat.git",
+                "reference": "1e36f3920a278ce191bc44c1db8a7e62fb44918f"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/phpseclib/phpseclib2_compat/zipball/1e36f3920a278ce191bc44c1db8a7e62fb44918f",
+                "reference": "1e36f3920a278ce191bc44c1db8a7e62fb44918f",
+                "shasum": ""
+            },
+            "require": {
+                "phpseclib/phpseclib": "^3.0"
+            },
+            "provide": {
+                "phpseclib/phpseclib": "2.0.57"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^5.7|^6.0|^9.4"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "phpseclib\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Jim Wigginton",
+                    "email": "terrafrost@php.net",
+                    "role": "Lead Developer"
+                }
+            ],
+            "description": "phpseclib 2.0 polyfill built with phpseclib 3.0",
+            "homepage": "https://github.com/phpseclib/phpseclib2_compat",
+            "support": {
+                "issues": "https://github.com/phpseclib/phpseclib2_compat/issues",
+                "source": "https://github.com/phpseclib/phpseclib2_compat"
+            },
+            "time": "2026-11-20T08:10:24+00:00"
         },
         {
             "name": "psr/clock",
@@ -13254,9 +13527,18 @@
             "time": "2026-11-15T13:41:13+00:00"
         }
     ],
-    "aliases": [],
+    "aliases": [
+        {
+            "package": "ccxt/ccxt",
+            "version": "dev-trademinator-4.5.94-composer",
+            "alias": "4.5.94",
+            "alias_normalized": "4.5.94.0"
+        }
+    ],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "ccxt/ccxt": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
